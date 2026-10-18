@@ -72,7 +72,7 @@ local function parse_import(s)
     local path,names=s:match('^from%s+([^ ]*)%s+import%s+(.+)$')
     if path then
       local dots,mod=path:match('^(%.*)(.*)$')
-      if mod=='' or mod:match('^[%a_][%w_%.]*$') then return record{kind=K('from'),dots=#dots,module=mod~='' and mod or nil,names=parts(names)} end
+      if mod=='' or mod:match('^[%a_][%w_%.]*$') then return record{kind=K('from'),dots=#dots,module=mod~='' and mod or E.nil_value,names=parts(names)} end
     end
   elseif s:sub(1,7)=='import ' then return record{kind=K('import'),modules=parts(s:sub(8))} end
 end
@@ -93,8 +93,8 @@ function M.read_module(source)
       if line:match('^class') then
         local bases=V(); local body=header:match('%(([^)]*)%)%s*:')
         if body then for part in (body..','):gmatch('(.-),') do local base=trim(part):match('^([%a_][%w_%.]*)$'); if base then bases[#bases+1]=base end end end
-        defs[#defs+1]=record{name=name,kind=K('class'),bases=body and bases or nil}
-      else defs[#defs+1]=record{name=name,kind=K('function'),['return']=header:match('%)%s*%->%s*([%a_][%w_]*)%s*:')} end
+        defs[#defs+1]=record{name=name,kind=K('class'),bases=body and bases or E.nil_value}
+      else defs[#defs+1]=record{name=name,kind=K('function'),['return']=header:match('%)%s*%->%s*([%a_][%w_]*)%s*:') or E.nil_value} end
     end
     i=i+#line+1
   end

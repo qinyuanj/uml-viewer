@@ -72,7 +72,7 @@ def load(xs=[1], row={}):
 import os]==]
     local s=scanner().read_module(source)
     eq('[{:kind :import :modules [{:name "os" :bind "os"}]}]',get(s,'imports'))
-    eq('[{:name "load" :kind :function}]',get(s,'defs'))
+    eq('[{:name "load" :kind :function :return nil}]',get(s,'defs'))
   end)
   it('retains the JVM exact backslash LF continuation rule with CRLF input',function()
     eq('[{:kind :import :modules [{:name "Animal" :bind "Animal"}]} {:kind :import :modules [{:name "os" :bind "os"}]}]',get(scanner().read_module('from app.model \\\r\n import Animal\r\nimport os\r\n'),'imports'))
@@ -84,8 +84,8 @@ import os]==]
   end)
   it('retains semicolon and name-list quirks, ignores complex annotations and private definitions',function()
     local s=scanner().read_module('x=1; import first\nimport a; import b\nfrom . import *\nfrom package import X as Y, child.mod\nasync def run() -> Thing:\n pass\nclass Public(Base, pkg.Other, Generic[X], metaclass=ABCMeta):\n pass\n def nested(): pass\ndef _private(): pass\ndef complex() -> pkg.Thing: pass')
-    eq('[{:kind :import :modules [{:name "first" :bind "first"}]} {:kind :import :modules []} {:kind :from :dots 1 :names []} {:kind :from :dots 0 :module "package" :names [{:name "X" :bind "Y"} {:name "child.mod" :bind "child"}]}]',get(s,'imports'))
-    eq('[{:name "run" :kind :function :return "Thing"} {:name "Public" :kind :class :bases ["Base" "pkg.Other"]} {:name "complex" :kind :function}]',get(s,'defs'))
+    eq('[{:kind :import :modules [{:name "first" :bind "first"}]} {:kind :import :modules []} {:kind :from :dots 1 :module nil :names []} {:kind :from :dots 0 :module "package" :names [{:name "X" :bind "Y"} {:name "child.mod" :bind "child"}]}]',get(s,'imports'))
+    eq('[{:name "run" :kind :function :return "Thing"} {:name "Public" :kind :class :bases ["Base" "pkg.Other"]} {:name "complex" :kind :function :return nil}]',get(s,'defs'))
   end)
   it('reads continued and local imports, public module definitions, bases and simple returns',function()
     local s=scanner().read_module([=["""
@@ -111,6 +111,6 @@ class Dog(Animal):
         pass
 ]=])
     eq('[{:kind :from :dots 0 :module "app.model" :names [{:name "Animal" :bind "Animal"}]} {:kind :from :dots 0 :module "app.model" :names [{:name "Walk" :bind "Walk"}]} {:kind :import :modules [{:name "os.path" :bind "os"}]} {:kind :import :modules [{:name "json" :bind "json"}]}]',get(s,'imports'))
-    eq('[{:name "load" :kind :function :return "Animal"} {:name "all_animals" :kind :function} {:name "Dog" :kind :class :bases ["Animal"]}]',get(s,'defs'))
+    eq('[{:name "load" :kind :function :return "Animal"} {:name "all_animals" :kind :function :return nil} {:name "Dog" :kind :class :bases ["Animal"]}]',get(s,'defs'))
   end)
 end)
