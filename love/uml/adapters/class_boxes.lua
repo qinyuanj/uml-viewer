@@ -40,10 +40,10 @@ function M.commands(scene)
 end
 function M.new(imgui)
   local function vec(x,y) return imgui.ImVec2_Float(x,y) end
-  return {draw=function(scene,width,height)
-    local size=G.get(scene,'size'); local scale=math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
+  return {draw=function(scene,width,height,view)
+    local size=G.get(scene,'size'); local scale=view and (view.zoom or 1) or math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
     local list=imgui.GetBackgroundDrawList_Nil()
-    local function point(x,y) return vec(x*scale,y*scale) end
+    local function point(x,y) return vec((x-(view and view.cam_x or 0))*scale,(y-(view and view.cam_y or 0))*scale) end
     for _,c in ipairs(M.commands(scene)) do
       if c.kind=='package' or c.kind=='class' then
         local r=c.rect; local x,y,w,h=G.get(r,'x'),G.get(r,'y'),G.get(r,'w'),G.get(r,'h')
