@@ -24,6 +24,21 @@ describe('policy language detection',function()
     local ok,err=pcall(IR.document,nil,E.parse('{}'),{'package.json','a.lua'})
     assert.is_false(ok); assert.matches(':lang or :sources',err,1,true)
   end)
+  it('generates IR for each detected marker through injected scanner selection',function()
+    local IR=require('uml.application.ir_generator'); local G=require('uml.graph')
+    for _,case in ipairs{{'package.json','typescript'},{'Cargo.toml','rust'},{'pyproject.toml','python'},{'src/a.lua','lua'}} do
+      local previous=G.lookup(case[2]); local written
+      G.register(case[2],function() return E.parse('{:classes [{:id :selected :name "Selected" :ns "app.selected"}] :edges []}') end)
+      local ok,err=pcall(IR.generate,nil,'policy.edn','out.edn',{
+        read=function() return '{:prefix "app"}' end,
+        filenames=function() return {case[1]} end,
+        write=function(_,text) written=E.parse(text) end
+      })
+      G.register(case[2],previous)
+      assert.is_true(ok,tostring(err))
+      assert.equals('Selected',E.get(E.get(written,E.keyword('classes'))[1],E.keyword('name')))
+    end
+  end)
   it('rejects explicit Clojure including source entries',function()
     for _,policy in ipairs{'{:lang :clojure}','{:sources [{:lang :clojure}]}'} do
       local ok,err=pcall(select,policy,{}); assert.is_false(ok); assert.matches('Clojure is not supported',err,1,true)
