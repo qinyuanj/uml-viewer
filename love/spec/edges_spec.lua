@@ -11,11 +11,11 @@ local function close(a,b,path)
 end
 describe('viewer edge scene parity',function()
   it('matches every edge and constrained control point in all four JVM geometry goldens',function()
-    local C=require('uml.engine.compose'); local H=require('uml.domain.hierarchy'); local Curve=require('uml.engine.curve')
+    local D=require('uml.application.document'); local Curve=require('uml.engine.curve')
     for _,lang in ipairs{'lua','typescript','rust','python'} do
       local doc=read('fixtures/jvm-goldens/'..lang..'.ir.edn')
       for _,view in ipairs(g(read('fixtures/jvm-goldens/'..lang..'.geometry.edn'),'views')) do
-        local scene=C.compile_diagram(H.view_at(doc,g(view,'focus')))
+        local scene=D.compile_view(doc,nil,g(view,'focus'))
         local actual=E.vector(); local idx={}; for _,c in ipairs(g(scene,'classes')) do idx[E.encode(g(c,'id'))]=g(c,'rect') end
         for _,e in ipairs(g(scene,'edges')) do
           local p=G.map{}; for _,k in ipairs{'from','to','kind','points','tip','behind','draw-bounds'} do G.put(p,k,g(e,k)) end
