@@ -147,14 +147,14 @@ try {
     $python = Get-PythonCommand
     $root = (Get-Location).Path
     New-Item -ItemType Directory -Force '.uml-viewer' | Out-Null
-    Fetch-Repo '.uml-viewer/uml-viewer' (Setting 'UML_VIEWER_REPO_URL' 'https://github.com/qinyuanj/uml-viewer.git') (Setting 'UML_VIEWER_REF' 'lua')
+    Fetch-Repo '.uml-viewer/uml-viewer' (Setting 'UML_VIEWER_REPO_URL' 'https://github.com/qinyuanj/uml-viewer.git') (Setting 'UML_VIEWER_REF' 'main')
     if (-not $env:UML_CIMGUI_DIRECTORY) { Install-Cimgui '.uml-viewer/cimgui-love-1.90-1' }
     # Both quality tools are mandatory for every project, independent of any
     # deps.edn left over from the removed Clojure implementation.
     $toolErrors = @()
     foreach ($tool in @('crapper', 'mutator')) {
         try {
-            Fetch-Repo ".uml-viewer/$tool" (Setting "$($tool.ToUpper())_REPO_URL" "https://github.com/qinyuanj/$tool.git") (Setting "$($tool.ToUpper())_REF" 'lua')
+            Fetch-Repo ".uml-viewer/$tool" (Setting "$($tool.ToUpper())_REPO_URL" "https://github.com/qinyuanj/$tool.git") (Setting "$($tool.ToUpper())_REF" 'main')
         } catch { $toolErrors += "${tool}: $_" }
     }
     if ($toolErrors.Count -gt 0) { throw ('Could not fetch required quality tools: ' + ($toolErrors -join '; ')) }

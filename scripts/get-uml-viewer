@@ -15,7 +15,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 TMP_DIR=$(mktemp -d) || exit 1
 trap 'rm -rf "$TMP_DIR"' EXIT HUP INT TERM
-URL=${UML_VIEWER_INSTALLER_URL:-https://raw.githubusercontent.com/qinyuanj/uml-viewer/${UML_VIEWER_REF:-master}/scripts/get-uml-viewer.ps1}
+URL=${UML_VIEWER_INSTALLER_URL:-https://raw.githubusercontent.com/qinyuanj/uml-viewer/${UML_VIEWER_REF:-main}/scripts/get-uml-viewer.ps1}
 curl -fsSL "$URL" -o "$TMP_DIR/get-uml-viewer.ps1" || exit 1
 pwsh -NoLogo -NoProfile -File "$TMP_DIR/get-uml-viewer.ps1" "$@"
 exit $?

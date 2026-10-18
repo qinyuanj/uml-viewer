@@ -110,6 +110,21 @@ class Entries(unittest.TestCase):
         self.assertIn('install --disable-pip-version-check -e .uml-viewer/mutator', pip)
         self.assertFalse((self.project / 'examples').exists())
 
+    def test_install_defaults_to_main_for_viewer_and_both_tools(self):
+        subprocess.run(['git', '-C', str(self.source), 'branch', '-m', 'main'], check=True)
+        env = self.env.copy()
+        for name in ['UML_VIEWER_REF', 'CRAPPER_REF', 'MUTATOR_REF']:
+            env.pop(name, None)
+        result = self.install(env=env)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        expected = subprocess.check_output(
+            ['git', '-C', str(self.source), 'rev-parse', 'main'], text=True).strip()
+        for tool in ['uml-viewer', 'crapper', 'mutator']:
+            actual = subprocess.check_output(
+                ['git', '-C', str(self.project / '.uml-viewer' / tool), 'rev-parse', 'HEAD'],
+                text=True).strip()
+            self.assertEqual(expected, actual, tool)
+
     def test_install_accepts_fixed_commit_without_full_clone(self):
         sha = subprocess.run(['git', '-C', str(self.source), 'rev-parse', 'HEAD'],
                              check=True, capture_output=True, text=True).stdout.strip()
@@ -206,6 +221,44 @@ class Entries(unittest.TestCase):
                              (self.project / 'windows.txt').read_text().splitlines())
             self.assertIn('stdout', result.stdout)
             self.assertIn('stderr', result.stderr)
+
+
+class InstallerBootstrap(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('sh'), 'POSIX shell required for standalone entry')
+    def test_standalone_download_defaults_to_main_and_preserves_overrides(self):
+        with tempfile.TemporaryDirectory(prefix='uml-bootstrap-') as directory:
+            root = Path(directory)
+            entry = root / 'get-uml-viewer'
+            shutil.copyfile(REPO / 'scripts/get-uml-viewer', entry)
+            tools = root / 'tools'
+            tools.mkdir()
+            record = root / 'download-url.txt'
+            # Only the network and interpreter process boundaries are fixtures.
+            (tools / 'curl').write_text(
+                '#!/bin/sh\nprintf "%s" "$2" > "$BOOTSTRAP_RECORD"\n'
+                'printf "fixture" > "$4"\n')
+            (tools / 'pwsh').write_text('#!/bin/sh\nexit 0\n')
+            shell = shutil.which('sh')
+            subprocess.run([shell, '-c', 'chmod +x "$1" "$2"', 'fixture',
+                            (tools / 'curl').as_posix(), (tools / 'pwsh').as_posix()], check=True)
+            base_env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                            BOOTSTRAP_RECORD=record.as_posix())
+            for name in ['UML_VIEWER_REF', 'UML_VIEWER_INSTALLER_URL']:
+                base_env.pop(name, None)
+            cases = [
+                ({}, 'https://raw.githubusercontent.com/qinyuanj/uml-viewer/main/scripts/get-uml-viewer.ps1'),
+                ({'UML_VIEWER_REF': 'release-test'},
+                 'https://raw.githubusercontent.com/qinyuanj/uml-viewer/release-test/scripts/get-uml-viewer.ps1'),
+                ({'UML_VIEWER_REF': 'release-test', 'UML_VIEWER_INSTALLER_URL': 'https://example.org/custom.ps1'},
+                 'https://example.org/custom.ps1'),
+            ]
+            for overrides, expected in cases:
+                with self.subTest(overrides=overrides):
+                    result = subprocess.run([shell, entry.as_posix(), '--install-only'],
+                                            cwd=root, env=dict(base_env, **overrides),
+                                            capture_output=True, text=True)
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertEqual(expected, record.read_text())
 
 
 if __name__ == '__main__':
