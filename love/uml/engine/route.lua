@@ -114,7 +114,7 @@ local function stable_sort(xs,scorefn)
 end
 function M.route(scene)
   local cs,idx={},{}; local lr=G.name(g(g(scene,'diagram'),'direction')); lr=lr=='lr' or lr=='rl'
-  for _,c in ipairs(g(scene,'classes')) do local x={r=rect(g(c,'rect')),id=E.encode(g(c,'id')),rank=g(c,'rank') or 0,dummy=g(c,'dummy?')}; cs[#cs+1]=x; idx[x.id]=x end
+  for _,c in ipairs(g(scene,'classes')) do local r=g(c,'rect'); if type(g(r,'x'))=='number' and type(g(r,'y'))=='number' then local x={r=rect(r),id=E.encode(g(c,'id')),rank=g(c,'rank') or 0,dummy=g(c,'dummy?')}; cs[#cs+1]=x; idx[x.id]=x end end
   local es,from,to,hops={},{},{},{}
   for _,e in ipairs(g(g(scene,'diagram'),'edges') or {}) do local f,t=idx[E.encode(g(e,'from'))],idx[E.encode(g(e,'to'))]; if f and t then
     local x={edge=e,a=f,b=t}; es[#es+1]=x; from[f.id]=from[f.id] or {}; from[f.id][#from[f.id]+1]=x; to[t.id]=to[t.id] or {}; to[t.id][#to[t.id]+1]=x
@@ -133,6 +133,6 @@ function M.route(scene)
     local lo,hi=horiz(f) and r.y+.12*r.h or r.x+.12*r.w,horiz(f) and bottom(r)-.12*r.h or right(r)-.12*r.w
     for i,a in ipairs(group) do local v=lo+i*(hi-lo)/(#group+1); local p=horiz(f) and {a.p[1],v} or {v,a.p[2]}; sync(a.x.ps,a.start,p,f) end
   end end
-  local edges=E.vector(); for _,x in ipairs(es) do local e=G.copy(x.edge); local ps=E.vector(); for _,p in ipairs(x.ps) do ps[#ps+1]=E.vector(p) end; put(e,'points',ps); edges[#edges+1]=e end; put(scene,'edges',edges); return scene
+  local edges=E.vector(); for _,x in ipairs(es) do local e=G.copy(x.edge); local ps=E.vector(); for _,p in ipairs(x.ps) do ps[#ps+1]=E.vector(p) end; put(e,'points',ps); put(e,'head',E.keyword(({inheritance='triangle',implements='triangle',composition='diamond-fill',aggregation='diamond'})[G.name(g(e,'kind'))] or 'open')); edges[#edges+1]=e end; put(scene,'edges',edges); return scene
 end
 return M
