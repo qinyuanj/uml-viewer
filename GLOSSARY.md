@@ -20,3 +20,15 @@ viewer 对 CRAP 和 mutation 请求的通用分发：按项目配置调用标准
 **Herdr migration**:
 将项目从旧 companion 后端迁到 Herdr 的过程：先由旧版本正常结束并归档旧 ownership，保留会话、policy/proposal 与邮件队列，再 fresh 创建 Herdr companion。不得跨后端使用 `--restart`。
 _Avoid_: reindexing, in-place upgrade
+
+**源码图**:
+按源码命名空间嵌套得到的图，不含任何提案分组。
+_Avoid_: 真实图, real diagram（界面文案中）
+
+**提案**:
+policy 中一个具名分组，不存在于源码里；与源码图并列。policy 与邮件中写作 `:proposals`。
+_Avoid_: 方案, proposal（界面文案中）
+
+**隐藏**:
+把某个元素从当前提案或真实图中排除的操作。policy 与邮件中写作 `:omit`。
+_Avoid_: 省略, omit（界面文案中）
