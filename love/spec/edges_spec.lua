@@ -87,6 +87,17 @@ describe('viewer edge scene parity',function()
     local s=C.compile_diagram(E.parse('{:hide-edges true :packages [{:id :p :label "P" :classes [{:id :a :name "A"} {:id :b :name "B"}]}] :edges [{:from :a :to :b :kind :dependency :violating true}]}'))
     assert.are.equal(2,#g(s,'dep-indicators')); local commands=A.commands(s); assert.are.equal(2,#commands); for _,cmd in ipairs(commands) do assert.are.equal('indicator',cmd.kind); assert.is_true(cmd.violating) end
   end)
+  it('rotates shallow departure handles and arrival tangents onto each face cone',function()
+    local C=require('uml.engine.curve'); local r=G.rect(0,0,100,40)
+    for _,case in ipairs{{{100,20},{100,80},1},{{0,20},{0,80},1},{{50,0},{110,0},2},{{50,40},{110,40},2}} do
+      local p,q,axis=case[1],case[2],case[3]
+      local raw=G.map{start=E.vector(p),ops=E.vector{G.map{op=E.keyword('cubic'),c1=E.vector(q),c2=E.vector(q),p=E.vector(p)},G.map{op=E.keyword('line'),p=E.vector{160,20}}}}
+      local constrained=C.constrain_ends(raw,r,nil); local handle=g(g(constrained,'ops')[1],'c1'); local dx,dy=handle[1]-p[1],handle[2]-p[2]; assert.is_true(math.abs(math.abs(dx)-math.abs(dy))<1e-6); assert.is_true(math.abs(dx*dx+dy*dy-3600)<1e-6)
+      assert.is_true(E.equal(E.vector(q),g(g(raw,'ops')[1],'c1')))
+    end
+    local path=C.basis_path(E.parse('[[0 0] [10 0] [10 400] [40 400]]')); local t=C.end_tangent(C.constrain_ends(path,nil,G.rect(40,360,80,80)))
+    assert.is_true(math.abs(t[2][1]-t[1][1])+1e-6>=math.abs(t[2][2]-t[1][2])); close(E.parse('[40 400]'),t[2])
+  end)
   it('renders clipped strokes and oriented heads through the cimgui draw-list contract',function()
     local A=require('uml.adapters.edges'); local C=require('uml.engine.compose')
     local s=C.prepare_scene(E.parse('{:diagram {} :packages [] :classes [{:id :a :rect {:x 0 :y 0 :w 20 :h 20}} {:id :b :rect {:x 180 :y 0 :w 20 :h 20}} {:id :wall :rect {:x 80 :y 0 :w 40 :h 20}}] :edges [{:from :a :to :b :head :triangle :points [[20 10] [180 10]]}]}'))
