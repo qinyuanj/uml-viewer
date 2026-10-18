@@ -30,6 +30,36 @@ describe('TypeScript IR generation',function()
     assert.is_not_nil(class(doc,'.hidden.ok'))
     assert.equals(7,#get(doc,'classes'))
   end)
+  it('preserves scanner heuristics for regex division, multiline imports and first exported bindings',function()
+    local doc=document({['book.ts']='export interface Fs {}', ['view.ts']=[==[
+import Default,
+  { type Fs as FileSystem }
+  from './book';
+const quotient = total / count;
+const regex = /["/]/g;
+const escaped = /\"/;
+export const adapter: FileSystem = {}, second = 1;
+export async function create(): FileSystem { return null; }
+export default interface OnlyType {}
+export default function (): FileSystem { return null; }
+export type Alias = FileSystem;
+export { adapter as publicAdapter };
+]==]})
+    assert.same({'adapter','create','publicAdapter'},names(class(doc,'view')))
+    assert.is_true(edge(doc,'view','book','implements'))
+  end)
+  it('keeps narrower resolver extensions and suppresses self and foreign project collisions',function()
+    local doc=document({
+      ['index.ts']='import "./index";\nimport "./odd";\nimport "odd";',
+      ['odd.mtsx']='export interface Marker {}',
+      ['editor/view.ts']='export function show(): void {}',
+      ['x.cjs']='', ['x.spec.mjs']='', ['x.d.ts']='', ['keep.d.tsx']='',
+    },'{:prefix "bookwriter" :hierarchical true :foreign [:odd]}')
+    assert.is_true(edge(doc,'bookwriter','odd','dependency'))
+    assert.equals(1,#get(doc,'edges'))
+    assert.equals(5,#get(doc,'classes'))
+    assert.equals('View',get(class(doc,'editor.view'),'name'))
+  end)
   it('links only real literal invoke calls to command owners in a combined IR',function()
     local G=require('uml.graph')
     local TS=require('uml.typescript_language.graph_typescript')

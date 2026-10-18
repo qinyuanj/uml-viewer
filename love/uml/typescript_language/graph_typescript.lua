@@ -120,7 +120,11 @@ function M.read_module(source)
       if text:sub(j,j)=='(' then
         j=j+1; while text:sub(j,j):match('%s') do j=j+1 end
         local quote=text:sub(j,j)
-        if quote=='"' or quote=="'" then local finish=G.scan_quoted(text,j,quote); local stop=finish>#text and #text+1 or finish-1; if finish==#text+1 and text:sub(#text,#text)==quote then stop=#text end; unique(invokes,text:sub(j+1,stop-1)) end
+        if quote=='"' or quote=="'" then
+          local stop=j+1
+          while stop<=#text do local c=text:sub(stop,stop); if c=='\\' then stop=stop+2 elseif c==quote then break else stop=stop+1 end end
+          unique(invokes,text:sub(j+1,math.min(stop,#text+1)-1))
+        end
       end
     end
   end
@@ -143,7 +147,7 @@ function M.scan(root,opts,files,cwd)
   assert(type(cwd)=='string','canonical working directory required'); opts=opts or E.map()
   local prefix=get(opts,'prefix','app'); local ns_prefix=get(opts,'ns-prefix',prefix)
   local sorted,by_path,project={},{},{}
-  for _,f in ipairs(files) do if M.accepts(G.relative_path(f.path,root),opts) then sorted[#sorted+1]=f end end
+  for _,f in ipairs(files) do if M.accepts(f.path,opts) then sorted[#sorted+1]=f end end
   table.sort(sorted,function(a,b) return a.path<b.path end)
   for _,f in ipairs(sorted) do local cid=G.id_of(G.ns_join(ns_prefix,module_relative(f.path,root)),prefix); by_path[f.path]=cid; project[E.encode(cid)]=true end
   local function resolve(file,spec)
