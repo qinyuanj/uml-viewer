@@ -378,3 +378,30 @@ describe('Herdr pane command shell detection',function()
     assert.is_truthy(error_of(function() H.pane_command({'echo','hi'},'fish') end))
   end)
 end)
+
+describe('Herdr pane run delivery',function()
+  it('does not retry other pane run failures',function()
+    local attempts,sleeps=0,0
+    local B=backend(function()
+      attempts=attempts+1
+      return {exit=1,out='',err='pane_not_found'}
+    end,function() return nil end,{clock=function() return 0 end,sleep=function() sleeps=sleeps+1 end})
+    assert.is_truthy(error_of(function() B.pane_run('uml-viewer-A','w1:p1','text') end))
+    assert.are.equal(1,attempts)
+    assert.are.equal(0,sleeps)
+  end)
+  it('stops retrying once the delivery deadline is exhausted',function()
+    local ticks={0,5000,20000}
+    local index,attempts,sleeps=0,0,0
+    local B=backend(function()
+      attempts=attempts+1
+      return {exit=1,out='',err='pane_send_failed: input exceeds the canonical mode limit'}
+    end,function() return nil end,{
+      clock=function() index=index+1; return ticks[index] end,
+      sleep=function() sleeps=sleeps+1 end})
+    assert.is_truthy(error_of(function() B.pane_run('uml-viewer-A','w1:p1','text') end))
+    assert.are.equal(2,attempts)
+    assert.are.equal(1,sleeps)
+    assert.are.equal(3,index)
+  end)
+end)
