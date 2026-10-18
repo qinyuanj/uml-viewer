@@ -9,8 +9,10 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
         . "$PSScriptRoot/uml-process-identity.ps1"
         $owner = Get-UmlLauncherOwner $projectRoot
         $null = Assert-UmlRestartRuntime $projectRoot $owner.Record 'love'
-        Wait-UmlLauncherOwner $owner 'LOVE viewer'
+        # Validate the identity (and refuse a changed live process) before the
+        # potentially long launcher wait, then wait for both exact processes.
         Wait-UmlLoveIdentity $projectRoot
+        Wait-UmlLauncherOwner $owner 'LOVE viewer'
     }
     $candidate = if ($env:UML_LOVE_EXECUTABLE) { $env:UML_LOVE_EXECUTABLE } else { 'love' }
     $love = Get-Command $candidate -ErrorAction SilentlyContinue
