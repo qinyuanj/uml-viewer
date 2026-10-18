@@ -56,7 +56,9 @@ function Assert-Result($Result, [string[]]$Argv) {
 try {
     $null = New-Item -ItemType Directory -Path $installed -Force
     Copy-Item (Join-Path $repoScripts 'uml.ps1') $project
-    Copy-Item (Join-Path $repoScripts 'uml-command.ps1') $installed
+    foreach ($script in @('uml-command.ps1', 'uml-quality-config.ps1', 'uml-standard-quality.ps1')) {
+        Copy-Item (Join-Path $repoScripts $script) $installed
+    }
     @'
 {:paths ["src"]
  :aliases {:crap {:main-opts ["-m" "entry-fixture" "crap"]}
