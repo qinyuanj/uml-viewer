@@ -11,14 +11,11 @@ if headless then
   end
   return
 end
-function love.load()
-  love.window.setTitle('UML viewer — Lua skeleton')
-end
-function love.draw()
-  love.graphics.print('UML viewer: Lua skeleton',20,20)
-end
-local original_errorhandler=love.errorhandler
 function love.errorhandler(message)
   log.exception(message,'uncaught on viewer')
-  if original_errorhandler then return original_errorhandler(message) end
+  io.stderr:write('UML viewer failed: ',tostring(message),'\n')
+  return function() return 1 end
 end
+local viewer_args={}
+for i=(game_args[1]=='viewer' and 2 or 1),#game_args do viewer_args[#viewer_args+1]=game_args[i] end
+require('uml.adapters.viewer').run(viewer_args)
