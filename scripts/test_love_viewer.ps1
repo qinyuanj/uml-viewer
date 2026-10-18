@@ -38,4 +38,7 @@ if ($p.ExitCode -ne 0) { throw "LOVE failed ($($p.ExitCode)): $err $out Evidence
 foreach ($file in @('scene-1.edn', 'scene-2.edn', 'render.png')) {
     if (-not (Test-Path "$evidence/$file")) { throw "Missing $file. $err $out Evidence: $evidence" }
 }
+$before = [IO.File]::ReadAllText("$evidence/scene-1.edn")
+$after = [IO.File]::ReadAllText("$evidence/scene-2.edn")
+if ($before -eq $after -or -not $after.Contains('Reloaded UML viewer')) { throw "mtime reload did not publish changed scene content: $evidence" }
 Write-Output "PASS: actual cimgui render of repository IR and automatic mtime reload. Evidence: $evidence"
