@@ -13,13 +13,24 @@ local Inspector=require('uml.adapters.inspector')
 local InspectorModel=require('uml.application.inspector')
 local Mail=require('uml.adapters.mail')
 local Menu=require('uml.adapters.mail_menu')
+local SessionFile=require('uml.adapters.session')
+local Session=require('uml.application.session')
+local ProcessIdentity=require('uml.adapters.process_identity')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
+local function parse_args(args)
+  local path,restart
+  for _,value in ipairs(args) do
+    if value=='--restart' then restart=true
+    elseif value:sub(1,1)=='-' then error('usage: uml --runtime love [--restart] [diagram.edn]')
+    elseif not path then path=value end
+  end
+  return path,restart==true
+end
 function M.run(args,services)
   services=services or {}
-  local path=args[1] or 'examples/uml-viewer.edn'
-  assert(path:sub(1,1)~='-','usage: uml --runtime love [diagram.edn]')
-  path=Paths.canonical(path)
+  local explicit_path,restart=parse_args(args)
+  local path=explicit_path or 'examples/uml-viewer.edn'
   local dependencies=os.getenv('UML_CIMGUI_DIRECTORY')
   if dependencies then dependencies=dependencies:gsub('\\','/'); package.path=dependencies..'/?.lua;'..dependencies..'/?/init.lua;'..package.path; package.cpath=dependencies..'/?.dll;'..package.cpath end
   local imgui=require('cimgui')
@@ -37,24 +48,36 @@ function M.run(args,services)
   local function publish()
     if evidence then local f=assert(io.open(evidence..'/scene-'..state.revision..'.edn','wb')); f:write(E.encode(state.scene)); f:close() end
   end
+  local project_root=os.getenv('UML_VIEWER_PROJECT_ROOT')
+  project_root=project_root and #project_root>0 and project_root or '.'
+  project_root=Paths.canonical(project_root)
   function love.load()
     love.window.setTitle('UML viewer — LOVE')
     love.window.setMode(1100,760,{resizable=true})
     imgui.love.Init(); Inspector.fonts(imgui); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui)
+    local snapshot=restart and SessionFile.read(project_root) or nil
+    path=Paths.canonical(Session.path(explicit_path,snapshot,path))
     state=load_document(path)
+    state.project_root=project_root
+    if restart then state=Session.restore(state,snapshot) end
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
     if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source}) end
     inspector=Inspector.new(imgui,{
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
       pick=function(id) state.selected=G.map{kind=E.keyword('class'),id=id} end,
       open_source=function(ident) if source_window then source_window.open(ident) end end})
+    -- A refused or invalid startup never overwrites an existing identity.
+    ProcessIdentity.record(project_root)
     publish()
   end
   function love.update(dt)
     elapsed=elapsed+dt; frames=frames+1
     local ok,err=pcall(function()
       state=mail.poll(state); path=state.path or path
-      if state.quit_for_restart then love.event.quit(0); return end
+      if state.quit_for_restart then
+        SessionFile.save(state.project_root,Session.snapshot(state))
+        love.event.quit(0); return
+      end
       local stamp=Watch.mtime(path)
       local snapshots,metrics_stamp=metrics.snapshot(metrics.root(path))
       if stamp~=state.mtime or metrics_stamp~=state.metrics_stamp then
