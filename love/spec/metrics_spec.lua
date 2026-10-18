@@ -46,8 +46,10 @@ describe('viewer metrics overlay',function()
   it('loads real standard-tool Lua fixtures through the scanned namespace',function()
     local function file(p) local f=assert(io.open(p,'rb')); local t=f:read('*a'); f:close(); return snapshot(p,t) end
     local files={file('lua-fixture/.metrics/crap.edn'),file('lua-fixture/.metrics/mutate/calc.util.edn')}
-    local c=classes(scene(fixture,files))[1]
-    assert.is_number(g(g(c,'crap'),'mu')); assert.is_number(g(c,'uncovered')); assert.is_true(#g(c,'ops')>=3)
+    local c=classes(scene(fixture:gsub(':id :calc ',':id :util '),files))[1]
+    assert.are.equal(4,g(g(c,'crap'),'mu')); assert.are.equal(3,g(c,'killed')); assert.are.equal(3,g(c,'survived')); assert.are.equal(2,g(c,'uncovered')); assert.are.equal(8,g(c,'sites')); assert.is_true(math.abs(g(c,'coverage')-.6666666666666667)<1e-12)
+    local ops={}; for _,op in ipairs(g(c,'ops')) do ops[g(op,'name')]=op end
+    assert.is_true(g(ops.between,'private')); assert.are.equal(0,g(ops['M.untested'],'coverage')); assert.are.equal(0,g(ops['M.untested'],'killed'))
   end)
   it('IO adapter discovers parent metrics and fingerprints add, change and delete',function()
     local data={['/p/.metrics/crap.edn']='{:entries []}', ['/p/.metrics/mutate/nested/a.edn']='{:namespace "a"}'}
@@ -66,5 +68,17 @@ describe('viewer metrics overlay',function()
     files={snapshot('.metrics/mutate/a.edn','{:namespace "my_module" :source "src/wrong.lua" :forms [{:id "defn/f" :killed 2}]}')}
     local s=scene('{:packages [{:label "P" :classes [{:id :a :ns "my_module"}]}]}',files)
     assert.are.equal(2,g(classes(s)[1],'killed'))
+  end)
+  it('preserves authored fallback and ignores foreign snapshots across stacked diagrams',function()
+    local text='{:diagrams [{:packages [{:label "P" :classes [{:id :a :ns "a" :crap 2 :killed 1 :survived 0} {:id :b :ns "b" :shape :oval}]}]} {:packages [{:label "Q" :classes [{:id :c :ns "c"}]}]}]}'
+    local files={snapshot('.metrics/crap.edn','{:entries [{:namespace "b" :name "f" :complexity 5 :crap 5} {:namespace "c" :name "f" :complexity 7 :crap 7}]}')}
+    local cs=classes(scene(text,files))
+    assert.are.equal(2,g(g(cs[1],'crap'),'mu')); assert.is_nil(g(cs[2],'crap')); assert.are.equal(7,g(g(cs[3],'crap'),'mu'))
+    local raw=IR.read_document(text); assert.are.equal(raw,require('uml.application.overlay').apply(raw,{}))
+  end)
+  it('reports risk and mutation threshold colors without treating sites as denominator',function()
+    local text='{:packages [{:label "P" :classes [{:id :a :crap 8 :killed 9 :survived 1 :uncovered 100 :sites 110} {:id :b :crap 12 :killed 10 :survived 0} {:id :c :crap 13 :killed 10 :survived 0} {:id :d :killed 10 :survived 0}]}]}'
+    local bands={}; for _,cmd in ipairs(B.commands(scene(text))) do if cmd.kind=='class' then bands[#bands+1]=cmd.band end end
+    assert.are.same({'yellow','yellow','red','red'},bands)
   end)
 end)
