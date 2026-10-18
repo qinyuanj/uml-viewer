@@ -24,6 +24,14 @@ function M.compile_view(doc,snapshots,focus,extra)
   end
   return Compose.compile_document(doc)
 end
+-- A fresh companion launch shows a blank canvas until the agent sends :display.
+-- The path is retained so R can still load an explicitly supplied diagram.
+function M.waiting_state(path,mail_seen)
+  return {path=path,mtime=0,metrics_stamp=nil,waiting=true,
+    scene={classes=E.vector(),packages=E.vector(),edges=E.vector(),sections=E.vector(),
+      size=G.map{w=800,h=600},diagram=G.map{title='UML'}},
+    focus=E.vector(),extra=E.map(),mail_seen=mail_seen or 0}
+end
 -- A rejected reload leaves the last usable scene and timestamp intact for retry.
 function M.new(doc,mtime,focus,extra,snapshots,metrics_stamp)
   return {document=doc,mtime=mtime,snapshots=snapshots,metrics_stamp=metrics_stamp,focus=focus or V(),extra=extra or E.map(),scene=M.compile_view(doc,snapshots,focus,extra),revision=1}

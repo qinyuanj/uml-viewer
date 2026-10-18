@@ -37,6 +37,34 @@ function M.filetime(high,low)
   for i=#limbs-1,1,-1 do out[#out+1]=string.format('%07d',limbs[i]) end
   return table.concat(out)
 end
+
+-- .NET ticks count 100ns from 0001 UTC; FILETIME from 1601 UTC. The exact
+-- offset is 504911232000000000 ticks. Decimal limbs keep 64-bit values exact
+-- under both Lua number models.
+local EPOCH='504911232000000000'
+local function decimal_limbs(text)
+  assert(type(text)=='string' and text:match('^%d+$'),'ticks must be unsigned decimal text')
+  local limbs={}
+  for stop=#text,1,-7 do
+    local start=math.max(1,stop-6)
+    limbs[#limbs+1]=tonumber(text:sub(start,stop))
+  end
+  return limbs
+end
+function M.dotnet_ticks(filetime)
+  local value=decimal_limbs(filetime)
+  local epoch=decimal_limbs(EPOCH)
+  local carry=0
+  for i=1,math.max(#value,#epoch) do
+    local total=(value[i] or 0)+(epoch[i] or 0)+carry
+    value[i]=total%LIMB; carry=math.floor(total/LIMB)
+  end
+  if carry>0 then value[#value+1]=carry end
+  while #value>1 and value[#value]==0 do table.remove(value) end
+  local out={tostring(value[#value])}
+  for i=#value-1,1,-1 do out[#out+1]=string.format('%07d',value[i]) end
+  return table.concat(out)
+end
 local escapes={['"']='\\"',['\\']='\\\\',['\b']='\\b',['\f']='\\f',['\n']='\\n',['\r']='\\r',['\t']='\\t'}
 local function json_string(value)
   assert(type(value)=='string','identity text fields must be strings')

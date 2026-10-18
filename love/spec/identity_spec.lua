@@ -12,6 +12,12 @@ describe('LOVE process identity document',function()
       assert.has_error(function() Identity.filetime(pair[1],pair[2]) end)
     end
   end)
+  it('converts FILETIME ticks to .NET ticks exactly',function()
+    assert.are.equal('504911232000000000',Identity.dotnet_ticks('0'))
+    assert.are.equal('504911232000000001',Identity.dotnet_ticks('1'))
+    assert.are.equal('18951655305709551615',Identity.dotnet_ticks('18446744073709551615'))
+    assert.has_error(function() Identity.dotnet_ticks('abc') end)
+  end)
   it('writes a stable JSON record with runtime provenance and an escaped cwd',function()
     local json=Identity.encode{pid=1234,started='18446744073709551615',runtime='love',
       cwd='C:/project A/x "y"\\z'}

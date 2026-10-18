@@ -1,0 +1,8 @@
+SMOKE STEP paths
+SMOKE STEP preflight
+SMOKE STEP backend
+SMOKE STEP session
+SMOKE STEP create
+SMOKE STEP record
+SMOKE STEP cleanup
+SMOKE PASS session=uml-viewer-uml-70-herdr-753de385c69-8a1db815-e6228224
