@@ -31,15 +31,23 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     }
     if ($viewerArgs.Count -gt 0 -and $viewerArgs[0] -in @('crap', 'mutate')) { throw '--runtime love currently selects viewer or ir; quality dispatch uses the default runtime.' }
     # One short-lived LOVE process performs read-only Herdr selection. It loads
-    # no viewer, creates no owner/server, and never starts a JVM.
+    # no viewer, creates no owner/server, and never starts a JVM. Native stderr
+    # carries the selection diagnostic; it must not be merged into the one-line
+    # stdout contract the wrapper validates.
     $global:LASTEXITCODE = 0
-    $checked = @(& $love.Source (Join-Path $toolRoot 'love') companion-preflight $projectRoot @viewerArgs 2>&1)
-    $preflightExit = $LASTEXITCODE
+    $preflightError = [IO.Path]::GetTempFileName()
+    try {
+        $checked = @(& $love.Source (Join-Path $toolRoot 'love') companion-preflight $projectRoot @viewerArgs 2> $preflightError)
+        $preflightExit = $LASTEXITCODE
+        $diagnostic = Get-Content -LiteralPath $preflightError -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -LiteralPath $preflightError -Force -ErrorAction SilentlyContinue
+    }
     if ($preflightExit -ne 0) {
-        $diagnostic = ($checked | ForEach-Object { [string]$_ }) -join "`n"
         if (-not $diagnostic) { $diagnostic = 'LOVE companion preflight failed without diagnostic.' }
         throw $diagnostic.Trim()
     }
+    if ($diagnostic) { [Console]::Error.Write($diagnostic) }
     $lines = @($checked | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
     if ($lines.Count -ne 1 -or $lines[0] -cne 'herdr') {
         throw 'Backend preflight returned invalid output; no viewer was launched.'

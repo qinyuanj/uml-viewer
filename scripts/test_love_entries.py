@@ -38,7 +38,9 @@ class LoveRuntimeEntries(unittest.TestCase):
         stub = self.root/'love stub.ps1'
         record = self.root/'received.json'
         stub.write_text(
-            "if ($args -contains 'companion-preflight') { Write-Output 'herdr'; exit 0 }\n"
+            "if ($args -contains 'companion-preflight') { "
+            "& cmd.exe /d /s /c 'echo uml: selected Herdr 0.9.5 at fixture 1>&2'; "
+            "Write-Output 'herdr'; exit 0 }\n"
             "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_RECORD\n")
         env = dict(os.environ, UML_LOVE_EXECUTABLE=str(stub), UML62_RECORD=str(record))
         result = self.invoke('--runtime', 'love', 'diagram with spaces.edn', env=env)

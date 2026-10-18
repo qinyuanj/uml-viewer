@@ -1,0 +1,3 @@
+PASS real LOVE preflight through scripts/uml-love.ps1 (wrapper exit 0, ~4.1s)
+stderr: uml: selected Herdr 0.9.5 at C:/Users/Lzx_8/.herdr/packages/standalone/releases/0.9.5-x86_64-pc-windows-msvc/herdr.exe
+viewer argv: <tool>/love viewer --backend herdr diagram.edn
