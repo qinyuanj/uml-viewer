@@ -24,7 +24,7 @@ function M.run(args,services)
   if dependencies then dependencies=dependencies:gsub('\\','/'); package.path=dependencies..'/?.lua;'..dependencies..'/?/init.lua;'..package.path; package.cpath=dependencies..'/?.dll;'..package.cpath end
   local imgui=require('cimgui')
   local metrics=Metrics.new()
-  local state,renderer,inspector,source_window,mail,elapsed,frames= nil,nil,nil,nil,nil,0,0
+  local state,renderer,inspector,source_window,mail,elapsed,frames,text_requests= nil,nil,nil,nil,nil,0,0,0
   local function load_document(p)
     local snapshots,stamp=metrics.snapshot(metrics.root(p))
     local s=D.new(IR.read_document(read(p)),Watch.mtime(p),nil,nil,snapshots,stamp)
@@ -64,7 +64,7 @@ function M.run(args,services)
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
     if probe then
-      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,imgui=imgui,mail=mail})
+      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,imgui=imgui,mail=mail,text_requests=text_requests})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
     end
     imgui.love.Update(dt); imgui.NewFrame()
@@ -84,7 +84,7 @@ function M.run(args,services)
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end
   function love.quit() imgui.love.Shutdown() end
-  function love.textinput(t) imgui.love.TextInput(t) end
+  function love.textinput(t) text_requests=text_requests+1; imgui.love.TextInput(t) end
   local function dims() return {window_w=love.graphics.getWidth(),window_h=love.graphics.getHeight(),control=love.keyboard.isDown('lctrl','rctrl')} end
   function love.keypressed(k)
     imgui.love.KeyPressed(k)

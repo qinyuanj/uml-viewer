@@ -21,8 +21,8 @@ function M.new(imgui,callbacks)
     local a,b=imgui.GetItemRectMin(),imgui.GetItemRectMax(); bounds[key]={x=(a.x+b.x)/2,y=(a.y+b.y)/2,left=a.x,top=a.y,right=b.x,bottom=b.y}
   end
   function api.draw(state)
-    imgui.SetNextWindowPos(imgui.ImVec2(love.graphics.getWidth()-360,12),imgui.ImGuiCond_FirstUseEver)
-    imgui.SetNextWindowSize(imgui.ImVec2(348,700),imgui.ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowPos(imgui.ImVec2_Float(love.graphics.getWidth()-360,12),imgui.ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowSize(imgui.ImVec2_Float(348,700),imgui.ImGuiCond_FirstUseEver)
     if imgui.Begin('Inspector') then
       imgui.TextUnformatted('Namespace tree / Proposals')
       for n,c in ipairs(I.commands(state)) do
