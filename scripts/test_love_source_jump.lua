@@ -14,7 +14,7 @@ return function(frame,state,ui)
     love.graphics.captureScreenshot(function(data) save(name,data:encode('png'):getString()) end)
   end
   if frame==3 then
-    -- Select through actual viewer hit/selection events, not a source callback.
+    -- Selection is deliberately injection-only in this staged wiring test; viewer hit coverage is #66.
     local c=assert(G.get(state.scene,'classes')[1]); local r=G.get(c,'rect')
     love.mousepressed(G.get(r,'x')+10,G.get(r,'y')+10,1,false,1)
   elseif frame==6 then
