@@ -282,7 +282,10 @@ describe('Herdr recovery relaunch',function()
   local relaunch_identity={}
   for key,value in pairs(owned) do relaunch_identity[key]=value end
   relaunch_identity.runner_token='gen-token'
-  relaunch_identity.runner_state='C:/tmp/uml-viewer-A-runner-1.edn'
+  -- Relaunch writes <runner_state>.launch.edn for real. A unique temporary
+  -- name keeps concurrent mutation workers from replacing one shared file.
+  relaunch_identity.runner_state=os.tmpname(); os.remove(relaunch_identity.runner_state)
+  teardown(function() os.remove(relaunch_identity.runner_state..'.launch.edn') end)
 
   local function launch(calls,state,extra)
     local run=fake_cli(calls,state)
