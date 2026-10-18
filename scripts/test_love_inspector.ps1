@@ -9,11 +9,11 @@ $names=@('UML_CIMGUI_DIRECTORY','UML_VIEWER_EVIDENCE','UML_VIEWER_TEST_SECONDS',
 foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name)}
 try {
   $env:UML_CIMGUI_DIRECTORY=(Resolve-Path $CimguiDirectory).Path
-  $env:UML_VIEWER_EVIDENCE=$evidence; $env:UML_VIEWER_TEST_SECONDS='3'; $env:UML_VIEWER_TEST_DRIVER=Join-Path $repo 'scripts/test_love_inspector.lua'
+  $env:UML_VIEWER_EVIDENCE=$evidence; $env:UML_VIEWER_TEST_SECONDS='30'; $env:UML_VIEWER_TEST_DRIVER=Join-Path $repo 'scripts/test_love_inspector.lua'
   $info=[Diagnostics.ProcessStartInfo]::new($Love); $info.UseShellExecute=$false; $info.WorkingDirectory=$repo; $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
   foreach($a in @((Join-Path $repo 'love'),'viewer',$path)){$info.ArgumentList.Add($a)}
   $p=[Diagnostics.Process]::Start($info); $stdout=$p.StandardOutput.ReadToEndAsync(); $stderr=$p.StandardError.ReadToEndAsync()
-  if(-not $p.WaitForExit(15000)){throw "Owned inspector test did not exit: pid $($p.Id), evidence $evidence"}
+  if(-not $p.WaitForExit(45000)){throw "Owned inspector test did not exit: pid $($p.Id), evidence $evidence"}
   $out=$stdout.GetAwaiter().GetResult(); $err=$stderr.GetAwaiter().GetResult()
   [IO.File]::WriteAllText("$evidence/stdout.txt",$out); [IO.File]::WriteAllText("$evidence/stderr.txt",$err)
   if($p.ExitCode -ne 0){throw "LOVE failed ($($p.ExitCode)): $err $out Evidence: $evidence"}

@@ -7,8 +7,8 @@ local Detail=require('uml.application.detail')
 local M={}
 function M.fonts(imgui,path)
   path=path or os.getenv('UML_CJK_FONT') or ((os.getenv('WINDIR') or 'C:/Windows')..'/Fonts/msyh.ttc')
-  local io=imgui.GetIO(); local font=io.Fonts:AddFontFromFileTTF(path,18,nil,io.Fonts:GetGlyphRangesChineseFull())
-  assert(font~=nil,'CJK font could not be loaded: '..path); return font
+  local io=imgui.GetIO(); local font=io.Fonts:AddFontFromFileTTF(path,18,nil,io.Fonts:GetGlyphRangesChineseSimplifiedCommon())
+  assert(font~=nil,'CJK font could not be loaded: '..path); io.FontDefault=font; return font
 end
 function M.new(imgui,callbacks)
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
