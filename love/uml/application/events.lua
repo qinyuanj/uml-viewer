@@ -4,7 +4,9 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local D=require('uml.application.document')
 local H=require('uml.domain.hierarchy')
+local P=require('uml.domain.policy')
 local M={}
+local K,V=E.keyword,E.vector
 local function copy(s) local n={}; for k,v in pairs(s) do n[k]=v end; return n end
 local function rebuild(s)
   if s.document and G.get(s.document,'hierarchical') then
@@ -18,6 +20,57 @@ function M.show_proposal(s,id)
   local n=copy(s); n.focus=E.vector(); n.extra=G.copy(s.extra)
   E.assoc(n.extra,E.keyword('proposal-id'),id or E.nil_value); E.assoc(n.extra,E.keyword('proposal'),id~=nil); E.assoc(n.extra,E.keyword('open-layer'),E.nil_value)
   return rebuild(n)
+end
+local function with_proposals(doc,proposals)
+  local out=G.copy(doc); E.assoc(out,K('proposals'),proposals); return out
+end
+local function persist(s,doc,opts)
+  opts=opts or {}
+  if opts.boundary then doc=D.write_proposals(s.path,doc,opts.boundary) end
+  local n=copy(s); n.document=doc; return rebuild(n)
+end
+-- User creation is the only path that default-names a proposal. The name is a
+-- local timestamp; `opts.now` keeps headless callers deterministic.
+function M.add_proposal(s,opts)
+  opts=opts or {}; if not s.document then return s end
+  local now=opts.now or os.time(); local base='p-'..tostring(now); local id=K(base); local n=0
+  while P.proposal_by_id(s.document,id) do n=n+1; id=K(base..'-'..n) end
+  local proposals=V(); for _,p in ipairs(H.named_proposals(s.document)) do proposals[#proposals+1]=p end
+  proposals[#proposals+1]=G.map{id=id,name=P.timestamp_name(now),layers=V(),notice=P.proposal_notice}
+  local state=copy(s); state.extra=G.copy(s.extra); state.focus=V()
+  E.assoc(state.extra,K('proposal-id'),id); E.assoc(state.extra,K('proposal'),true)
+  return persist(state,with_proposals(s.document,proposals),opts)
+end
+function M.rename_proposal(s,id,new_name,opts)
+  if id==nil or new_name==nil or s.document==nil then return s end
+  local name=tostring(new_name); if name:match('^%s*$') then return s end
+  local proposals=V()
+  for _,p in ipairs(H.named_proposals(s.document)) do
+    local out=G.copy(p); if E.equal(G.get(p,'id'),id) then E.assoc(out,K('name'),name) end
+    proposals[#proposals+1]=out
+  end
+  return persist(s,with_proposals(s.document,proposals),opts)
+end
+function M.delete_proposal(s,id,opts)
+  if id==nil or s.document==nil then return s end
+  local proposals=V()
+  for _,p in ipairs(H.named_proposals(s.document)) do if not E.equal(G.get(p,'id'),id) then proposals[#proposals+1]=p end end
+  local state=copy(s)
+  if E.equal(G.get(s.extra,'proposal-id'),id) then
+    state.extra=G.copy(s.extra); E.assoc(state.extra,K('proposal-id'),E.nil_value); E.assoc(state.extra,K('proposal'),false)
+  end
+  return persist(state,with_proposals(s.document,proposals),opts)
+end
+function M.rename_op(id,raw)
+  if raw==nil then return nil end
+  local name=tostring(raw):match('^%s*(.-)%s*$'); if name=='' then return nil end
+  return G.map{op=K('rename'),id=id,name=name}
+end
+function M.apply_proposal_op(s,op,opts)
+  local kind=G.name(G.get(op,'op'))
+  if kind=='rename' then return M.rename_proposal(s,G.get(op,'id'),G.get(op,'name'),opts) end
+  if kind=='delete' then return M.delete_proposal(s,G.get(op,'id'),opts) end
+  return s
 end
 function M.cycle_declutter(s)
   local n=copy(s); n.extra=G.copy(s.extra); E.assoc(n.extra,E.keyword('declutter'),H.next_declutter(G.get(s.extra,'declutter'))); return rebuild(n)
@@ -81,6 +134,12 @@ function M.layer_id(hit)
   if kind=='class' and G.get(hit,'drill?') then return G.get(hit,'id') end
   if kind=='child' then return G.get(hit,'parent') end
   if kind=='package' and H.proposal_package_id(G.get(hit,'id')) then return G.get(hit,'id') end
+end
+-- Right-click opens the element mail menu for a class, a child row, or a
+-- collapsed proposal package; other selections keep the canvas menu closed.
+function M.element_menu(selection)
+  local kind=G.name(G.get(selection,'kind'))
+  return kind=='class' or kind=='child' or M.layer_id(selection)~=nil
 end
 function M.on_move(s,x,y)
   local n=copy(s); local wx,wy=M.world_xy(s,x,y)

@@ -12,11 +12,27 @@ function M.fonts(imgui,path)
 end
 function M.new(imgui,callbacks)
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
+  local rename_id,menu_id
   local api={}
   local bounds={}
   function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
+  local function set_name(name)
+    name=tostring(name or ''); ffi.fill(buffer,1024,0)
+    for i=1,math.min(#name,1023) do buffer[i-1]=name:byte(i) end
+    buffer[math.min(#name,1023)]=0
+  end
+  local function clicked(button)
+    if imgui.IsMouseClicked_Bool then return imgui.IsMouseClicked_Bool(button) end
+    if imgui.IsMouseClicked then return imgui.IsMouseClicked(button) end
+    return false
+  end
+  local function hovered()
+    if imgui.IsItemHovered_Nil then return imgui.IsItemHovered_Nil() end
+    if imgui.IsItemHovered then return imgui.IsItemHovered() end
+    return false
+  end
   local function remember(key)
     local a,b=imgui.GetItemRectMin(),imgui.GetItemRectMax(); bounds[key]={x=(a.x+b.x)/2,y=(a.y+b.y)/2,left=a.x,top=a.y,right=b.x,bottom=b.y}
   end
@@ -27,11 +43,30 @@ function M.new(imgui,callbacks)
       imgui.TextUnformatted('Namespace tree / Proposals')
       for n,c in ipairs(I.commands(state)) do
         if imgui.Selectable_Bool(c.label..'##diagram-'..n,c.active) and callbacks.choose then callbacks.choose(c.id) end
+        if c.kind=='proposal' and hovered() and clicked(1) then
+          menu_id=c.id
+          if imgui.OpenPopup_Str then imgui.OpenPopup_Str('uml-proposal-menu') end
+        end
         remember(c.id and 'proposal:'..G.name(c.id) or 'real')
+      end
+      if imgui.Button('New Proposal') and callbacks.new_proposal then callbacks.new_proposal() end
+      if imgui.Button('Declutter') and callbacks.declutter then callbacks.declutter() end
+      if imgui.BeginPopup('uml-proposal-menu') then
+        if imgui.MenuItem_Bool('Rename',nil,false,true) then
+          local name
+          for _,c in ipairs(I.commands(state)) do if E.equal(c.id,menu_id) then name=c.label end end
+          rename_id=menu_id; set_name(name); focus=true
+        end
+        if imgui.MenuItem_Bool('Delete',nil,false,true) and callbacks.delete then callbacks.delete(menu_id) end
+        imgui.EndPopup()
       end
       imgui.Separator(); imgui.TextUnformatted('Proposal name')
       if focus then imgui.SetKeyboardFocusHere(); focus=false end
       imgui.InputText('##proposal-name',buffer,1024); remember('proposal-name')
+      if rename_id and imgui.Button('Rename proposal') then
+        if callbacks.rename then callbacks.rename(rename_id,api.name()) end
+        rename_id=nil
+      end
       if callbacks.name_changed then callbacks.name_changed(api.name()) end
       imgui.TextUnformatted('P: namespace tree')
       local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
@@ -62,6 +97,9 @@ function M.new(imgui,callbacks)
           if p then imgui.TextUnformatted(G.get(p,'label') or G.name(id)); local count=0; for _,c in ipairs(G.get(state.scene,'classes') or {}) do if E.equal(id,G.get(c,'package')) then count=count+1 end end; imgui.TextUnformatted('Classes: '..count) end
         end
       end
+      local w,h=love.graphics.getWidth(),love.graphics.getHeight()
+      imgui.SetCursorScreenPos(imgui.ImVec2_Float(w-360+16,h-56))
+      if imgui.Button('Regen') and callbacks.regen then callbacks.regen() end
     end
     imgui.End()
   end
