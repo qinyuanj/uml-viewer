@@ -226,7 +226,6 @@
   {:name "M.in_rect", :namespace "love.uml.application.inspector", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "M.press", :namespace "love.uml.application.inspector", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "M.scroll", :namespace "love.uml.application.inspector", :complexity 5, :coverage 100.0, :crap 5.0}
-  {:name "canonical", :namespace "love.uml.application.ir_generator", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "sites", :namespace "love.uml.application.overlay", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "M.herdr_version_supported", :namespace "love.uml.domain.companion", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "M.probe_herdr", :namespace "love.uml.domain.companion", :complexity 5, :coverage 100.0, :crap 5.0}
