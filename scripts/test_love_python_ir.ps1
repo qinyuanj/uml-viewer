@@ -9,7 +9,7 @@ $testRoot=Join-Path ([IO.Path]::GetTempPath()) ('uml60-python-'+[guid]::NewGuid(
 # Extract the immutable LF fixture used by the independent JVM oracle. The native
 # checkout may use CRLF; Python's original exact backslash-LF rule is preserved.
 $archive=Join-Path $testRoot 'fixture.tar'
-& git -C $repo archive --format=tar "--output=$archive" HEAD python-fixture
+& git -c core.autocrlf=false -C $repo archive --format=tar "--output=$archive" HEAD python-fixture
 if($LASTEXITCODE -ne 0) { throw 'Could not archive the committed Python fixture' }
 & tar -xf $archive -C $testRoot
 if($LASTEXITCODE -ne 0) { throw 'Could not stage the committed Python fixture' }
