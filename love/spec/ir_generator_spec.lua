@@ -1,0 +1,47 @@
+local E=require('uml.edn')
+local G=require('uml.graph')
+local function generator() return require('uml.application.ir_generator') end
+local function get(m,k) return E.get(m,E.keyword(k)) end
+local function scan(root,opts)
+  return E.parse('{:classes [{:id :a :name "A" :ns "demo.a"}] :edges []}')
+end
+describe('IR generator',function()
+  it('scans policy defaults and explicit options through the supplied graph',function()
+    local seen
+    local impl=function(root,opts) seen={root,opts}; return scan() end
+    local doc=generator().document(impl,E.parse('{:title "T"}'))
+    assert.equals('src',seen[1]); assert.is_true(E.equal(E.parse('{:prefix "uml-viewer"}'),seen[2])); assert.equals('T',get(doc,'title'))
+    generator().document(impl,E.parse('{:src "trees" :prefix "demo" :exclude ["vendor"]}'))
+    assert.equals('trees',seen[1]); assert.is_true(E.equal(E.parse('{:prefix "demo" :exclude ["vendor"]}'),seen[2]))
+  end)
+  it('merges explicit sources with per-tree prefixes and combined exclusions',function()
+    local seen={}
+    G.register('generator-test',function(root,opts) seen[#seen+1]={root,opts}; return E.parse('{:classes [] :edges []}') end)
+    generator().document(nil,E.parse('{:lang :generator-test :prefix "app" :exclude ["vendor"] :sources [{:root "one" :prefix "tree" :exclude ["vendor" "build"]} {:src "two"}]}'))
+    assert.equals('one',seen[1][1]); assert.equals('two',seen[2][1])
+    assert.is_true(E.equal(E.parse('{:prefix "app" :ns-prefix "tree" :lang :generator-test :exclude ["vendor" "build"]}'),seen[1][2]))
+  end)
+  it('generates with output precedence and policy path while preserving proposals',function()
+    local p='{:title "T" :out "policy-out" :proposals [{:id :plan :name "Plan" :layers [{:id :one :label "One" :nses [:a]}] :omit [:gone]}]}'
+    local writes={}; local adapter={read=function() return p end,write=function(path,body) writes[path]=E.parse(body) end}
+    assert.equals('explicit',generator().generate(scan,'policy.edn','explicit',adapter))
+    assert.equals('policy.edn',get(writes.explicit,'policy-file'))
+    assert.equals('Plan',get(get(writes.explicit,'proposals')[1],'name'))
+    assert.is_true(E.equal(E.parse('[:gone]'),get(get(writes.explicit,'proposals')[1],'omit')))
+    assert.equals('policy-out',generator().generate(scan,'policy.edn',nil,adapter))
+    p='{:title "T"}'; assert.has_error(function() generator().generate(scan,'policy.edn',nil,adapter) end)
+    local doc=generator().document(scan,E.parse(p)); local _,found=E.get(doc,E.keyword('proposals')); assert.is_false(found)
+  end)
+  it('reports only unassigned namespaces to the warning capability',function()
+    local warnings={}; local adapter={read=function() return '{:packages [{:id :p :nses []}] :diagrams []}' end,write=function() end,warn=function(s) warnings[#warnings+1]=s end}
+    generator().generate(scan,'p.edn','out.edn',adapter)
+    assert.same({'Unassigned namespaces: demo.a'},warnings)
+  end)
+
+  it('emits a generated header and readable EDN',function()
+    local doc=E.parse('{:title "T" :diagrams []}')
+    local text=generator().emit(doc)
+    assert.matches('^;; Generated',text)
+    assert.is_true(E.equal(doc,E.parse(text)))
+  end)
+end)
