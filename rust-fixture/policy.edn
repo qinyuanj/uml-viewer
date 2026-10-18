@@ -1,0 +1,3 @@
+{:title "Rust fixture" :prefix "bookwriter" :lang :rust :hierarchical true
+ :sources [{:lang :rust :root "src" :prefix "bookwriter.rust"}]
+ :foreign [:tauri :serde :std]}

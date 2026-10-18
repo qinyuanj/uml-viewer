@@ -1,0 +1,19 @@
+;; JVM viewer geometry; regenerate via scripts/regenerate-jvm-goldens.ps1
+{:absolute-tolerance 1.0E-6,
+ :version 1,
+ :views
+ [{:classes
+   [{:id :calc, :rect {:h 90, :w 120, :x 68.0, :y 100}}
+    {:id :util, :rect {:h 90, :w 120, :x 68.0, :y 330}}],
+   :edges
+   [{:behind [128.0 190],
+     :curve {:ops [{:op :line, :p [128.0 330.0]}], :start [128.0 190]},
+     :draw-bounds {:h 140.0, :w 0.0, :x 128.0, :y 190},
+     :from :calc,
+     :kind :dependency,
+     :points [[128.0 190] [128.0 330]],
+     :tip [128.0 330.0],
+     :to :util}],
+   :focus [],
+   :packages [{:id :view, :rect {:h 376, :w 180, :x 56, :y 56}}],
+   :size {:h 488, :min-x 0, :min-y 0, :w 292}}]}
