@@ -17,11 +17,15 @@ $null = New-Item -ItemType Directory "$project/.metrics"
 [IO.File]::WriteAllText("$project/first.edn", '{:title "First diagram" :packages [{:label "P" :classes [{:id :target :ns "app.target"}]}]}')
 [IO.File]::WriteAllText("$project/second.edn", '{:title "Second diagram" :packages [{:label "P" :classes [{:id :target :ns "app.target"}]}]}')
 [IO.File]::WriteAllText("$project/.uml-viewer/to-viewer.edn", '{:next-id 1 :queue []}')
-$names = @('UML_CIMGUI_DIRECTORY','UML_VIEWER_EVIDENCE','UML_VIEWER_TEST_SECONDS','UML_VIEWER_TEST_DRIVER','UML_MAIL_TEST_ROOT','UML_MAIL_TEST_TRACE')
+$names = @('UML_CIMGUI_DIRECTORY','UML_VIEWER_EVIDENCE','UML_VIEWER_TEST_SECONDS','UML_VIEWER_TEST_DRIVER','UML_MAIL_TEST_ROOT','UML_MAIL_TEST_TRACE','UML_VIEWER_PROJECT_ROOT')
 $previous = @{}
 foreach ($name in $names) { $previous[$name] = [Environment]::GetEnvironmentVariable($name) }
 try {
     $env:UML_CIMGUI_DIRECTORY = (Resolve-Path $CimguiDirectory).Path
+    # The public launch path (uml-launch.ps1) supplies the project root; a direct
+    # LOVE invocation otherwise falls back to the working directory, as the JVM
+    # implementation did. Pin the isolated project so mailbox IO stays there.
+    $env:UML_VIEWER_PROJECT_ROOT = $project
     $env:UML_VIEWER_EVIDENCE = $evidence
     $env:UML_VIEWER_TEST_SECONDS = '10'
     $env:UML_VIEWER_TEST_DRIVER = Join-Path $repo 'scripts/test_love_mail.lua'
