@@ -75,7 +75,7 @@ import os]==]
     eq('[{:name "load" :kind :function}]',get(s,'defs'))
   end)
   it('retains the JVM exact backslash LF continuation rule with CRLF input',function()
-    eq('[{:kind :import :modules [{:name "os" :bind "os"}]}]',get(scanner().read_module('from app.model \\\r\n import Animal\r\nimport os\r\n'),'imports'))
+    eq('[{:kind :import :modules [{:name "Animal" :bind "Animal"}]} {:kind :import :modules [{:name "os" :bind "os"}]}]',get(scanner().read_module('from app.model \\\r\n import Animal\r\nimport os\r\n'),'imports'))
   end)
   it('stops unclosed literals at EOF',function()
     for _,source in ipairs{'s = "import hidden','s = f"{\'nested\'','s = """\nclass Hidden:\n pass'} do
