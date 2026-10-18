@@ -142,6 +142,17 @@ try {
         }
         exit $code
     }
+    if ($commandArgs -ccontains '--restart') {
+        # Refuse a cross-runtime restart before requiring Clojure or running the
+        # read-only backend preflight. This keeps the refusal independent of the
+        # JVM toolchain that a LOVE session may no longer have.
+        . "$PSScriptRoot/uml-process-identity.ps1"
+        $earlyRecordPath = Join-Path $root '.uml-viewer/viewer-process.json'
+        if (Test-Path -LiteralPath $earlyRecordPath) {
+            $earlyRecord = Get-Content -LiteralPath $earlyRecordPath -Raw | ConvertFrom-Json
+            $null = Assert-UmlRestartRuntime $root $earlyRecord 'jvm'
+        }
+    }
     $cli = Clojure-Command
     # One lightweight JVM implements selection and EDN ownership parsing for
     # both platforms. It loads no Quil and creates no launch manifest or owner.
@@ -158,24 +169,12 @@ try {
     }
     $commandArgs = $forwarded
     if ($commandArgs -ccontains '--restart') {
-        # The launcher and JVM each persist identity. Restart waits for both exact
-        # recorded processes before starting their replacements.
-        $launcherRecord = Join-Path $root '.uml-viewer/viewer-process.json'
-        if (-not (Test-Path -LiteralPath $launcherRecord)) {
-            throw 'No launcher process record; launch through ./uml before restarting.'
-        }
-        $owner = Get-Content -LiteralPath $launcherRecord -Raw | ConvertFrom-Json
-        if (-not $owner.pid -or -not $owner.started) { throw 'Invalid launcher process record; cannot safely restart.' }
-        $old = Get-Process -Id $owner.pid -ErrorAction SilentlyContinue
-        if ($old) {
-            if ($old.StartTime.ToUniversalTime().Ticks.ToString() -ne $owner.started) {
-                throw 'Launcher process identity changed; cannot safely restart.'
-            }
-            Write-Output 'Waiting for the old viewer JVM after :quit-for-restart...'
-            if (-not $old.WaitForExit(30000)) {
-                throw 'Old viewer is still running. Send :quit-for-restart, wait for its exit, then retry ./uml --restart.'
-            }
-        }
+        # The launcher and runtime each persist identity. Restart validates the
+        # recorded runtime first, then waits for both exact recorded processes
+        # before starting their replacements.
+        $owner = Get-UmlLauncherOwner $root
+        $null = Assert-UmlRestartRuntime $root $owner.Record 'jvm'
+        Wait-UmlLauncherOwner $owner 'JVM'
         $jvmRecord = Join-Path $root '.uml-viewer/viewer-jvm.json'
         if (-not (Test-Path -LiteralPath $jvmRecord)) {
             throw 'No viewer JVM process record; cannot safely restart without authoritative JVM identity.'
@@ -234,7 +233,7 @@ try {
         throw 'Background Clojure CLI must be an executable, a .ps1 entry, or an exported module command.'
     }
     @{ executable = $(if ($cli.CommandType -eq 'ExternalScript' -or -not $psCli) { $cli.Source } else { $cli.Name });
-       powershell = $psCli; module = $cli.ModuleName; cwd = $root; log = $log;
+       powershell = $psCli; module = $cli.ModuleName; cwd = $root; log = $log; runtime = 'jvm';
        argv = @('-Sdeps', $deps, '-M', '-m', 'uml-viewer.main.uml-viewer') + $commandArgs } |
         ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $manifest -Encoding utf8
     $info = [Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)

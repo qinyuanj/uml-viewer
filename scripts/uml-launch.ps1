@@ -8,7 +8,8 @@ try {
     $null = New-Item -ItemType Directory -Force -Path $directory
     $record = Join-Path $directory 'viewer-process.json'
     # Retain the exited owner record so a subsequent restart can prove it is gone.
-    @{pid = $PID; started = $owner.StartTime.ToUniversalTime().Ticks.ToString()} |
+    # Runtime provenance prevents a JVM session from being restarted as LOVE.
+    @{pid = $PID; started = $owner.StartTime.ToUniversalTime().Ticks.ToString(); runtime = $launch.runtime} |
         ConvertTo-Json -Compress | Set-Content -LiteralPath $record -Encoding utf8
     $log = [IO.File]::Open($launch.log, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
     $writer = [IO.StreamWriter]::new($log)

@@ -260,3 +260,35 @@ Herdr 是唯一后端；tmux/psmux adapter、pane 恢复 hook 和旧终端桥接
 
 新版本不会自动清理活动 legacy 资源，也不会影响其他项目或共享 Herdr 服务。
 维护者已明确取消双平台完整验收作为退役前置条件；这项决策不改变未验证状态。
+
+### 9.1 运行时身份文件与跨运行时 `--restart`
+
+LOVE viewer（本轮仅 Windows 原生）通过 FFI 调用 `GetCurrentProcessId` /
+`GetProcessTimes`，在启动成功后写入
+`.uml-viewer/viewer-process-identity.json`：
+
+```json
+{"pid":1234,"started":"134367718466930538","runtime":"love","cwd":"C:/project"}
+```
+
+- `started` 是 1601 UTC 起算的 FILETIME 100ns ticks，按完整无符号 64 位十进制
+  字符串保存，避免 Lua number 精度损失；wrapper 与 .NET
+  `Process.StartTime.ToUniversalTime().Ticks`（0001 起算）逐 tick 精确比较，
+  不设毫秒截断或时间窗容差。进程名校验接受 `love` / `lovec`。
+- JVM 仍写 `.uml-viewer/viewer-jvm.json`。wrapper 同时识别两种文件：
+  `./uml --restart`（默认 JVM）只验证 JVM 记录，`./uml --runtime love --restart`
+  只验证 LOVE 记录。
+- 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 增加
+  `runtime` 字段（`jvm` 或 `love`），作为当前会话的权威来源。存在该字段时，
+  另一运行时的陈旧身份文件不影响重启；字段缺失且两种身份文件同时存在时视为
+  含糊并拒绝重启。
+- 跨运行时重启（JVM 会话以 `--runtime love` 重启，或 LOVE 会话以默认 JVM
+  重启）在写 launch manifest 或替换任何 ownership 之前拒绝，并明确提示应使用
+  的 `--runtime`。记录缺失、PID/启动时间不符、进程名不符或身份文件无效同样
+  拒绝；已有身份文件保持原字节，不删除、不改写、不以新进程替代。
+- 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。LOVE 的
+  `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
+  独立 discussion context、视图（focus/proposal/layer/declutter/camera/
+  zoom/selection/detail）与 mailbox cursor，语义与 JVM 实现一致。
+- 跨运行时拒绝规则与身份文件写入由自动化测试覆盖；本轮不包含 macOS
+  LOVE 身份与重启验收。
