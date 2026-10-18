@@ -13,11 +13,14 @@ return function(frame)
       love.graphics.clear(.09,.10,.12,1)
       window.draw(); im.Render(); im.love.RenderDrawLists()
       if draws==6 then
+        local viewport=window.viewport()
+        assert(viewport.scroll_y>0,'target must scroll beyond the first page')
+        assert(viewport.target_visible,'highlighted target must be inside the source viewport')
         love.graphics.captureScreenshot(function(data)
           local f=assert(io.open(os.getenv('UML68_EVIDENCE')..'/source-window.png','wb')); f:write(data:encode('png'):getString()); f:close()
         end)
         local f=assert(io.open(os.getenv('UML68_EVIDENCE')..'/source-window.txt','wb'))
-        f:write(window.view().file..'\nline='..window.view().line..'\nrows='..#window.view().rows..'\n'); f:close()
+        f:write(window.view().file..'\nline='..window.view().line..'\nrows='..#window.view().rows..'\nscroll_y='..viewport.scroll_y..'\ntarget_visible='..tostring(viewport.target_visible)..'\n'); f:close()
       end
     end
   end
