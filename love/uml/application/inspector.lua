@@ -4,6 +4,7 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local H=require('uml.domain.hierarchy')
 local Events=require('uml.application.events')
+local Detail=require('uml.application.detail')
 local M={}
 M.sidebar_w=280
 M.inspector_pad=16
@@ -13,6 +14,18 @@ M.inspector_btn_gap=8
 M.real_diagram_y=40
 M.proposals_label_y=66
 M.proposal_rows_y=82
+M.empty_message=[[Click a component for its card.
+Double-click a component to open it.
+Esc (or ←) goes up a level.
+Scroll to pan; Shift-scroll for horizontal.
+Ctrl+/− zoom 10%; Ctrl+0 resets.
+R reloads.
+Click the real diagram above Proposals,
+or a proposal to show it.]]
+-- The explanation occupies the detail area only while nothing is selected.
+function M.empty_explanation(state)
+  if state==nil or state.selected==nil then return M.empty_message end
+end
 function M.inspector_x(window_w) return window_w-M.sidebar_w+M.inspector_pad end
 function M.inspector_inner_w() return M.sidebar_w-2*M.inspector_pad end
 function M.real_diagram_rect(window_w) return G.rect(M.inspector_x(window_w),M.real_diagram_y,M.inspector_inner_w(),M.inspector_row_h) end
@@ -70,6 +83,15 @@ function M.menu_action(state,op,id,new_name,opts)
   end
   if kind=='delete' then return Events.delete_proposal(state,id,opts) end
   return state
+end
+-- Detail-card wheel input: the card scroll offset is application state, and
+-- clamping uses the rows and the viewport height reported by the adapter.
+function M.scroll(state,delta,view_h)
+  local n={}; for k,v in pairs(state) do n[k]=v end
+  local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
+  local rows=model and Detail.rows(model)
+  n.detail_scroll=Detail.scroll(rows,view_h,state.detail_scroll or 0,delta)
+  return n
 end
 function M.choose(state,id)
   for _,c in ipairs(M.commands(state)) do if (not id and c.kind=='real') or (id and E.equal(id,c.id)) then

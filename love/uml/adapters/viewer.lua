@@ -194,7 +194,9 @@ function M.run(args,services)
   function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
   function love.wheelmoved(x,y)
     imgui.love.WheelMoved(x,y)
-    if not imgui.love.GetWantCaptureMouse() then
+    if inspector and inspector.detail_hovered() then
+      state=inspector.wheel(state,-y)
+    elseif not imgui.love.GetWantCaptureMouse() then
       local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
       state=Events.on_scroll(state,x~=0 and -x or -y,d)
     end
