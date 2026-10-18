@@ -12,6 +12,10 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
         # potentially long launcher wait.
         Wait-UmlLoveIdentity $projectRoot
     }
+    if (-not $env:UML_CIMGUI_DIRECTORY) {
+        $installed = Join-Path $projectRoot '.uml-viewer/cimgui-love-1.90-1'
+        if (Test-Path -LiteralPath "$installed/cimgui/init.lua") { $env:UML_CIMGUI_DIRECTORY = $installed }
+    }
     $candidate = if ($env:UML_LOVE_EXECUTABLE) { $env:UML_LOVE_EXECUTABLE } else { 'love' }
     $love = Get-Command $candidate -ErrorAction SilentlyContinue
     if (-not $love -or $love.CommandType -notin @('Application', 'ExternalScript')) {

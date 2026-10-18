@@ -49,8 +49,9 @@ policy, not the IR. See [Policy](#policy).
 
 ## Run
 
-Needs LOVE 11.5 with the cimgui-love dynamic libraries, PowerShell 7, git,
-Herdr >= 0.9.3, and Python 3.11+. There is no Java or Clojure dependency.
+Needs LOVE 11.5, PowerShell 7, git, Herdr >= 0.9.3, and Python 3.11+.
+The installer provisions pinned cimgui-love 1.90-1 Windows x64 bindings and
+DLL automatically. There is no Java or Clojure dependency.
 
 From **this repo** (the viewer and IR generator are the `love/` tree):
 
@@ -83,9 +84,11 @@ source (default `qinyuanj/uml-viewer`, branch `lua`). Installation and analysis
 use **PowerShell 7** (`pwsh`), including on Unix. Install it yourself from
 https://aka.ms/powershell-install; Windows PowerShell 5.1 is unsupported.
 git, LOVE, Herdr, and Python 3.11+ are also user-installed prerequisites.
-Install LOVE from https://love2d.org/ and extract the matching cimgui-love
-release so `cimgui.dll` and `cimgui/init.lua` sit beside `love.exe` (or set
-`UML_CIMGUI_DIRECTORY`). Set `UML_LOVE_EXECUTABLE` when `love` is not on PATH.
+Install LOVE from https://love2d.org/. The installer downloads and verifies
+cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
+project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
+it with an existing matching binding and DLL. Set `UML_LOVE_EXECUTABLE` when
+`love` is not on PATH.
 Install Herdr >= 0.9.3 from
 https://github.com/herdrdev/herdr/releases. The installer preserves existing
 policies and proposals and does not create a policy or generate a diagram
