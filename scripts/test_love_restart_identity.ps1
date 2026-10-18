@@ -13,7 +13,14 @@ $record = Join-Path $root 'love-args.json'
 $stub = Join-Path $root 'love stub.ps1'
 $previousLove, $previousRecord = $env:UML_LOVE_EXECUTABLE, $env:UML69_RECORD
 try {
-    Set-Content -LiteralPath $stub -Value '$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML69_RECORD' -Encoding utf8
+    Set-Content -LiteralPath $stub -Value @'
+if ($args -contains 'companion-preflight') {
+    & cmd.exe /d /s /c 'echo uml: selected Herdr 0.9.5 at fixture 1>&2'
+    Write-Output 'herdr'
+    exit 0
+}
+$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML69_RECORD
+'@ -Encoding utf8
     $env:UML_LOVE_EXECUTABLE = $stub
     $env:UML69_RECORD = $record
     $scripts = Join-Path $installed 'scripts/uml-command.ps1'
@@ -29,7 +36,7 @@ try {
     while (-not (Test-Path -LiteralPath $record) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
     if (-not (Test-Path -LiteralPath $record)) { throw 'LOVE restart did not invoke the runtime fixture' }
     $argv = Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
-    if (($argv[-3..-1] -join ' ') -cne 'viewer --restart diagram.edn') { throw "unexpected viewer argv: $($argv -join ' ')" }
+    if (($argv[-5..-1] -join ' ') -cne 'viewer --backend herdr --restart diagram.edn') { throw "unexpected viewer argv: $($argv -join ' ')" }
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     while (@(Get-ChildItem -LiteralPath $directory -Filter 'launch-*.json').Count -ne 0 -and
            [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }

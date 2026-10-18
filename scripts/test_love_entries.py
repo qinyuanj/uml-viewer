@@ -37,7 +37,11 @@ class LoveRuntimeEntries(unittest.TestCase):
     def test_love_dispatch_bypasses_clojure_and_companion(self):
         stub = self.root/'love stub.ps1'
         record = self.root/'received.json'
-        stub.write_text("$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_RECORD\n")
+        stub.write_text(
+            "if ($args -contains 'companion-preflight') { "
+            "& cmd.exe /d /s /c 'echo uml: selected Herdr 0.9.5 at fixture 1>&2'; "
+            "Write-Output 'herdr'; exit 0 }\n"
+            "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_RECORD\n")
         env = dict(os.environ, UML_LOVE_EXECUTABLE=str(stub), UML62_RECORD=str(record))
         result = self.invoke('--runtime', 'love', 'diagram with spaces.edn', env=env)
         self.assertEqual(0, result.returncode, result.stderr)
@@ -48,8 +52,53 @@ class LoveRuntimeEntries(unittest.TestCase):
             time.sleep(.05)
         self.assertTrue(record.exists(), result.stdout)
         received = json.loads(record.read_text(encoding='utf-8-sig'))
-        self.assertEqual(['viewer', 'diagram with spaces.edn'], received[-2:])
+        self.assertEqual(['viewer', '--backend', 'herdr', 'diagram with spaces.edn'], received[-4:])
         self.assertFalse((self.root/'.uml-viewer/companion.edn').exists())
+
+    def test_love_preflight_runs_without_clojure_or_jvm(self):
+        stub = self.root/'love stub.ps1'
+        preflight = self.root/'preflight.json'
+        record = self.root/'received.json'
+        stub.write_text(
+            "if ($args -contains 'companion-preflight') { "
+            "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_PREFLIGHT; "
+            "Write-Output 'herdr'; exit 0 }\n"
+            "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_RECORD\n")
+        clojure = self.root/'clojure.ps1'
+        clojure_called = self.root/'clojure-called.txt'
+        clojure.write_text("[IO.File]::WriteAllText('$clojure_called', 'called')\n")
+        tools = self.root/'tools'
+        tools.mkdir()
+        shutil.copyfile(clojure, tools/'clojure.ps1')
+        env = dict(os.environ, UML_LOVE_EXECUTABLE=str(stub), UML62_RECORD=str(record),
+                   UML62_PREFLIGHT=str(preflight), PATH=str(tools)+os.pathsep+os.environ.get('PATH',''))
+        result = self.invoke('--runtime', 'love', '--backend', 'herdr', 'diagram.edn', env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        import time
+        deadline = time.monotonic()+10
+        while not record.exists() and time.monotonic()<deadline:
+            time.sleep(.05)
+        self.assertTrue(preflight.exists(), result.stdout)
+        preflight_args = json.loads(preflight.read_text(encoding='utf-8-sig'))
+        self.assertIn('companion-preflight', preflight_args)
+        # The JVM preflight never runs under the LOVE runtime.
+        self.assertFalse(clojure_called.exists())
+        received = json.loads(record.read_text(encoding='utf-8-sig'))
+        self.assertEqual(['viewer', '--backend', 'herdr', 'diagram.edn'], received[-4:])
+
+    def test_invalid_preflight_output_stops_launch(self):
+        stub = self.root/'love stub.ps1'
+        record = self.root/'received.json'
+        stub.write_text(
+            "if ($args -contains 'companion-preflight') { Write-Output 'not-herdr'; exit 0 }\n"
+            "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML62_RECORD\n")
+        env = dict(os.environ, UML_LOVE_EXECUTABLE=str(stub), UML62_RECORD=str(record))
+        result = self.invoke('--runtime', 'love', 'diagram.edn', env=env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('invalid output', result.stderr)
+        self.assertFalse(record.exists())
+        self.assertFalse(list((self.root/'.uml-viewer').glob('launch-*.json')))
+        self.assertFalse((self.root/'.uml-viewer/viewer-process.json').exists())
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,18 +1,16 @@
-# Isolated LOVE viewer entry. Companion integration belongs to #70; runtime
-# identity and same-runtime --restart are handled here (see #69).
+# Isolated LOVE viewer entry. Companion selection, identity and same-runtime
+# --restart are handled here; the Herdr preflight runs in the LOVE runtime.
 function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     if (-not $IsWindows) { throw 'LOVE viewer tracer currently supports native Windows only.' }
-    if ($viewerArgs -contains '--backend') { throw 'LOVE companion integration is not available yet (#70); omit --backend.' }
     if ($viewerArgs -contains '--restart') {
-        # Validate the saved runtime and wait for the exact old LOVE process
-        # before writing a manifest or creating any replacement ownership.
+        # Validate the saved runtime before running the read-only backend
+        # preflight or waiting for the exact old LOVE process.
         . "$PSScriptRoot/uml-process-identity.ps1"
         $owner = Get-UmlLauncherOwner $projectRoot
         $null = Assert-UmlRestartRuntime $projectRoot $owner.Record 'love'
         # Validate the identity (and refuse a changed live process) before the
-        # potentially long launcher wait, then wait for both exact processes.
+        # potentially long launcher wait.
         Wait-UmlLoveIdentity $projectRoot
-        Wait-UmlLauncherOwner $owner 'LOVE viewer'
     }
     $candidate = if ($env:UML_LOVE_EXECUTABLE) { $env:UML_LOVE_EXECUTABLE } else { 'love' }
     $love = Get-Command $candidate -ErrorAction SilentlyContinue
@@ -32,6 +30,40 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
         return
     }
     if ($viewerArgs.Count -gt 0 -and $viewerArgs[0] -in @('crap', 'mutate')) { throw '--runtime love currently selects viewer or ir; quality dispatch uses the default runtime.' }
+    # One short-lived LOVE process performs read-only Herdr selection. It loads
+    # no viewer, creates no owner/server, and never starts a JVM. Native stderr
+    # carries the selection diagnostic; it must not be merged into the one-line
+    # stdout contract the wrapper validates.
+    $global:LASTEXITCODE = 0
+    $preflightError = [IO.Path]::GetTempFileName()
+    try {
+        $checked = @(& $love.Source (Join-Path $toolRoot 'love') companion-preflight $projectRoot @viewerArgs 2> $preflightError)
+        $preflightExit = $LASTEXITCODE
+        $diagnostic = Get-Content -LiteralPath $preflightError -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -LiteralPath $preflightError -Force -ErrorAction SilentlyContinue
+    }
+    if ($preflightExit -ne 0) {
+        if (-not $diagnostic) { $diagnostic = 'LOVE companion preflight failed without diagnostic.' }
+        throw $diagnostic.Trim()
+    }
+    if ($diagnostic) { [Console]::Error.Write($diagnostic) }
+    $lines = @($checked | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
+    if ($lines.Count -ne 1 -or $lines[0] -cne 'herdr') {
+        throw 'Backend preflight returned invalid output; no viewer was launched.'
+    }
+    # Strip only the exact option pair the preflight consumed, preserving all
+    # other argv literally, then forward explicit Herdr selection to the viewer.
+    $forwarded = @()
+    for ($i = 0; $i -lt $viewerArgs.Count; $i++) {
+        if ($viewerArgs[$i] -ceq '--backend') { $i++ } else { $forwarded += $viewerArgs[$i] }
+    }
+    $viewerArgs = @('--backend', 'herdr') + $forwarded
+    if ($forwarded -contains '--restart') {
+        # Preflight is read-only, so the old process is still verified above and
+        # waited for only now, immediately before replacement.
+        Wait-UmlLauncherOwner $owner 'LOVE viewer'
+    }
     $directory = Join-Path $projectRoot '.uml-viewer'
     $null = New-Item -ItemType Directory -Force -Path $directory
     $manifest = Join-Path $directory ('launch-' + [guid]::NewGuid().ToString('N') + '.json')
@@ -48,6 +80,6 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     foreach ($value in @('-NoProfile', '-File', "$PSScriptRoot/uml-launch.ps1", $manifest)) { $info.ArgumentList.Add($value) }
     $process = [Diagnostics.Process]::Start($info)
     $process.StandardInput.Close()
-    Write-Output "UML LOVE viewer starting (launcher pid $($process.Id)); companion integration pending #70. Log: $log"
+    Write-Output "UML LOVE viewer starting (launcher pid $($process.Id)). Log: $log"
     $global:LASTEXITCODE = 0
 }

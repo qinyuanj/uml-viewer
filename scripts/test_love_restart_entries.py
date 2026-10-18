@@ -88,7 +88,8 @@ class LoveRestartEntries(unittest.TestCase):
     def love_stub(self):
         stub = self.root/'love stub.ps1'
         record = self.root/'love-received.json'
-        stub.write_text('$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML69_RECORD\n')
+        stub.write_text("if ($args -contains 'companion-preflight') { Write-Output 'herdr'; exit 0 }\n"
+                        "$args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML69_RECORD\n")
         return stub, record, {'UML_LOVE_EXECUTABLE': str(stub), 'UML69_RECORD': str(record)}
 
     def clojure_stub(self):
@@ -131,7 +132,7 @@ class LoveRestartEntries(unittest.TestCase):
         self.assertIn('Waiting for the old LOVE viewer', result.stdout)
         self.assertIsNotNone(process.poll(), 'restart returned before the old LOVE process exited')
         received = json.loads(self.await_file(record))
-        self.assertEqual(['viewer', '--restart', 'diagram with spaces.edn'], received[-3:])
+        self.assertEqual(['viewer', '--backend', 'herdr', '--restart', 'diagram with spaces.edn'], received[-5:])
         # A successful relaunch writes a new launcher record, but validation and
         # waiting never rewrite the old runtime identity.
         self.assertEqual(before['identity'], self.love_identity.read_bytes())
