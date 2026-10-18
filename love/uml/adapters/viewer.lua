@@ -6,6 +6,7 @@ local D=require('uml.application.document')
 local Paths=require('uml.adapters.windows_path')
 local Watch=require('uml.adapters.file_watch')
 local Boxes=require('uml.adapters.class_boxes')
+local Edges=require('uml.adapters.edges')
 local Metrics=require('uml.adapters.metrics')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
@@ -46,7 +47,10 @@ function M.run(args)
   end
   function love.draw()
     love.graphics.clear(.09,.10,.12,1)
-    renderer.draw(state.scene,love.graphics.getWidth(),love.graphics.getHeight())
+    local width,height=love.graphics.getWidth(),love.graphics.getHeight()
+    local size=G.get(state.scene,'size'); local scale=math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
+    Edges.draw(imgui,imgui.GetBackgroundDrawList_Nil(),state.scene,0,0,scale)
+    renderer.draw(state.scene,width,height)
     imgui.Render(); imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end
