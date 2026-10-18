@@ -1,0 +1,2 @@
+{:title "TypeScript fixture" :src "src" :prefix "bookwriter"
+ :lang :typescript :hierarchical true :foreign [:markdown-it "@tauri-apps/api/core"]}

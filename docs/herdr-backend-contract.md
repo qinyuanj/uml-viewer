@@ -1,7 +1,11 @@
 # Herdr SessionBackend 契约 — spec #13 / issue #14 产出
 
-本文档记录 Herdr 的能力证据和当前生命周期契约。#23 退役后 Herdr 是原生
-Windows/macOS 唯一 companion 后端；`--backend herdr` 保留为兼容选项。
+本文档记录 Herdr 的能力证据和生命周期契约。**#72 LOVE 切换后，本轮仅支持
+原生 Windows；macOS 不受支持。** 文中 Java/JVM 与 macOS 部分是切换前的实现和
+验收证据；当前实现是 `love/uml/adapters/` 的 LOVE runner/controller，进程创建、
+等待和 OS 单例 lock 通过平台 adapter 提供，ownership、预算、FIFO 与质量门控契约
+保持不变。当前身份文件与重启规则见 §9.1。#23 退役后 Herdr 是唯一 companion
+后端；`--backend herdr` 保留为兼容选项。
 Windows 完整生命周期仅部分原生验收；macOS 端到端验收由 spec #32 完成
 （Herdr 0.9.4，见 §8）。能力实验与端到端验收分开记录；未验证项不按官网
 声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
@@ -260,3 +264,32 @@ Herdr 是唯一后端；tmux/psmux adapter、pane 恢复 hook 和旧终端桥接
 
 新版本不会自动清理活动 legacy 资源，也不会影响其他项目或共享 Herdr 服务。
 维护者已明确取消双平台完整验收作为退役前置条件；这项决策不改变未验证状态。
+
+### 9.1 运行时身份文件与跨运行时 `--restart`
+
+LOVE viewer（本轮仅 Windows 原生）通过 FFI 调用 `GetCurrentProcessId` /
+`GetProcessTimes`，在启动成功后写入
+`.uml-viewer/viewer-process-identity.json`：
+
+```json
+{"pid":1234,"started":"134367718466930538","runtime":"love","cwd":"C:/project"}
+```
+
+- `started` 是 1601 UTC 起算的 FILETIME 100ns ticks，按完整无符号 64 位十进制
+  字符串保存，避免 Lua number 精度损失；wrapper 与 .NET
+  `Process.StartTime.ToUniversalTime().Ticks`（0001 起算）逐 tick 精确比较，
+  不设毫秒截断或时间窗容差。进程名校验接受 `love` / `lovec`。
+- #72 切换后 JVM 实现已删除：wrapper **不再识别**
+  `.uml-viewer/viewer-jvm.json`，`./uml --restart` 只验证 LOVE 记录。
+- 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 增加
+  `runtime` 字段（只允许 `love`），作为当前会话的权威来源。声明 `jvm` 的
+  旧记录被明确拒绝，不以 LOVE 记录猜测替代。
+- 记录缺失、PID/启动时间不符、进程名不符或身份文件无效同样拒绝；已有身份
+  文件保持原字节，不删除、不改写、不以新进程替代。`--runtime jvm` 被拒绝；
+  `--runtime love` 仅作为兼容写法保留。
+- 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。LOVE 的
+  `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
+  独立 discussion context、视图（focus/proposal/layer/declutter/camera/
+  zoom/selection/detail）与 mailbox cursor，语义与 JVM 实现一致。
+- 跨运行时拒绝规则与身份文件写入由自动化测试覆盖；本轮不包含 macOS
+  LOVE 身份与重启验收。

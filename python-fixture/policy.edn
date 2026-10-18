@@ -1,0 +1,2 @@
+{:title "Python fixture" :src "src" :prefix "app"
+ :lang :python :hierarchical true :foreign [:os :typing :json]}

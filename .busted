@@ -1,0 +1,7 @@
+return {
+  default = {
+    lpath = "love/?.lua;love/?/init.lua",
+    ROOT = { "love/spec" },
+    helper = "scripts/pure_test_guard.lua",
+  },
+}

@@ -1,0 +1,43 @@
+runtime=LuaJIT 2.1.1700008891 LOVE=11
+non-fallback-glyph=20013
+non-fallback-glyph=25991
+non-fallback-glyph=20320
+non-fallback-glyph=22909
+text-input-enabled=true
+composition= start=0 length=0
+composition= start=0 length=0
+composition= start=0 length=0
+composition= start=0 length=0
+textinput=中文
+injection=true buffer=中文
+requested-layout=cdata<void *>: 0x08040804 actual=cdata<void *>: 0x08040804
+native-virtual-keys=NIHAO
+composition= start=0 length=0
+composition= start=0 length=0
+composition= start=0 length=0
+composition=n start=1 length=0
+composition=n start=1 length=0
+composition=n start=1 length=0
+composition=n start=1 length=0
+composition=n start=1 length=0
+composition=ni start=2 length=0
+composition=ni start=2 length=0
+composition=ni'h start=4 length=0
+composition=ni'h start=4 length=0
+composition=ni'ha start=5 length=0
+composition=ni'ha start=5 length=0
+composition=ni'ha'o start=7 length=0
+candidate-count=9 selected=0
+selected-candidate=你哈儿
+composition-observed=true
+native-candidate-confirm=SPACE
+composition=ni'ha'o start=7 length=0
+composition=ni'ha'o start=7 length=0
+composition=ni'ha'o start=7 length=0
+composition=ni'ha'o start=7 length=0
+composition= start=0 length=0
+textinput=你哈儿
+after-confirm-buffer=你哈儿
+final-buffer=你哈儿
+candidate-buffer-match=true
+Acceptance requires nonempty native composition and selected IMM candidate equal to entire committed ImGui buffer.

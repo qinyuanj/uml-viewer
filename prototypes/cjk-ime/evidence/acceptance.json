@@ -1,0 +1,53 @@
+{
+  "ticket": 52,
+  "spec": 50,
+  "status": "BLOCKED_HARD_GATE",
+  "recordedAt": "2026-10-18T10:47:34+08:00",
+  "base": "4afab4f2b2117a06086bfd812163962c7c3af84f",
+  "platform": "Windows 11 Pro Insider Preview 10.0.26220, native interactive session 1",
+  "seam": "Isolated LOVE process: rendered CJK glyphs, LOVE textinput/textedited events, visible ImGui InputText buffer and Enter submission",
+  "dependencies": {
+    "love": {
+      "version": "11.5 (Mysterious Mysteries)",
+      "provenance": "preinstalled C:/Program Files/LOVE; no existing viewer launched",
+      "loveExeSha256": "6F97B94FB0193B0A04080A069AF5C0C04A47D92886379A4CB85D8905EBFF93CE",
+      "lovecExeSha256": "243A44E76504DF3EACA801A60C8EFE76B190EEB9B1AA444A7276FB33DF1E0361",
+      "embeddedLuaJIT": "2.1.1700008891"
+    },
+    "cimguiLove": {
+      "version": "1.90-1",
+      "tagObject": "dc2839cddc8d2914f8f4e5007a9262939fa47de3",
+      "url": "https://github.com/apicici/cimgui-love/releases/download/1.90-1/cimgui-love-windows-x64-1.90-1.zip",
+      "archiveSha256": "5CC57755FE01E2A6338778708528A5F5C4F9D7C333F79116913244F0417A6EC1",
+      "dllSha256": "D44012572DA3009DC84BD64D1EE51F067DB59D39442885FCB1C91F2BBB0BBF3D",
+      "upstreamCurrentHome": "https://codeberg.org/apicici/cimgui-love",
+      "notes": "GitHub mirror release pinned deliberately; extracted outside repository into a new empty temporary directory. Lua wrapper and DLL must come from same archive. Nothing vendored."
+    },
+    "font": {
+      "path": "C:/Windows/Fonts/msyh.ttc",
+      "provenance": "preinstalled Microsoft YaHei collection; not redistributed",
+      "sha256": "D79C55E68B1131EEA0CC1C47BE4F572D964F28C682E143DB2AD09C1E4CB07A3F"
+    },
+    "ime": "Installed Microsoft Pinyin: 0804:{86598FB9-66A2-463E-B9C2-AEB906D477AD}{607FDF85-FCC8-4DBD-A365-41296F980C9C}",
+    "otherAvailable": "Lua 5.4.6, busted 2.3.0, .NET 10.0.300, WinLibs GCC/CMake/Ninja; standalone LuaJIT absent from PATH"
+  },
+  "observations": {
+    "red": "Initial harness run rejected an unverified placeholder result with HARD GATE exception.",
+    "glyphs": "FindGlyphNoFallback non-null for U+4E2D U+6587 U+4F60 U+597D; cjk-render.png captures Chinese rendering.",
+    "injection": "love.event.push(textinput, 中文) reached ImGui InputText buffer intact.",
+    "textInput": "love.keyboard.setTextInput(true, 50, 100, 600, 30) completed; hasTextInput true.",
+    "realComposition": "Windows keybd_event virtual keys NIHAO (no Unicode injection) produced LOVE textedited n, ni, ni'h, ni'ha, ni'ha'o.",
+    "candidateCommit": "Native SPACE produced LOVE textinput 你哈儿, with buffer 中文你哈儿.",
+    "submission": "Native RETURN did not trigger ImGui InputText EnterReturnsTrue. submission=false.",
+    "exit": "Probe exited normally; verifier exited 1 rejecting missing real-ime=pass."
+  },
+  "gaps": [
+    "Real IME composition and text commit were observed. Full gate remains unproven because candidate confirmation was not independently verified. EnterReturnsTrue was an extra observation, not a required acceptance condition if submission means IME commit.",
+    "Candidate UI screenshot absent: LOVE framebuffer captures exclude native OS candidate overlay. Candidate choice not independently asserted against displayed candidate UI.",
+    "Clearing the FFI buffer while InputText stayed active did not clear ImGui's edit state; final buffer retained injected 中文 prefix. Do not treat final buffer as a clean independent IME case.",
+    "Probe marks real-ime unverified unconditionally. It is an evidence collector for this failed experiment, not a completed passing acceptance suite.",
+    "No pure logic modules added, therefore no dual-interpreter busted claim."
+  ],
+  "decision": "STOP #52 and dependent work (#62 onward); do not change stack or request manual acceptance. Independent tickets may proceed per coordinator. No GitHub comments or closures made per explicit instruction.",
+  "reproduce": "Extract the pinned archive into a fresh empty external directory, verify archive/DLL hashes, then run ./prototypes/cjk-ime/verify.ps1 -DependencyDirectory <extracted-root>. Requires native interactive Windows desktop and installed Microsoft Pinyin; foreground keyboard events are restricted to the probe's own HWND. Expected result for this probe is failure."
+}

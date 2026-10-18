@@ -1,0 +1,67 @@
+local E=require('uml.edn')
+local Session=require('uml.application.session')
+local function get(m,k) return require('uml.domain.geom').get(m,k) end
+local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return E.parse(s) end
+local function state()
+  local s=require('uml.application.document').new(read('fixtures/jvm-goldens/lua.ir.edn'),1)
+  s.path='C:/project A/examples/uml-viewer.edn'; s.project_root='C:/project A'
+  s.mail_seen=17; s.cam_x=12; s.cam_y=34; s.zoom=1.5
+  s.focus=E.vector{E.keyword('calc')}
+  s.extra=E.parse('{:proposal-id :p :proposal true :open-layer :layer :declutter :arrows}')
+  s.selected=E.parse('{:kind :class :id :calc}'); s.detail_id=E.keyword('calc')
+  s.discussion_context=E.parse('{:context :proposal :proposal-id :p :name "中文"}')
+  return s
+end
+describe('restart session snapshots',function()
+  it('captures path, context, mailbox cursor, proposal view, camera and selection as EDN',function()
+    local snap=Session.snapshot(state())
+    assert.is_true(E.equal(E.parse('{:path "C:/project A/examples/uml-viewer.edn" '
+      ..':discussion-context {:context :proposal :proposal-id :p :name "中文"} :mail-seen 17 '
+      ..':focus [:calc] :proposal-id :p :proposal true :open-layer :layer :declutter :arrows '
+      ..':cam-x 12 :cam-y 34 :zoom 1.5 :selected {:kind :class :id :calc} :detail-id :calc}'),snap))
+    assert.is_true(E.equal(snap,E.parse(E.encode(snap))))
+  end)
+  it('prefers an explicit restart path, then the saved path, then the default diagram',function()
+    local snap=Session.snapshot(state())
+    assert.are.equal('explicit.edn',Session.path('explicit.edn',snap,'examples/uml-viewer.edn'))
+    assert.are.equal('C:/project A/examples/uml-viewer.edn',Session.path(nil,snap,'examples/uml-viewer.edn'))
+    assert.are.equal('examples/uml-viewer.edn',Session.path(nil,nil,'examples/uml-viewer.edn'))
+  end)
+  it('reapplies only valid view targets and restores the mailbox cursor and context',function()
+    local snap=Session.snapshot(state())
+    local restored=Session.restore(require('uml.application.document').new(read('fixtures/jvm-goldens/lua.ir.edn'),2),snap)
+    assert.is_true(E.equal(E.vector{E.keyword('calc')},restored.focus))
+    assert.is_nil(get(restored.extra,'proposal-id')); assert.is_false(get(restored.extra,'proposal'))
+    assert.are.equal(12,restored.cam_x); assert.are.equal(34,restored.cam_y); assert.are.equal(1.5,restored.zoom)
+    assert.is_true(E.equal(E.parse('{:kind :class :id :calc}'),restored.selected))
+    assert.is_true(E.equal(E.keyword('calc'),restored.detail_id))
+    assert.are.equal(17,restored.mail_seen)
+    assert.is_true(E.equal(E.parse('{:context :proposal :proposal-id :p :name "中文"}'),restored.discussion_context))
+  end)
+  it('drops missing focus, proposal, layer, selection and card targets',function()
+    local snap=E.parse('{:path "a.edn" :focus [:missing :deeper] :proposal-id :gone :proposal true '
+      ..':open-layer :gone :cam-x 1 :cam-y 2 :zoom 2 :selected {:kind :class :id :gone} :detail-id :gone :mail-seen 4}')
+    local restored=Session.restore(require('uml.application.document').new(read('fixtures/jvm-goldens/lua.ir.edn'),2),snap)
+    assert.are.equal(0,#restored.focus)
+    assert.is_nil(get(restored.extra,'proposal-id')); assert.is_nil(get(restored.extra,'open-layer'))
+    assert.is_nil(restored.selected); assert.is_nil(restored.detail_id)
+    assert.are.equal(4,restored.mail_seen)
+  end)
+  it('keeps the current discussion context when the snapshot has none and defaults the cursor',function()
+    local current=state(); current.discussion_context=E.parse('{:context :real}'); current.mail_seen=9
+    local restored=Session.restore(current,E.parse('{:path "a.edn" :cam-x 3}'))
+    assert.is_true(E.equal(E.parse('{:context :real}'),restored.discussion_context))
+    assert.are.equal(9,restored.mail_seen)
+  end)
+  it('round-trips session.edn through the file adapter and ignores missing or malformed files',function()
+    local lfs=require('lfs'); local File=require('uml.adapters.session')
+    local root=os.tmpname(); os.remove(root); assert(lfs.mkdir(root))
+    local snap=Session.snapshot(state())
+    assert.is_true(E.equal(snap,File.save(root,snap)))
+    assert.is_true(E.equal(snap,File.read(root)))
+    local f=assert(io.open(root..'/.uml-viewer/session.edn','wb')); f:write('{'); f:close()
+    assert.is_nil(File.read(root))
+    os.remove(root..'/.uml-viewer/session.edn'); assert(lfs.rmdir(root..'/.uml-viewer'))
+    assert(lfs.rmdir(root)); assert.is_nil(File.read(root))
+  end)
+end)
