@@ -25,8 +25,30 @@ function M.new(root,host)
       end
     end
     walk('')
+    if scanner.metadata_paths then
+      local seen={}; for _,file in ipairs(files) do seen[file.path]=true end
+      for _,path in ipairs(scanner.metadata_paths(canonical)) do
+        local f=io.open(path,'rb')
+        if f then
+          local text=f:read('*a'); f:close(); local real=host.canonical(path)
+          if not seen[real] then files[#files+1]={path=real,source=text}; seen[real]=true end
+        end
+      end
+    end
     return canonical,files
   end
-  return {read=read,write=write,snapshot=snapshot,warn=function(s) io.stderr:write(s,'\n') end}
+  local function filenames()
+    local names={}
+    local function walk(path)
+      for _,entry in ipairs(host.entries(root..(path=='' and '' or '/'..path))) do
+        local rel=path=='' and entry.name or path..'/'..entry.name
+        if entry.directory then
+          if entry.name~='.git' and entry.name~='node_modules' and entry.name~='.uml-viewer' and entry.name~='.claude' then walk(rel) end
+        else names[#names+1]=rel end
+      end
+    end
+    walk(''); return names
+  end
+  return {read=read,write=write,snapshot=snapshot,filenames=filenames,warn=function(s) io.stderr:write(s,'\n') end}
 end
 return M
