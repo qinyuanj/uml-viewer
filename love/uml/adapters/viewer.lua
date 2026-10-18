@@ -3,6 +3,7 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local IR=require('uml.domain.ir')
 local D=require('uml.application.document')
+local Events=require('uml.application.events')
 local Paths=require('uml.adapters.windows_path')
 local Watch=require('uml.adapters.file_watch')
 local Boxes=require('uml.adapters.class_boxes')
@@ -21,6 +22,8 @@ function M.run(args)
   local state,renderer,elapsed,frames= nil,nil,0,0
   local evidence=os.getenv('UML_VIEWER_EVIDENCE')
   local test_seconds=tonumber(os.getenv('UML_VIEWER_TEST_SECONDS'))
+  local probe_path=os.getenv('UML_VIEWER_TEST_DRIVER')
+  local probe=probe_path and assert(loadfile(probe_path))()
   local function publish()
     if evidence then local f=assert(io.open(evidence..'/scene-'..state.revision..'.edn','wb')); f:write(E.encode(state.scene)); f:close() end
   end
@@ -42,21 +45,47 @@ function M.run(args)
       end
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
+    if probe then
+      local passed,reason=pcall(probe,frames,state)
+      if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
+    end
     imgui.love.Update(dt); imgui.NewFrame()
     if test_seconds and elapsed>=test_seconds then love.event.quit(0) end
   end
   function love.draw()
     love.graphics.clear(.09,.10,.12,1)
     local width,height=love.graphics.getWidth(),love.graphics.getHeight()
-    local size=G.get(state.scene,'size'); local scale=math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
-    Edges.draw(imgui,imgui.GetBackgroundDrawList_Nil(),state.scene,0,0,scale)
-    renderer.draw(state.scene,width,height)
+    local scale=Events.zoom_of(state)
+    Edges.draw(imgui,imgui.GetBackgroundDrawList_Nil(),state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale)
+    renderer.draw(state.scene,width,height,state)
+    if #state.focus>0 or G.get(state.extra,'open-layer') then love.graphics.setColor(1,1,1,1); love.graphics.print('< Back',12,12) end
     imgui.Render(); imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end
   function love.quit() imgui.love.Shutdown() end
   function love.textinput(t) imgui.love.TextInput(t) end
-  function love.keypressed(k) imgui.love.KeyPressed(k) end
+  local function dims() return {window_w=love.graphics.getWidth(),window_h=love.graphics.getHeight(),control=love.keyboard.isDown('lctrl','rctrl')} end
+  function love.keypressed(k)
+    imgui.love.KeyPressed(k)
+    if not imgui.love.GetWantCaptureKeyboard() then state=Events.on_key(state,k,dims()) end
+  end
+  function love.mousemoved(x,y) if not imgui.love.GetWantCaptureMouse() then state=Events.on_move(state,x,y) end end
+  function love.mousepressed(x,y,button,istouch,presses)
+    imgui.love.MousePressed(button)
+    if button==1 and not imgui.love.GetWantCaptureMouse() then
+      local back=(#state.focus>0 or G.get(state.extra,'open-layer')) and y<44 and x<320
+      state=Events.on_press(state,x,y)
+      if not back and (presses or 1)>=2 then local id=Events.layer_id(state.selected); if id then state=Events.drill(state,id) end end
+    end
+  end
+  function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
+  function love.wheelmoved(x,y)
+    imgui.love.WheelMoved(x,y)
+    if not imgui.love.GetWantCaptureMouse() then
+      local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
+      state=Events.on_scroll(state,x~=0 and -x or -y,d)
+    end
+  end
   function love.keyreleased(k) imgui.love.KeyReleased(k) end
 end
 return M
