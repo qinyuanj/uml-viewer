@@ -1,7 +1,9 @@
 {
   "version": 1,
-  "aliasResultExitCodes": {
-    "crap": [0],
-    "mutate": [0, 3]
+  "standardTools": {
+    "sourceRoots": ["love/uml"],
+    "exclude": [],
+    "crapperOptions": [],
+    "mutatorOptions": ["--max-workers", "3"]
   }
 }
