@@ -116,7 +116,9 @@ function M.poll_mail(state,mailbox,boundary)
   if not state.path then return state end
   while true do
     local cmd=mailbox.take(state.mail_seen or 0); if not cmd then return state end
-    state=M.apply_mail(state,cmd,boundary)
+    local ok,next_state=pcall(M.apply_mail,state,cmd,boundary)
+    if ok then state=next_state
+    else state=copy(state); state.mail_seen=g(cmd,'id'); state.error=tostring(next_state) end
   end
 end
 return M

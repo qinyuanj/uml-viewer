@@ -17,7 +17,8 @@ function M.open(path)
     return cmd
   end
   function api.append(op,extra)
-    local cmd,box=Protocol.append(read(),op,extra); Atomic.write(path,E.encode(box)); return cmd
+    local cmd,box=Protocol.append(read(),op,extra)
+    Atomic.ensure_parent(path); Atomic.write(path,E.encode(box)); return cmd
   end
   function api.last_id() return Protocol.last_id(read()) end
   return api
