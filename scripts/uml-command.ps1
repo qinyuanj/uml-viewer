@@ -26,8 +26,24 @@ try {
     $toolRoot = (Resolve-Path -LiteralPath '.uml-viewer/uml-viewer').Path.Replace('\', '/')
     $escapedRoot = $toolRoot.Replace('"', '\"')
     $deps = '{:deps {uml-viewer/uml-viewer {:local/root "' + $escapedRoot + '"} quil/quil {:mvn/version "4.3.1563"}}}'
+    $runtime = 'jvm'
+    $remaining = @()
+    $runtimeSeen = $false
+    for ($i = 0; $i -lt $commandArgs.Count; $i++) {
+        if ($commandArgs[$i] -ceq '--runtime') {
+            if ($runtimeSeen -or $i + 1 -ge $commandArgs.Count -or $commandArgs[$i + 1] -cnotin @('love', 'jvm')) { throw '--runtime requires exactly one love or jvm value.' }
+            $runtimeSeen = $true
+            $runtime = $commandArgs[++$i]
+        } else { $remaining += $commandArgs[$i] }
+    }
+    $commandArgs = $remaining
     if ($commandArgs.Count -gt 0 -and $commandArgs[0] -in @('-h', '--help')) {
-        Write-Output 'usage: uml [--backend herdr] [--restart | ir | crap | mutate] [args]'; exit 0
+        Write-Output 'usage: uml [--runtime jvm|love] [--backend herdr] [--restart | ir | crap | mutate] [args]'; exit 0
+    }
+    if ($runtime -eq 'love') {
+        . "$PSScriptRoot/uml-love.ps1"
+        Invoke-UmlLove $root $toolRoot $commandArgs
+        exit $LASTEXITCODE
     }
     if ($commandArgs.Count -gt 0 -and $commandArgs[0] -eq 'ir') {
         $name = Split-Path $root -Leaf

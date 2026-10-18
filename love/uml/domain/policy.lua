@@ -26,17 +26,20 @@ function M.unassigned(p,g)
 end
 function M.kind_rank(k) return ({implements=4,inheritance=4,composition=3,aggregation=2,association=1,dependency=0})[k and name(k)] or 0 end
 function M.merge_edges(edges)
-  local groups={}; local out=V()
+  local groups={}; local out=V(); local pairs={}
   for _,e in ipairs(seq(edges)) do
-    local key=E.encode(V{get(e,'from'),get(e,'to')}); local group=groups[key]
-    if not group then group={index=#out+1,violating=false}; groups[key]=group; out[group.index]=e end
+    local pair=V{get(e,'from'),get(e,'to')}
+    local key=E.encode(pair); local group=groups[key]
+    if not group then group={index=#out+1,violating=false}; groups[key]=group; out[group.index]=e; pairs[group.index]=pair end
     group.violating=group.violating or get(e,'violating')==true
     if not group.best or M.kind_rank(get(e,'kind'))>=M.kind_rank(get(group.best,'kind')) then group.best=e end
     local best=drop(group.best,'violating')
     if E.equal(get(best,'kind'),K('dependency')) and group.violating then put(best,'violating',true) end
     out[group.index]=best
   end
-  return out
+  local ordered=V()
+  for _,i in ipairs(require('uml.domain.pair_order').indices(pairs)) do ordered[#ordered+1]=out[i] end
+  return ordered
 end
 function M.collapse_graph(p,g)
   local remap={}; local classes=V(); local foreigns={}; local present={}

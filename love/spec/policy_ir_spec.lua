@@ -81,6 +81,49 @@ describe('policy to IR',function()
     same('[{:from :calc :to :io :kind :dependency :violating true :note "later"}]',p.merge_edges(edn.parse('[{:from :calc :to :io :kind :dependency :violating true} {:from :calc :to :io :kind :dependency :note "later"}]')))
     same('[{:from :calc :to :io :kind :inheritance}]',p.merge_edges(edn.parse('[{:from :calc :to :io :kind :implements :violating true} {:from :calc :to :io :kind :inheritance}]')))
   end)
+  it('preserves JVM grouped directed-pair order in public IR after array-map promotion',function()
+    local p=require('uml.domain.policy')
+    local graph=edn.parse([[{:classes [{:id :app} {:id :model} {:id :dogs} {:id :dogs.kennel} {:id :os} {:id :extra} {:id :fs} {:id :typing} {:id :service} {:id :json} {:id :cli}]
+      :edges [{:from :app :to :model} {:from :dogs :to :model} {:from :dogs :to :dogs.kennel} {:from :dogs.kennel :to :model} {:from :dogs.kennel :to :os} {:from :extra :to :model} {:from :extra :to :os} {:from :fs :to :typing} {:from :service :to :model} {:from :service :to :json} {:from :cli :to :model}]}]])
+    -- Clojure 1.12.0 policy/apply-policy, unchanged Python golden pair order.
+    same('[{:from :fs :to :typing} {:from :dogs.kennel :to :model} {:from :service :to :model} {:from :dogs.kennel :to :os} {:from :app :to :model} {:from :dogs :to :model} {:from :service :to :json} {:from :dogs :to :dogs.kennel} {:from :cli :to :model} {:from :extra :to :model} {:from :extra :to :os}]',edn.get(p.apply_policy(edn.parse('{}'),graph),edn.keyword('edges')))
+  end)
+  it('counts distinct pairs at the eight-entry boundary and keeps duplicate metadata',function()
+    local p=require('uml.domain.policy')
+    local graph=edn.parse('{:classes [{:id :目标/终点}] :edges []}')
+    local classes,edges=edn.get(graph,edn.keyword('classes')),edn.get(graph,edn.keyword('edges'))
+    local names={'团队/计算','a','b','c','d','e','f','g','h'}
+    local function add(n)
+      classes[#classes+1]=edn.parse('{:id :'..n..'}')
+      edges[#edges+1]=edn.parse('{:from :'..n..' :to :目标/终点 :kind :dependency}')
+    end
+    for i=1,8 do add(names[i]) end
+    edges[#edges+1]=edn.parse('{:from :团队/计算 :to :目标/终点 :kind :dependency :note "last" :violating true}')
+    local function pairs_in_ir()
+      local result=edn.vector()
+      for _,e in ipairs(edn.get(p.apply_policy(edn.parse('{}'),graph),edn.keyword('edges'))) do
+        result[#result+1]=edn.vector{edn.get(e,edn.keyword('from')),(edn.get(e,edn.keyword('to')))}
+        if edn.equal(edn.get(e,edn.keyword('from')),edn.keyword(names[1])) then
+          assert.equals('last',edn.get(e,edn.keyword('note')))
+        end
+      end
+      return result
+    end
+    -- Independently captured with Clojure 1.12.0 group-by, including an update.
+    same('[[:团队/计算 :目标/终点] [:a :目标/终点] [:b :目标/终点] [:c :目标/终点] [:d :目标/终点] [:e :目标/终点] [:f :目标/终点] [:g :目标/终点]]',pairs_in_ir())
+    add(names[9])
+    same('[[:b :目标/终点] [:d :目标/终点] [:c :目标/终点] [:f :目标/终点] [:h :目标/终点] [:a :目标/终点] [:团队/计算 :目标/终点] [:g :目标/终点] [:e :目标/终点]]',pairs_in_ir())
+  end)
+  for _,language in ipairs({'lua','rust','typescript','python'}) do
+    it('retains exact '..language..' JVM golden edge vectors through public IR',function()
+      local f=assert(io.open('fixtures/jvm-goldens/'..language..'.ir.edn','rb'))
+      local golden=edn.parse(f:read('*a')); f:close()
+      local pf=assert(io.open(language..'-fixture/policy.edn','rb'))
+      local policy=edn.parse(pf:read('*a')); pf:close()
+      local doc=require('uml.domain.policy').apply_policy(policy,golden)
+      assert.is_true(edn.equal(edn.get(golden,edn.keyword('edges')),edn.get(doc,edn.keyword('edges'))),edn.encode(edn.get(doc,edn.keyword('edges'))))
+    end)
+  end
   it('accepts a timestamp-named proposal without inventing it during IR generation',function()
     local p=require('uml.domain.policy')
     local name=p.timestamp_name(0)
