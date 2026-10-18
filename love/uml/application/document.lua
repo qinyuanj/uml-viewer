@@ -27,7 +27,10 @@ local function compile(diagram)
   translate(scene,math.max(0,40-g(b,'x')),math.max(0,40-g(b,'y')))
   return size(scene)
 end
-function M.compile_view(doc,metrics_root,focus,extra)
+-- snapshots is an optional immutable record array from adapters.metrics.snapshot.
+-- Filesystem roots are resolved by the adapter, never by this pure compiler.
+function M.compile_view(doc,snapshots,focus,extra)
+  if snapshots then doc=require('uml.application.overlay').apply(doc,snapshots) end
   focus=focus or V(); extra=extra or E.map()
   if g(doc,'hierarchical') then
     local view
@@ -49,12 +52,12 @@ function M.compile_view(doc,metrics_root,focus,extra)
   local scene=size(m{diagram=m{title=g(doc,'title')},sections=sections,classes=classes,packages=packages,edges=V()}); put(g(scene,'size'),'h',y); return scene
 end
 -- A rejected reload leaves the last usable scene and timestamp intact for retry.
-function M.new(doc,mtime,focus,extra)
-  return {document=doc,mtime=mtime,focus=focus or V(),extra=extra or E.map(),scene=M.compile_view(doc,nil,focus,extra),revision=1}
+function M.new(doc,mtime,focus,extra,snapshots,metrics_stamp)
+  return {document=doc,mtime=mtime,metrics_stamp=metrics_stamp,focus=focus or V(),extra=extra or E.map(),scene=M.compile_view(doc,snapshots,focus,extra),revision=1}
 end
-function M.reload(state,text,mtime)
-  if mtime==state.mtime then return state,false end
-  local ok,next_state=pcall(function() local doc=require('uml.domain.ir').read_document(text); local s=M.new(doc,mtime,state.focus,state.extra); s.revision=state.revision+1; return s end)
+function M.reload(state,text,mtime,snapshots,metrics_stamp)
+  if mtime==state.mtime and metrics_stamp==state.metrics_stamp then return state,false end
+  local ok,next_state=pcall(function() local doc=require('uml.domain.ir').read_document(text); local s=M.new(doc,mtime,state.focus,state.extra,snapshots,metrics_stamp); s.revision=state.revision+1; return s end)
   if ok then return next_state,true end
   return state,false,tostring(next_state)
 end
