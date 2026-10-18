@@ -32,12 +32,13 @@ describe('Rust reachable graph',function()
   it('matches the independent JVM Rust fixture IR golden',function()
     local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
     local files={}; for _,p in ipairs{'Cargo.toml','src/lib.rs','src/main.rs','src/ignored.rs','src/proto/mod.rs','src/proto/inner/mod.rs','src/rec.rs'} do files[#files+1]={path='C:/fixture/'..p,source=read('rust-fixture/'..p)} end
-    local G=require('uml.graph'); local IR=require('uml.application.ir_generator')
+    local G=require('uml.graph'); local IR=require('uml.application.ir_generator'); local previous=G.lookup('rust')
     G.register('rust',function(_,opts) return rust().scan('C:/fixture/src',opts,files,'C:/fixture') end)
     local adapter={read=function() return read('rust-fixture/policy.edn') end,write=function(_,text)
       assert.is_true(E.equal(E.parse(read('fixtures/jvm-goldens/rust.ir.edn')),E.parse(text)),text)
     end}
-    IR.generate(nil,'policy.edn','out.edn',adapter)
+    local ok,err=pcall(IR.generate,nil,'policy.edn','out.edn',adapter)
+    G.register('rust',previous); assert(ok,err)
   end)
   it('links reachable modules, the binary and commands using parent Cargo metadata',function()
     local g=scan{['Cargo.toml']='[lib]\nname = "demo_lib"\n',['src/lib.rs']='use tauri::Manager;\nmod proto;\n#[tauri::command]\nfn read_text() {}\npub fn run() {}',['src/proto.rs']='pub trait Q {}',['src/main.rs']='fn main() { demo_lib::run(); }',['src/ignored.rs']='pub fn nope() {}'}
