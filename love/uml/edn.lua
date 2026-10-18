@@ -3,6 +3,8 @@
 -- Access maps through get/assoc: keys compare structurally, including vectors.
 -- parse(text) and encode(value) throw on invalid/unsupported input; equal(a,b)
 -- compares EDN semantics (map ordering is irrelevant). Symbols preserve legacy policy.
+-- Numbers use decimal EDN syntax and finite Lua doubles. Integral values outside
+-- [-(2^53-1), 2^53-1] are rejected at both boundaries, never silently rounded.
 local M = {}
 local tags = {}
 for _, name in ipairs({'keyword', 'symbol', 'vector', 'map', 'nil'}) do tags[name] = {kind=name} end
@@ -122,8 +124,21 @@ function M.parse(text)
     if token == 'true' then return true end
     if token == 'false' then return false end
     if token:sub(1,1) == ':' and #token > 1 then return M.keyword(token:sub(2)) end
-    local number=tonumber(token)
-    if number then return number end
+    if token:match('^[+-]?%d') then
+      -- Supported EDN subset: signed decimal integers/floats, optional exponent.
+      -- Ratios, arbitrary-precision suffixes and Lua hexadecimal syntax are unsupported.
+      local mantissa=token:match('^(.-)[eE][+-]?%d+$') or token
+      if not (mantissa:match('^[+-]?%d+$') or mantissa:match('^[+-]?%d+%.%d*$')) then
+        fail('unsupported EDN number '..token)
+      end
+      local number=tonumber(token)
+      if not number then fail('unsupported EDN number '..token) end
+      if number ~= number or number == math.huge or number == -math.huge then fail('non-finite EDN number') end
+      if number == math.floor(number) and (number < -9007199254740991 or number > 9007199254740991) then
+        fail('EDN number outside supported exact integer range [-9007199254740991, 9007199254740991]')
+      end
+      return number
+    end
     if token:match('^[%a_*+!/?<>=.$%%&%-][%w_*+!/?<>=.$%%&:%-]*$') then return M.symbol(token) end
     fail('unsupported token '..token)
   end
@@ -140,6 +155,8 @@ function M.encode(value)
   if kind == 'boolean' then return tostring(value) end
   if kind == 'number' then
     assert(value == value and value ~= math.huge and value ~= -math.huge, 'non-finite EDN number')
+    assert(not (value == math.floor(value) and (value < -9007199254740991 or value > 9007199254740991)),
+      'EDN number outside supported exact integer range [-9007199254740991, 9007199254740991]')
     return string.format('%.17g',value)
   end
   if kind == 'string' then
