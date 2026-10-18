@@ -70,7 +70,8 @@ class LoveRestartEntries(unittest.TestCase):
     def love_process(self, pings=8):
         """Owned native process whose image name is love, not the viewer itself."""
         image = self.root/'love.exe'
-        shutil.copyfile(r'C:\Windows\System32\ping.exe', image)
+        system32 = Path(os.environ.get('SystemRoot', r'C:\Windows'))/'System32'
+        shutil.copyfile(system32/'ping.exe', image)
         process = subprocess.Popen([str(image), '-n', str(pings), '127.0.0.1'],
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    creationflags=NO_WINDOW)
