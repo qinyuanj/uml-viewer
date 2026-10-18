@@ -1,0 +1,11 @@
+use tauri::Manager;
+use serde::Serialize;
+use std::fs;
+mod proto;
+mod rec;
+use self::proto::Q;
+impl proto::Q for u8 {}
+#[tauri::command]
+fn read_text(path: String) -> String { path }
+pub fn run() {}
+fn hidden() {}
