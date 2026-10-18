@@ -9,7 +9,7 @@ function M.commands(scene,selected)
     return out
   end
   for _,e in ipairs(g(scene,'edges') or {}) do
-    local hot=selected and selected(e); local violating=g(e,'violating'); local color=violating and (hot and 0xff7878ff or 0xff5555dd) or (hot and 0xff75c9eb or 0xffaaa49c); local width=violating and (hot and 3.2 or 2) or (hot and 2.2 or 1.4)
+    local hot=selected and selected(e); local violating=g(e,'violating'); local color=violating and (hot and 0xff3040ff or 0xff242ac4) or (hot and 0xff48c4e8 or 0xffa8b89d); local width=violating and (hot and 3.2 or 2) or (hot and 2.2 or 1.4)
     for _,ps in ipairs(g(e,'strokes') or {}) do out[#out+1]={kind='stroke',points=ps,color=color,width=width} end
     if g(e,'head') and g(e,'tip') then out[#out+1]={kind='head',head=G.name(g(e,'head')),tip=g(e,'tip'),behind=g(e,'behind'),color=color,width=width} end
   end; return out
@@ -28,8 +28,8 @@ function M.draw(imgui,list,scene,ox,oy,scale,selected)
     else local p,b=cmd.tip,cmd.behind; local dx,dy=p[1]-b[1],p[2]-b[2]; local len=math.sqrt(dx*dx+dy*dy); if len==0 then dx,dy,len=1,0,1 end; dx,dy=dx/len,dy/len
       local cos,sin=math.cos(math.pi/9),math.sin(math.pi/9)
       local a={p[1]-16*(dx*cos-dy*sin),p[2]-16*(dy*cos+dx*sin)}; local c={p[1]-16*(dx*cos+dy*sin),p[2]-16*(dy*cos-dx*sin)}
-      if cmd.head=='triangle' then triangle(p,a,c,0xff24201c,cmd.color,1.5)
-      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and 0xffeeeeee or 0xff24201c; list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width*scale)
+      if cmd.head=='triangle' then triangle(p,a,c,0xff201c16,cmd.color,1.5)
+      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and 0xffe4ecec or 0xff201c16; list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width*scale)
       else line(p,a,cmd.color,cmd.width); line(p,c,cmd.color,cmd.width) end
     end
   end
