@@ -13,7 +13,7 @@ local function files(root, result)
 end
 
 describe('repository EDN compatibility',function()
-  for _, root in ipairs({'examples','.metrics','lua-fixture','acceptance-evidence'}) do
+  for _, root in ipairs({'examples','.metrics','lua-fixture','acceptance-evidence','fixtures/jvm-goldens','typescript-fixture','rust-fixture','python-fixture'}) do
     for _, path in ipairs(files(root)) do
       it('preserves semantics of '..path,function()
         local f=assert(io.open(path,'rb')); local source=f:read('*a'); f:close()

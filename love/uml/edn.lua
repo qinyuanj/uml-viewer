@@ -48,7 +48,8 @@ end
 local function utf8(code)
   if code < 128 then return string.char(code) end
   if code < 2048 then return string.char(192+math.floor(code/64),128+code%64) end
-  return string.char(224+math.floor(code/4096),128+math.floor(code/64)%64,128+code%64)
+  if code < 65536 then return string.char(224+math.floor(code/4096),128+math.floor(code/64)%64,128+code%64) end
+  return string.char(240+math.floor(code/262144),128+math.floor(code/4096)%64,128+math.floor(code/64)%64,128+code%64)
 end
 function M.parse(text)
   local p, n = 1, #text
@@ -78,7 +79,13 @@ function M.parse(text)
             local hex=text:sub(p,p+3)
             if not hex:match('^%x%x%x%x$') then fail('invalid Unicode escape') end
             local code=tonumber(hex,16); p=p+4
-            if code >= 55296 and code <= 57343 then fail('surrogate escape unsupported') end
+            if code >= 55296 and code <= 56319 then
+              if text:sub(p,p+1) ~= '\\u' then fail('missing low surrogate') end
+              local lowhex=text:sub(p+2,p+5)
+              local low=lowhex:match('^%x%x%x%x$') and tonumber(lowhex,16)
+              if not low or low < 56320 or low > 57343 then fail('invalid low surrogate') end
+              code=65536+(code-55296)*1024+low-56320; p=p+6
+            elseif code >= 56320 and code <= 57343 then fail('unexpected low surrogate') end
             out[#out+1]=utf8(code)
           elseif escapes[c] then out[#out+1]=escapes[c]
           else fail('invalid string escape') end
