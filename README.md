@@ -66,7 +66,7 @@ needed):
 
 ```bash
 cd /path/to/the-project
-curl -fsSL https://raw.githubusercontent.com/qinyuanj/uml-viewer/lua/scripts/get-uml-viewer -o get-uml-viewer
+curl -fsSL https://raw.githubusercontent.com/qinyuanj/uml-viewer/main/scripts/get-uml-viewer -o get-uml-viewer
 chmod +x get-uml-viewer
 ./get-uml-viewer               # fetch, write ./uml, start
 ./uml                          # later fresh starts (returns immediately)
@@ -80,7 +80,7 @@ chmod +x get-uml-viewer
 **gitignored** `.uml-viewer/uml-viewer/` (a nested `.git` there is invisible
 to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
 skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
-source (default `qinyuanj/uml-viewer`, branch `lua`). Installation and analysis
+source (default `qinyuanj/uml-viewer`, branch `main`). Installation and analysis
 use **PowerShell 7** (`pwsh`), including on Unix. Install it yourself from
 https://aka.ms/powershell-install; Windows PowerShell 5.1 is unsupported.
 git, LOVE, Herdr, and Python 3.11+ are also user-installed prerequisites.
@@ -174,7 +174,7 @@ The adapter must preserve argv and the child exit status.
 Every project gets
 [crapper](https://github.com/qinyuanj/crapper) and
 [mutator](https://github.com/qinyuanj/mutator) cloned side by side into
-`.uml-viewer/` (branch `lua`; override with `CRAPPER_REPO_URL`,
+`.uml-viewer/` (branch `main`; override with `CRAPPER_REPO_URL`,
 `CRAPPER_REF`, `MUTATOR_REPO_URL`, `MUTATOR_REF`). The installer always
 fetches both tools, including in repositories that still contain a `deps.edn`
 from the removed Clojure implementation. It then provisions each dispatcher
@@ -184,7 +184,7 @@ fetch either tool is fatal instead of a warning. They need Python 3.11+
 `get-uml-viewer --install-only` to fetch updates; the editable installs use
 the updated source. Native Windows entries run each tool as
 `.venv/Scripts/python.exe -m crapper` (or `-m mutator`); sibling checkouts are
-not on `PATH` and are not used by the dispatcher. The mutator `lua` branch includes
+not on `PATH` and are not used by the dispatcher. The mutator `main` branch includes
 argument-vector test commands and Windows process-tree timeout cleanup. For the
 standalone mutator, WSL2 with Ubuntu remains its recommended Windows setup;
 this recommendation does not apply to companion launch. Keep a WSL project in the
@@ -194,13 +194,13 @@ is recorded in
 [platform acceptance](docs/platform-acceptance.md#mutator-lua-接入复验--2026-10-10).
 The local default-runner fix loads `busted.runner` directly in the selected Lua
 interpreter; it does not require a native Busted executable or a custom
-`--test-command`. Use it with the matching crapper `lua` checkout for LuaRocks
+`--test-command`. Use it with the matching crapper `main` checkout for LuaRocks
 module-path setup. It needs a real `lua5.4` or `lua` executable; interpreter
 `.cmd` / `.bat` shims are resolved by crapper when possible. LuaRocks
 installations also need their `bin` directory on PATH and their Lua module
 directories in `LUA_PATH` / `LUA_CPATH`; a terminal
 opened before these variables were set may need to be reopened. See
-[mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/lua#windows).
+[mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/main#windows).
 
 Analysis always runs from the examined project, forwards individual arguments,
 and preserves the tool's exit status. Standard crapper/mutator invocation is the
