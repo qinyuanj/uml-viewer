@@ -100,6 +100,16 @@ function M.apply_mail(state,cmd,boundary)
     local loaded=boundary.load(path)
     local same=state.path and boundary.canonical(state.path)==boundary.canonical(path)
     s=same and M.restore_session(loaded,state) or loaded
+    if not same then
+      -- A different diagram starts at its root view; browsing state is not
+      -- transferred, but declutter and a proposal that still exists are kept.
+      local old=G.get(state.extra,'declutter'); if old then E.assoc(s.extra,E.keyword('declutter'),old) end
+      local pid=G.get(state.extra,'proposal-id')
+      if pid and has_id(H.named_proposals(loaded.document),pid) then
+        E.assoc(s.extra,E.keyword('proposal-id'),pid); E.assoc(s.extra,E.keyword('proposal'),true)
+      end
+      s.scene=M.compile_view(s.document,s.snapshots,s.focus,s.extra)
+    end
     s.path=path; s.project_root=state.project_root; s.mail_seen=g(cmd,'id')
     s.discussion_context=state.discussion_context; s.waiting=nil
     s.cam_x=s.cam_x or 0; s.cam_y=s.cam_y or 0; s.zoom=s.zoom or 1
