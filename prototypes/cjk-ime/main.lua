@@ -15,13 +15,45 @@ void* ActivateKeyboardLayout(void*, unsigned int);
 void* GetKeyboardLayout(unsigned long);
 ]]
 local user32 = ffi.load('user32')
+ffi.cdef[[
+void* ImmGetContext(void*);
+int ImmReleaseContext(void*, void*);
+unsigned long ImmGetCandidateListW(void*, unsigned long, void*, unsigned long);
+int WideCharToMultiByte(unsigned int, unsigned long, const void*, int, char*, int, void*, void*);
+]]
+local imm32 = ffi.load('imm32')
+local kernel32 = ffi.load('kernel32')
+local confirmedCandidate
+local hwnd
+local record
+local function candidate()
+    local context = imm32.ImmGetContext(hwnd)
+    if context == nil then record('candidate-error=no-IMM-context'); return end
+    local size = imm32.ImmGetCandidateListW(context, 0, nil, 0)
+    if size == 0 then
+        record('candidate-error=ImmGetCandidateListW returned zero bytes')
+    else
+        local data = ffi.new('uint8_t[?]', size)
+        imm32.ImmGetCandidateListW(context, 0, data, size)
+        local words = ffi.cast('uint32_t*', data)
+        local count, selected = tonumber(words[2]), tonumber(words[3])
+        record('candidate-count=' .. count .. ' selected=' .. selected)
+        if count > selected then
+            local offset = tonumber(words[6 + selected])
+            local utf8 = ffi.new('char[1024]')
+            local n = kernel32.WideCharToMultiByte(65001, 0, data + offset, -1, utf8, 1024, nil, nil)
+            if n > 0 then confirmedCandidate = ffi.string(utf8); record('selected-candidate=' .. confirmedCandidate) end
+        end
+    end
+    imm32.ImmReleaseContext(hwnd, context)
+end
 local buffer = ffi.new('char[256]')
 local frame, elapsed, stage = 0, 0, 0
 local title = 'UML ticket 52 isolated IME probe'
 local log = assert(io.open(evidence .. '/events.txt', 'w'))
-local hwnd, oldLayout, font
+local oldLayout, font
 local injection, composition, committed, submitted, captured = false, false, false, false, false
-local function record(s) log:write(s .. '\n'); log:flush() end
+record = function(s) log:write(s .. '\n'); log:flush() end
 local function screenshot(name)
     love.graphics.captureScreenshot(function(data)
         local bytes = data:encode('png')
@@ -89,6 +121,7 @@ function love.update(dt)
         record('native-virtual-keys=NIHAO')
     elseif elapsed > 4 and stage == 2 then
         screenshot('ime-before-confirmation')
+        candidate()
         record('composition-observed=' .. tostring(composition))
         key(0x20); stage = 3
         record('native-candidate-confirm=SPACE')
@@ -99,9 +132,11 @@ function love.update(dt)
         screenshot('ime-after-submission')
         record('final-buffer=' .. ffi.string(buffer))
         local f = assert(io.open(evidence .. '/result.txt', 'w'))
-        f:write('glyphs=pass\ninjection=' .. tostring(injection) .. '\ncomposition=' .. tostring(composition) .. '\ncommit=' .. tostring(committed) .. '\nsubmission=' .. tostring(submitted) .. '\nreal-ime=unverified\n')
+        local matched = confirmedCandidate ~= nil and ffi.string(buffer) == confirmedCandidate
+        record('candidate-buffer-match=' .. tostring(matched))
+        f:write('glyphs=pass\ninjection=' .. tostring(injection) .. '\ncomposition=' .. tostring(composition) .. '\ncommit=' .. tostring(committed) .. '\nsubmission=' .. tostring(submitted) .. '\nreal-ime=' .. ((injection and composition and committed and matched) and 'pass' or 'unverified') .. '\n')
         f:close()
-        record('HARD GATE: candidate UI and complete real IME acceptance require verified evidence; no pass claimed.')
+        record('Acceptance requires nonempty native composition and selected IMM candidate equal to entire committed ImGui buffer.')
         user32.ActivateKeyboardLayout(oldLayout, 0)
         stage = 5
     elseif elapsed > 7 then love.event.quit(0) end
@@ -110,8 +145,8 @@ function love.draw()
     imgui.SetNextWindowSize(imgui.ImVec2_Float(760, 260))
     imgui.Begin('CJK / IME feasibility')
     imgui.TextUnformatted('中文 你好')
-    if frame < 5 then imgui.SetKeyboardFocusHere() end
-    if imgui.InputText('Proposal', buffer, 256, imgui.ImGuiInputTextFlags_EnterReturnsTrue) then
+    if frame < 5 or (stage == 1 and elapsed < 1.3) then imgui.SetKeyboardFocusHere() end
+    if imgui.InputText(stage == 0 and 'Injected text' or 'Native IME text', buffer, 256, imgui.ImGuiInputTextFlags_EnterReturnsTrue) then
         submitted = true; record('input-submitted=' .. ffi.string(buffer))
     end
     imgui.End()
@@ -122,6 +157,7 @@ function love.quit()
     log:close(); imgui.love.Shutdown()
 end
 function love.errorhandler(message)
+    if oldLayout then user32.ActivateKeyboardLayout(oldLayout, 0) end
     record('ERROR=' .. tostring(message))
     local f = io.open(evidence .. '/failure.txt', 'w')
     if f then f:write(tostring(message)); f:close() end
