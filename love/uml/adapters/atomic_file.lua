@@ -30,6 +30,22 @@ local function replace(source,target)
   if ok == true or ok == 0 then return true end
   return nil,'atomic replacement failed (PowerShell exit '..tostring(code or ok)..')'
 end
+function M.ensure_parent(path)
+  local parent=path:match('^(.*)[/\\]'); if not parent or parent=='' then return end
+  if windows then
+    local script="$ErrorActionPreference='Stop'; [void][IO.Directory]::CreateDirectory([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"..base64(parent).."')))"
+    local ok,_,code=os.execute('pwsh -NoProfile -NonInteractive -EncodedCommand '..base64(script:gsub('.',function(c) return c..'\0' end)))
+    assert(ok==true or ok==0,'mailbox directory creation failed: '..tostring(code or ok))
+  else
+    local lfs=require('lfs')
+    local function mkdir(p)
+      if lfs.attributes(p,'mode')=='directory' then return end
+      local up=p:match('^(.*)/'); if up and up~='' then mkdir(up) end
+      assert(lfs.mkdir(p))
+    end
+    mkdir(parent)
+  end
+end
 -- Optional replace callback is the OS boundary (for failure-injection checks).
 function M.write(path,bytes,replace_file)
   -- os.tmpname reserves a unique name; use its basename next to the target to

@@ -72,6 +72,7 @@ function M.on_key(s,key,dims)
     if G.get(s.extra,'open-layer') or #(s.focus or {})>0 then return M.back(s) end
     local n=copy(s); n.selected=nil; return n
   end
+  if key=='p' or key=='P' then return M.show_proposal(s,nil) end
   if key=='r' then local n=copy(s); n.waiting=nil; n.mtime=0; n.metrics_stamp=nil; return n end
   return s
 end
