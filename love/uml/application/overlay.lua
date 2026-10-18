@@ -27,7 +27,7 @@ function M.load(files)
         for _,entry in ipairs(g(data,'entries') or {}) do local ns=g(entry,'namespace'); if ns then crap[ns]=crap[ns] or {}; crap[ns][#crap[ns]+1]=entry end end
       else
         local ns=g(data,'namespace'); local source=g(data,'source')
-        if not ns and source then ns=source:gsub('\\','/'):gsub('^src/',''):gsub('%.[^%.]+$',''):gsub('/','.'):gsub('_','-') end
+        if not ns and source then ns=source:gsub('\\','/'):gsub('^src/',''):gsub('%.[^%.]+$',''):gsub('/','.') end
         if ns then mutate[ns]=data end
       end
     end
