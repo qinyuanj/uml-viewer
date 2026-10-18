@@ -16,10 +16,12 @@ local function screenshot(name)
 end
 local proposal_count
 return function(frame,state,ui)
+  if frame==1 then love.window.requestAttention(true); love.mouse.setPosition(20,20) end
   if not (ui and ui.inspector) then failed=failed or 'viewer did not expose the inspector adapter'; love.event.quit(1); return end
-  local ins=ui.inspector; local io=ui.imgui.GetIO()
+  local ins=ui.inspector
   local function bounds(key) return ins.bounds()[key] end
-  local function pin(key) local b=bounds(key); if b then io:AddMousePosEvent(b.x,b.y) else failed=failed or ('missing inspector row '..key) end; return b end
+  local function pin(key) local b=bounds(key); if b then love.mousemoved(b.x,b.y) else failed=failed or ('missing inspector row '..key) end; return b end
+  local function click(button) love.mousepressed(0,0,button); love.mousereleased(0,0,button) end
   if frame==2 then
     check(ins.empty_rendered()==true,'empty-inspector explanation was not drawn')
     screenshot('inspector-empty.png')
@@ -28,7 +30,7 @@ return function(frame,state,ui)
     state.detail_scroll=0
   elseif frame==5 then
     local d=ins.detail(); check(d.rect~=nil,'detail card bounds missing')
-    if d.rect then io:AddMousePosEvent((d.rect.left+d.rect.right)/2,(d.rect.top+d.rect.bottom)/2) end
+    if d.rect then love.mousemoved((d.rect.left+d.rect.right)/2,(d.rect.top+d.rect.bottom)/2) end
   elseif frame==6 then
     check(ins.detail_hovered()==true,'pointer over the detail card was not detected')
     love.wheelmoved(0,-4)
@@ -53,16 +55,12 @@ return function(frame,state,ui)
     proposal_count=#I.commands(state)
     pin('new-proposal')
   elseif frame==13 then
-    io:AddMouseButtonEvent(0,true)
-  elseif frame==14 then
-    io:AddMouseButtonEvent(0,false)
+    click(1)
   elseif frame==16 then
     check(#I.commands(state)==proposal_count+1,'New Proposal must add one row')
     pin('proposal:plan')
   elseif frame==17 then
-    io:AddMouseButtonEvent(1,true)
-  elseif frame==18 then
-    io:AddMouseButtonEvent(1,false)
+    click(2)
   elseif frame==20 then
     check(ui.inspector.menu_open()==true,'proposal Rename/Delete menu did not open')
   elseif frame==22 then

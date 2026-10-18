@@ -22,12 +22,15 @@ end
 
 describe('repository EDN compatibility',function()
   for _, root in ipairs({'examples','.metrics','lua-fixture','acceptance-evidence','fixtures/jvm-goldens','typescript-fixture','rust-fixture','python-fixture'}) do
-    for _, path in ipairs(files(root)) do
-      it('preserves semantics of '..path,function()
-        local f=assert(io.open(open_path(path),'rb')); local source=f:read('*a'); f:close()
-        local value=edn.parse(source)
-        assert.is_true(edn.equal(value,edn.parse(edn.encode(value))))
-      end)
+    -- Mutation workers exclude metrics and other generated trees by design.
+    if lfs.attributes(root,'mode') == 'directory' then
+      for _, path in ipairs(files(root)) do
+        it('preserves semantics of '..path,function()
+          local f=assert(io.open(open_path(path),'rb')); local source=f:read('*a'); f:close()
+          local value=edn.parse(source)
+          assert.is_true(edn.equal(value,edn.parse(edn.encode(value))))
+        end)
+      end
     end
   end
 end)

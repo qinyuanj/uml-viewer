@@ -43,14 +43,18 @@ describe('viewer metrics overlay',function()
     local cs=g(require('uml.application.overlay').apply(doc,files),'classes')
     assert.are.same({5,3,3,4},{g(cs[1],'cc'),g(cs[2],'cc'),g(cs[3],'cc'),g(cs[4],'cc')})
   end)
-  it('loads real standard-tool Lua fixtures through the scanned namespace',function()
-    local function file(p) local f=assert(io.open(p,'rb')); local t=f:read('*a'); f:close(); return snapshot(p,t) end
-    local files={file('lua-fixture/.metrics/crap.edn'),file('lua-fixture/.metrics/mutate/calc.util.edn')}
-    local c=classes(scene(fixture:gsub(':id :calc ',':id :util '),files))[1]
-    assert.are.equal(4,g(g(c,'crap'),'mu')); assert.are.equal(3,g(c,'killed')); assert.are.equal(3,g(c,'survived')); assert.are.equal(2,g(c,'uncovered')); assert.are.equal(8,g(c,'sites')); assert.is_true(math.abs(g(c,'coverage')-.6666666666666667)<1e-12)
-    local ops={}; for _,op in ipairs(g(c,'ops')) do ops[g(op,'name')]=op end
-    assert.is_true(g(ops.between,'private')); assert.are.equal(0,g(ops['M.untested'],'coverage')); assert.are.equal(0,g(ops['M.untested'],'killed'))
-  end)
+  -- Mutation overlays intentionally omit generated .metrics trees.
+  if require('lfs').attributes('lua-fixture/.metrics/crap.edn','mode') == 'file'
+      and require('lfs').attributes('lua-fixture/.metrics/mutate/calc.util.edn','mode') == 'file' then
+    it('loads real standard-tool Lua fixtures through the scanned namespace',function()
+      local function file(p) local f=assert(io.open(p,'rb')); local t=f:read('*a'); f:close(); return snapshot(p,t) end
+      local files={file('lua-fixture/.metrics/crap.edn'),file('lua-fixture/.metrics/mutate/calc.util.edn')}
+      local c=classes(scene(fixture:gsub(':id :calc ',':id :util '),files))[1]
+      assert.are.equal(4,g(g(c,'crap'),'mu')); assert.are.equal(3,g(c,'killed')); assert.are.equal(3,g(c,'survived')); assert.are.equal(2,g(c,'uncovered')); assert.are.equal(8,g(c,'sites')); assert.is_true(math.abs(g(c,'coverage')-.6666666666666667)<1e-12)
+      local ops={}; for _,op in ipairs(g(c,'ops')) do ops[g(op,'name')]=op end
+      assert.is_true(g(ops.between,'private')); assert.are.equal(0,g(ops['M.untested'],'coverage')); assert.are.equal(0,g(ops['M.untested'],'killed'))
+    end)
+  end
   it('IO adapter discovers parent metrics and fingerprints add, change and delete',function()
     local data={['/p/.metrics/crap.edn']='{:entries []}', ['/p/.metrics/mutate/nested/a.edn']='{:namespace "a"}'}
     local times={['/p/.metrics/crap.edn']='1',['/p/.metrics/mutate/nested/a.edn']='2'}

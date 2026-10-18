@@ -28,7 +28,7 @@ end
 -- The path is retained so R can still load an explicitly supplied diagram.
 function M.waiting_state(path,mail_seen)
   return {path=path,mtime=0,metrics_stamp=nil,waiting=true,
-    scene={classes=E.vector(),packages=E.vector(),edges=E.vector(),sections=E.vector(),
+    scene=G.map{classes=E.vector(),packages=E.vector(),edges=E.vector(),sections=E.vector(),
       size=G.map{w=800,h=600},diagram=G.map{title='UML'}},
     focus=E.vector(),extra=E.map(),mail_seen=mail_seen or 0}
 end

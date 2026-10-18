@@ -4,8 +4,10 @@
 local ffi=require('ffi')
 local Identity=require('uml.domain.identity')
 local Atomic=require('uml.adapters.atomic_file')
+if not pcall(ffi.typeof,'UML_FILETIME') then
+  ffi.cdef[[typedef struct { unsigned long dwLowDateTime; unsigned long dwHighDateTime; } UML_FILETIME;]]
+end
 ffi.cdef[[
-typedef struct { unsigned long dwLowDateTime; unsigned long dwHighDateTime; } UML_FILETIME;
 unsigned long GetCurrentProcessId(void);
 void* GetCurrentProcess(void);
 int GetProcessTimes(void*,UML_FILETIME*,UML_FILETIME*,UML_FILETIME*,UML_FILETIME*);

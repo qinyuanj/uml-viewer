@@ -1,18 +1,18 @@
 {:entries [
-  {:name "M.run", :namespace "love.uml.adapters.viewer", :complexity 74, :coverage 0.0, :crap 5550.0}
+  {:name "M.run", :namespace "love.uml.adapters.viewer", :complexity 80, :coverage 0.0, :crap 6480.0}
   {:name "M.new", :namespace "love.uml.adapters.inspector", :complexity 73, :coverage 0.0, :crap 5402.0}
   {:name "M.new", :namespace "love.uml.adapters.project_files", :complexity 27, :coverage 0.0, :crap 756.0}
   {:name "M.run_child", :namespace "love.uml.adapters.recovery", :complexity 20, :coverage 3.0303, :crap 384.7272}
   {:name "M.run", :namespace "love.uml.main.ir_generator", :complexity 15, :coverage 0.0, :crap 240.0}
+  {:name "start_script", :namespace "love.uml.adapters.process", :complexity 14, :coverage 0.0, :crap 210.0}
   {:name "selected_target", :namespace "love.uml.application.document", :complexity 18, :coverage 18.1818, :crap 195.4577}
   {:name "M.controller_loop", :namespace "love.uml.adapters.recovery", :complexity 14, :coverage 4.1667, :crap 186.5065}
-  {:name "start_script", :namespace "love.uml.adapters.process", :complexity 13, :coverage 0.0, :crap 182.0}
   {:name "M.run", :namespace "love.uml.adapters.process", :complexity 14, :coverage 8.3333, :crap 164.9701}
+  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 158, :coverage 93.5484, :crap 164.7037}
   {:name "M.owner_native", :namespace "love.uml.adapters.process", :complexity 13, :coverage 4.0, :crap 162.5204}
-  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 153, :coverage 93.1373, :crap 160.566}
   {:name "M.cancel", :namespace "love.uml.adapters.recovery", :complexity 13, :coverage 5.2632, :crap 156.6954}
-  {:name "M.owner", :namespace "love.uml.adapters.process", :complexity 12, :coverage 6.6667, :crap 129.0772}
-  {:name "M.start_attached", :namespace "love.uml.adapters.process", :complexity 11, :coverage 3.8462, :crap 118.5684}
+  {:name "M.owner", :namespace "love.uml.adapters.process", :complexity 12, :coverage 7.1429, :crap 127.2943}
+  {:name "M.start_attached", :namespace "love.uml.adapters.process", :complexity 11, :coverage 4.0, :crap 118.0531}
   {:name "M.start", :namespace "love.uml.adapters.recovery", :complexity 10, :coverage 4.7619, :crap 96.3838}
   {:name "M.new", :namespace "love.uml.adapters.source_window", :complexity 24, :coverage 52.9412, :crap 84.0268}
   {:name "base64", :namespace "love.uml.adapters.atomic_file", :complexity 8, :coverage 0.0, :crap 72.0}
@@ -24,9 +24,12 @@
   {:name "M.scan", :namespace "love.uml.rust_language.graph_rust", :complexity 55, :coverage 100.0, :crap 55.0}
   {:name "M.parse", :namespace "love.uml.edn", :complexity 53, :coverage 97.3684, :crap 53.0512}
   {:name "place", :namespace "love.uml.engine.layout", :complexity 52, :coverage 100.0, :crap 52.0}
+  {:name "M.run", :namespace "love.uml.adapters.companion_worker", :complexity 44, :coverage 85.2941, :crap 50.1572}
+  {:name "M.spawn_native", :namespace "love.uml.adapters.process", :complexity 7, :coverage 4.1667, :crap 50.1266}
   {:name "paint", :namespace "love.uml.application.overlay", :complexity 48, :coverage 100.0, :crap 48.0}
   {:name "M.route", :namespace "love.uml.engine.route", :complexity 45, :coverage 100.0, :crap 45.0}
   {:name "candidates", :namespace "love.uml.engine.route", :complexity 44, :coverage 100.0, :crap 44.0}
+  {:name "launch_result_path", :namespace "love.uml.adapters.process", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "M.rows", :namespace "love.uml.application.detail", :complexity 40, :coverage 100.0, :crap 40.0}
   {:name "M.view_at", :namespace "love.uml.domain.hierarchy", :complexity 40, :coverage 100.0, :crap 40.0}
   {:name "packaged_document", :namespace "love.uml.domain.policy", :complexity 38, :coverage 100.0, :crap 38.0}
@@ -34,6 +37,7 @@
   {:name "M.scan", :namespace "love.uml.typescript_language.graph_typescript", :complexity 37, :coverage 100.0, :crap 37.0}
   {:name "M.new", :namespace "love.uml.adapters.class_boxes", :complexity 35, :coverage 100.0, :crap 35.0}
   {:name "M.win_quote", :namespace "love.uml.domain.text", :complexity 6, :coverage 7.6923, :crap 34.315}
+  {:name "M.spawn_detached", :namespace "love.uml.adapters.process", :complexity 6, :coverage 9.0909, :crap 33.0473}
   {:name "M.with_gate", :namespace "love.uml.adapters.recovery", :complexity 6, :coverage 9.0909, :crap 33.0473}
   {:name "M.read_module", :namespace "love.uml.typescript_language.graph_typescript", :complexity 33, :coverage 100.0, :crap 33.0}
   {:name "M.commands", :namespace "love.uml.adapters.class_boxes", :complexity 32, :coverage 100.0, :crap 32.0}
@@ -41,21 +45,23 @@
   {:name "M.try_acquire", :namespace "love.uml.adapters.os_lock", :complexity 6, :coverage 11.1111, :crap 31.284}
   {:name "M.read_module", :namespace "love.uml.lua_language.graph_lua", :complexity 31, :coverage 100.0, :crap 31.0}
   {:name "replace", :namespace "love.uml.adapters.atomic_file", :complexity 5, :coverage 0.0, :crap 30.0}
+  {:name "process_api", :namespace "love.uml.adapters.process", :complexity 5, :coverage 0.0, :crap 30.0}
   {:name "M.decide", :namespace "love.uml.domain.recovery", :complexity 29, :coverage 94.9153, :crap 29.1106}
   {:name "M.on_key", :namespace "love.uml.application.events", :complexity 29, :coverage 100.0, :crap 29.0}
   {:name "M.preflight_checks", :namespace "love.uml.domain.companion", :complexity 28, :coverage 100.0, :crap 28.0}
+  {:name "factory", :namespace "love.uml.adapters.companion_lifecycle", :complexity 7, :coverage 25.0, :crap 27.6719}
   {:name "M.proposal_view", :namespace "love.uml.domain.hierarchy", :complexity 27, :coverage 100.0, :crap 27.0}
   {:name "M.acquire", :namespace "love.uml.adapters.os_lock", :complexity 6, :coverage 16.6667, :crap 26.8333}
   {:name "M.zoom_dir", :namespace "love.uml.application.events", :complexity 26, :coverage 100.0, :crap 26.0}
   {:name "skip_string", :namespace "love.uml.python_language.graph_python", :complexity 25, :coverage 100.0, :crap 25.0}
   {:name "M.read_module", :namespace "love.uml.python_language.graph_python", :complexity 24, :coverage 100.0, :crap 24.0}
-  {:name "M.at", :namespace "love.uml.engine.hit", :complexity 23, :coverage 90.9091, :crap 23.3974}
+  {:name "M.poll", :namespace "love.uml.adapters.companion_worker", :complexity 23, :coverage 100.0, :crap 23.0}
   {:name "M.commands", :namespace "love.uml.adapters.edges", :complexity 23, :coverage 100.0, :crap 23.0}
   {:name "M.on_scroll", :namespace "love.uml.application.events", :complexity 23, :coverage 100.0, :crap 23.0}
+  {:name "M.at", :namespace "love.uml.engine.hit", :complexity 23, :coverage 100.0, :crap 23.0}
   {:name "M.layout", :namespace "love.uml.engine.layout", :complexity 23, :coverage 100.0, :crap 23.0}
   {:name "M.observe", :namespace "love.uml.domain.herdr", :complexity 22, :coverage 91.3043, :crap 22.3182}
   {:name "M.restore_session", :namespace "love.uml.application.document", :complexity 22, :coverage 100.0, :crap 22.0}
-  {:name "factory", :namespace "love.uml.adapters.companion_lifecycle", :complexity 6, :coverage 25.0, :crap 21.1875}
   {:name "M.new", :namespace "love.uml.adapters.metrics", :complexity 20, :coverage 85.7143, :crap 21.1662}
   {:name "cells", :namespace "love.uml.application.detail", :complexity 21, :coverage 100.0, :crap 21.0}
   {:name "M.scan", :namespace "love.uml.lua_language.graph_lua", :complexity 21, :coverage 100.0, :crap 21.0}
@@ -63,7 +69,6 @@
   {:name "love_executable", :namespace "love.uml.adapters.companion_lifecycle", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "M.fonts", :namespace "love.uml.adapters.inspector", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "api", :namespace "love.uml.adapters.os_lock", :complexity 4, :coverage 0.0, :crap 20.0}
-  {:name "process_api", :namespace "love.uml.adapters.process", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "read_json", :namespace "love.uml.adapters.process", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "ffi_file_api", :namespace "love.uml.adapters.recovery", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "M.canonical", :namespace "love.uml.adapters.windows_path", :complexity 4, :coverage 0.0, :crap 20.0}
@@ -73,7 +78,6 @@
   {:name "get", :namespace "love.uml.main.ir_generator", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "regex_end", :namespace "love.uml.typescript_language.graph_typescript", :complexity 20, :coverage 100.0, :crap 20.0}
   {:name "statement_end", :namespace "love.uml.typescript_language.graph_typescript", :complexity 20, :coverage 100.0, :crap 20.0}
-  {:name "M.spawn_detached", :namespace "love.uml.adapters.process", :complexity 5, :coverage 16.6667, :crap 19.4676}
   {:name "M.pool_crap", :namespace "love.uml.domain.config", :complexity 19, :coverage 100.0, :crap 19.0}
   {:name "M.merge_scans", :namespace "love.uml.graph", :complexity 19, :coverage 100.0, :crap 19.0}
   {:name "M.apply_mail", :namespace "love.uml.application.document", :complexity 18, :coverage 100.0, :crap 18.0}
@@ -106,6 +110,7 @@
   {:name "M.member_source", :namespace "love.uml.source", :complexity 13, :coverage 100.0, :crap 13.0}
   {:name "M.pattern_start", :namespace "love.uml.source", :complexity 13, :coverage 100.0, :crap 13.0}
   {:name "mask", :namespace "love.uml.typescript_language.graph_typescript", :complexity 13, :coverage 100.0, :crap 13.0}
+  {:name "read", :namespace "love.uml.adapters.companion_worker", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "ps_argv", :namespace "love.uml.adapters.process", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "win_argv", :namespace "love.uml.adapters.process", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "M.apply_metrics", :namespace "love.uml.application.overlay", :complexity 12, :coverage 100.0, :crap 12.0}
@@ -134,8 +139,8 @@
   {:name "M.prepare_scene", :namespace "love.uml.engine.compose", :complexity 10, :coverage 100.0, :crap 10.0}
   {:name "hit", :namespace "love.uml.engine.route", :complexity 10, :coverage 100.0, :crap 10.0}
   {:name "mask", :namespace "love.uml.lua_language.graph_lua", :complexity 10, :coverage 100.0, :crap 10.0}
-  {:name "M.executable", :namespace "love.uml.adapters.claude", :complexity 9, :coverage 77.7778, :crap 9.8889}
   {:name "M.restart", :namespace "love.uml.adapters.companion_lifecycle", :complexity 3, :coverage 10.0, :crap 9.561}
+  {:name "M.executable", :namespace "love.uml.adapters.claude", :complexity 9, :coverage 82.3529, :crap 9.4451}
   {:name "classes", :namespace "love.uml.adapters.mail_menu", :complexity 9, :coverage 100.0, :crap 9.0}
   {:name "to_edn", :namespace "love.uml.adapters.recovery", :complexity 9, :coverage 100.0, :crap 9.0}
   {:name "M.highlight", :namespace "love.uml.application.detail", :complexity 9, :coverage 100.0, :crap 9.0}
@@ -406,6 +411,7 @@
   {:name "paths", :namespace "love.uml.rust_language.graph_rust", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "unique", :namespace "love.uml.rust_language.graph_rust", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "unique", :namespace "love.uml.typescript_language.graph_typescript", :complexity 3, :coverage 100.0, :crap 3.0}
+  {:name "write", :namespace "love.uml.adapters.companion_worker", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "M.mtime", :namespace "love.uml.adapters.file_watch", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "M.array", :namespace "love.uml.adapters.json", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "M.is_array", :namespace "love.uml.adapters.json", :complexity 2, :coverage 100.0, :crap 2.0}
@@ -490,6 +496,8 @@
   {:name "ident", :namespace "love.uml.typescript_language.graph_typescript", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "module_relative", :namespace "love.uml.typescript_language.graph_typescript", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "record", :namespace "love.uml.typescript_language.graph_typescript", :complexity 2, :coverage 100.0, :crap 2.0}
+  {:name "M.start", :namespace "love.uml.adapters.companion_worker", :complexity 1, :coverage 12.5, :crap 1.6699}
+  {:name "M.command", :namespace "love.uml.adapters.companion_worker", :complexity 1, :coverage 25.0, :crap 1.4219}
   {:name "bands", :namespace "love.uml.adapters.class_boxes", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "M.read", :namespace "love.uml.adapters.edn_file", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "M.write", :namespace "love.uml.adapters.edn_file", :complexity 1, :coverage 100.0, :crap 1.0}

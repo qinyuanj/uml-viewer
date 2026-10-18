@@ -3,10 +3,13 @@
 local P=require('uml.adapters.process')
 local popen=io.popen
 local active=false
+local spawn_active=false
 local execute=os.execute
 local file_active=false
 os.execute=function(command)
-  assert(file_active and command:match('^pwsh %-NoProfile %-NonInteractive %-EncodedCommand [%w+/=]+$'),'Native fixture forbids os.execute')
+  local allowed=command:match('^pwsh %-NoProfile %-NonInteractive %-EncodedCommand [%w+/=]+$')
+    or command:match('^pwsh%.exe %-NoProfile %-NonInteractive %-EncodedCommand [%w+/=]+$')
+  assert((spawn_active or file_active) and allowed,'Native fixture forbids os.execute')
   return execute(command)
 end
 local Atomic=require('uml.adapters.atomic_file')
@@ -46,8 +49,13 @@ P.run=function(argv,timeout,env)
 end
 P.spawn_detached=function(exe,argv,...)
   assert(exe=='pwsh.exe' and argv[1]=='-NoProfile' and argv[2]=='-NonInteractive' and argv[3]=='-Command')
-  assert(argv[4]=='Start-Sleep -Seconds 2' or argv[4]:match('^%$p=Start%-Process %-FilePath .-ping%.exe.-Start%-Sleep %-Seconds 3$'),'Native fixture forbids detached command')
-  local value=scoped(spawn,exe,argv,...); owned[value.pid]=true; return value
+  assert(argv[4]=='Start-Sleep -Seconds 2' or argv[4]=='Start-Sleep -Seconds 5'
+    or argv[4]:match('^%$p=Start%-Process %-FilePath .-ping%.exe.-Start%-Sleep %-Seconds 3$'),'Native fixture forbids detached command')
+  spawn_active=true
+  local ok,value=pcall(scoped,spawn,exe,argv,...)
+  spawn_active=false
+  if not ok then error(value,0) end
+  owned[value.pid]=true; return value
 end
 P.owner=function(pid) assert(owned[pid],'Native fixture requires owned pid'); return scoped(owner,pid) end
 -- The terminated ping pid comes from the fixture file; it is read-only and must

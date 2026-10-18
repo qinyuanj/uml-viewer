@@ -16,7 +16,7 @@ local Menu=require('uml.adapters.mail_menu')
 local SessionFile=require('uml.adapters.session')
 local Session=require('uml.application.session')
 local ProcessIdentity=require('uml.adapters.process_identity')
-local Lifecycle=require('uml.adapters.companion_lifecycle')
+local Worker=require('uml.adapters.companion_worker')
 local Mailbox=require('uml.adapters.mailbox')
 local PolicyFile=require('uml.adapters.policy_file')
 local M={}
@@ -73,14 +73,7 @@ function M.run(args,services)
       -- Capture the viewer cursor before the companion exists so a :display
       -- written during startup is consumed, not skipped.
       mail_seen=Mailbox.open(project_root..'/.uml-viewer/to-viewer.edn').last_id()
-      lifecycle_options={canonical=Paths.canonical}
-      if restart then
-        local record,created=Lifecycle.restart(project_root,lifecycle_options)
-        companion={record=record,B=created}
-      else
-        local record,created=Lifecycle.create(project_root,lifecycle_options)
-        companion={record=record,B=created}
-      end
+      companion=Worker.start(project_root,restart)
     end
     if backend and not restart then
       state=D.waiting_state(path,mail_seen)
@@ -93,20 +86,7 @@ function M.run(args,services)
     end
     local to_agent=Mailbox.open(project_root..'/.uml-viewer/to-agent.edn')
     local function notify_agent(cmd)
-      if not companion then return end
-      pcall(function()
-        local id=G.get(cmd,'id')
-        local token='mail-'..tostring(id)
-        companion.B.wake(companion.record.pane,{'-l','Mailbox mail '..tostring(id)},{
-          token=token,
-          acknowledged=function()
-            for _,queued in ipairs(G.get(to_agent.read(),'queue') or {}) do
-              if G.get(queued,'id')==id then return false end
-            end
-            return true
-          end,
-          timeout_ms=5000})
-      end)
+      if companion then Worker.command(companion,'wake',{id=G.get(cmd,'id')}) end
     end
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,notify=notify_agent,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
     if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source}) end
@@ -123,16 +103,33 @@ function M.run(args,services)
       pick=function(id) state.selected=G.map{kind=E.keyword('class'),id=id} end,
       open_source=function(ident) if source_window then source_window.open(ident) end end})
     -- A refused or invalid startup never overwrites an existing identity.
-    ProcessIdentity.record(project_root)
+    if not companion then ProcessIdentity.record(project_root) end
     publish()
   end
   function love.update(dt)
     elapsed=elapsed+dt; frames=frames+1
+    if companion then
+      local previous=companion.seen
+      local polled,reason=pcall(Worker.poll,companion)
+      if not polled then companion.phase='failed'; companion.message=tostring(reason) end
+      if companion.phase=='ready' and not companion.recorded then
+        ProcessIdentity.record(project_root); companion.recorded=true
+      end
+      if companion.seen~=previous or companion.phase=='failed' then
+        state.mail_status=companion.message or ('Companion: '..companion.phase)
+      end
+    end
     local ok,err=pcall(function()
       state=mail.poll(state); path=state.path or path
       if state.quit_for_restart then
+        if companion then
+          if not companion.restart_stop then
+            Worker.command(companion,'stop',{keep=true}); companion.restart_stop=true
+          end
+          if companion.phase~='stopped' or not companion.exited then return end
+          keeping_companion=true
+        end
         SessionFile.save(state.project_root,Session.snapshot(state))
-        if companion then keeping_companion=true end
         love.event.quit(0); return
       end
       if not state.waiting then
@@ -167,9 +164,8 @@ function M.run(args,services)
   end
   function love.quit()
     imgui.love.Shutdown()
-    if companion and not keeping_companion then
-      local ok,err=pcall(Lifecycle.shutdown,project_root,lifecycle_options)
-      if not ok then io.stderr:write('UML viewer: companion cleanup: ',tostring(err),'\n') end
+    if companion and not companion.exited then
+      Worker.command(companion,'stop',{keep=keeping_companion})
     end
   end
   function love.textinput(t) imgui.love.TextInput(t) end
@@ -178,7 +174,10 @@ function M.run(args,services)
     imgui.love.KeyPressed(k)
     if not imgui.love.GetWantCaptureKeyboard() then state=Events.on_key(state,k,dims()) end
   end
-  function love.mousemoved(x,y) if not imgui.love.GetWantCaptureMouse() then state=Events.on_move(state,x,y) end end
+  function love.mousemoved(x,y)
+    imgui.love.MouseMoved(x,y)
+    if not imgui.love.GetWantCaptureMouse() then state=Events.on_move(state,x,y) end
+  end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
     if button==2 and not imgui.love.GetWantCaptureMouse() then

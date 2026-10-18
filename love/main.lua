@@ -21,6 +21,20 @@ if headless then
   end
   return
 end
+if game_args[1]=='companion-worker' then
+  function love.run()
+    local services={}
+    if os.getenv('UML_COMPANION_NO_ATTACH')~='1' then
+      services.open_window=function(session)
+        return require('uml.adapters.companion_lifecycle').open_window(session)
+      end
+    end
+    local ok,code=pcall(require('uml.adapters.companion_worker').run,game_args[2],services)
+    if not ok then io.stderr:write(tostring(code),'\n') end
+    return function() return ok and code or 1 end
+  end
+  return
+end
 if game_args[1]=='companion-runner' then
   function love.run()
     local Clock=require('uml.adapters.clock')

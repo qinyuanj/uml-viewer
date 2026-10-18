@@ -45,7 +45,7 @@ describe('pure suite process isolation',function()
     assert.equals('original',text)
   end)
   it('blocks ownership and command fallbacks and direct shell escape paths',function()
-    for _,name in ipairs{'run','spawn_detached','pwsh','start_attached','owner','owner_native','current_pid','await_exit'} do
+    for _,name in ipairs{'run','spawn_detached','spawn_native','pwsh','start_attached','owner','owner_native','current_pid','await_exit'} do
       assert.has_error(function() Process[name]() end,'Pure tests forbid native process access: Process.'..name)
     end
     assert.has_error(function() os.execute('herdr') end,'Pure tests forbid native process access: os.execute')

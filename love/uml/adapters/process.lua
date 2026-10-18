@@ -50,10 +50,12 @@ local function process_api()
   if native_api~=nil then return native_api or nil end
   local ok,ffi=pcall(require,'ffi')
   if not ok then native_api=false; return nil end
+  if not pcall(ffi.typeof,'UML_FILETIME') then
+    ffi.cdef[[typedef struct { unsigned long dwLowDateTime; unsigned long dwHighDateTime; } UML_FILETIME;]]
+  end
   ffi.cdef[[
-    typedef struct { unsigned long dwLowDateTime; unsigned long dwHighDateTime; } UML_NATIVE_FILETIME;
     void* OpenProcess(unsigned long,int,unsigned long);
-    int GetProcessTimes(void*,UML_NATIVE_FILETIME*,UML_NATIVE_FILETIME*,UML_NATIVE_FILETIME*,UML_NATIVE_FILETIME*);
+    int GetProcessTimes(void*,UML_FILETIME*,UML_FILETIME*,UML_FILETIME*,UML_FILETIME*);
     unsigned long WaitForSingleObject(void*,unsigned long);
     int CloseHandle(void*);
     unsigned long GetLastError(void);
@@ -85,8 +87,8 @@ function M.owner_native(pid)
     ffi.C.CloseHandle(handle)
     error('Could not query process '..pid..' state (Windows error '..code..')',0)
   end
-  local creation=ffi.new('UML_NATIVE_FILETIME[1]')
-  local scratch=ffi.new('UML_NATIVE_FILETIME[1]')
+  local creation=ffi.new('UML_FILETIME[1]')
+  local scratch=ffi.new('UML_FILETIME[1]')
   local ok=ffi.C.GetProcessTimes(handle,creation,scratch,scratch,scratch)
   ffi.C.CloseHandle(handle)
   if ok==0 then error('Could not read process creation identity for PID '..pid,0) end
@@ -156,7 +158,9 @@ function M.win_quote(text)
   return table.concat(out)
 end
 
-local function start_script(executable,argv,cwd,log_path,error_log,hidden)
+local function start_script(executable,argv,cwd,log_path,error_log,hidden,result_path)
+  local report='@{pid=$p.Id;start=$p.StartTime.ToUniversalTime().Ticks.ToString();name=$p.ProcessName}|ConvertTo-Json -Compress'
+  if result_path then report=report..'|Set-Content -LiteralPath '..ps_word(result_path)..' -Encoding utf8' end
   local script={
     "$ErrorActionPreference='Stop'",
     '$params=@{FilePath='..ps_word(executable)..';PassThru=$true}',
@@ -167,19 +171,76 @@ local function start_script(executable,argv,cwd,log_path,error_log,hidden)
     (log_path and ('$params.RedirectStandardOutput='..ps_word(log_path))) or '$null',
     (error_log and ('$params.RedirectStandardError='..ps_word(error_log))) or '$null',
     'try{$p=Start-Process @params}catch{@{error=$_.Exception.Message}|ConvertTo-Json -Compress;exit 1}',
-    '@{pid=$p.Id;start=$p.StartTime.ToUniversalTime().Ticks.ToString();name=$p.ProcessName}|ConvertTo-Json -Compress',
+    report,
   }
   local filtered={}
   for _,line in ipairs(script) do if line~='$null' then filtered[#filtered+1]=line end end
   return table.concat(filtered,';')
 end
 
+-- Launch without a shell or inherited stdio pipe. The viewer uses this fast
+-- boundary; helper work must never wait for a PowerShell/popen pipe to close.
+local launch_defined=false
+function M.spawn_native(executable,argv,cwd)
+  local ffi=assert(process_api(),'Native launch requires LOVE FFI')
+  if not launch_defined then ffi.cdef[[
+    typedef struct { unsigned long cb; wchar_t *reserved; wchar_t *desktop; wchar_t *title;
+      unsigned long x,y,xsize,ysize,xchars,ychars,fill,flags;
+      unsigned short show,reserved_size; unsigned char *reserved_bytes;
+      void *input,*output,*error; } UML_STARTUPINFO;
+    typedef struct { void *process,*thread; unsigned long pid,tid; } UML_PROCESSINFO;
+    int CreateProcessW(const wchar_t*,wchar_t*,void*,void*,int,unsigned long,void*,const wchar_t*,UML_STARTUPINFO*,UML_PROCESSINFO*);
+    int MultiByteToWideChar(unsigned int,unsigned long,const char*,int,wchar_t*,int);
+  ]]; launch_defined=true end
+  local function wide(text)
+    local n=ffi.C.MultiByteToWideChar(65001,0,text,-1,nil,0)
+    local buffer=ffi.new('wchar_t[?]',n)
+    assert(ffi.C.MultiByteToWideChar(65001,0,text,-1,buffer,n)>0)
+    return buffer
+  end
+  local words={M.win_quote(executable)}
+  for _,word in ipairs(argv or {}) do words[#words+1]=M.win_quote(word) end
+  local info=ffi.new('UML_STARTUPINFO[1]'); info[0].cb=ffi.sizeof('UML_STARTUPINFO')
+  local child=ffi.new('UML_PROCESSINFO[1]')
+  local ok=ffi.C.CreateProcessW(wide(executable),wide(table.concat(words,' ')),nil,nil,0,
+    0x08000000,nil,cwd and wide(cwd) or nil,info,child)
+  if ok==0 then error('Native launch failed (Windows error '..tonumber(ffi.C.GetLastError())..')',0) end
+  local creation=ffi.new('UML_FILETIME[1]')
+  local scratch=ffi.new('UML_FILETIME[1]')
+  local observed=ffi.C.GetProcessTimes(child[0].process,creation,scratch,scratch,scratch)
+  local pid=tonumber(child[0].pid)
+  ffi.C.CloseHandle(child[0].thread); ffi.C.CloseHandle(child[0].process)
+  assert(observed~=0,'Native child creation identity could not be read')
+  local Identity=require('uml.domain.identity')
+  local ticks=Identity.filetime(tonumber(creation[0].dwHighDateTime),tonumber(creation[0].dwLowDateTime))
+  return {pid=pid,start=Identity.dotnet_ticks(ticks)}
+end
+
+-- The launched process can outlive the PowerShell launcher and may inherit a
+-- stdio pipe indefinitely. os.execute plus a result file never waits on that
+-- pipe; the launcher's own output is not captured.
+local function launch_result_path(cwd,log_path)
+  local base=log_path
+  if not base then
+    local root=os.getenv('TEMP') or os.getenv('TMP') or cwd or '.'
+    base=root:gsub('[\\/]$','')..'/uml-spawn'
+  end
+  local unique=((tostring({}):match('0x(%x+)')) or tostring(os.time()))
+    ..'-'..tostring(math.floor(os.clock()*1000000))
+  return base..'.launch-'..unique..'.json'
+end
+
 -- Detached project-owned process. Returns its exact creation identity.
 function M.spawn_detached(executable,argv,cwd,log_path,error_log)
-  local output=M.pwsh(start_script(executable,argv,cwd,log_path,error_log,true))
-  local ok,value=pcall(JSON.decode,output)
+  local result_path=launch_result_path(cwd,log_path)
+  local script=start_script(executable,argv,cwd,log_path,error_log,true,result_path)
+  os.execute('pwsh.exe -NoProfile -NonInteractive -EncodedCommand '..M.encoded(script))
+  local file=io.open(result_path,'rb')
+  if not file then error('Detached process could not be launched: no launch result',0) end
+  local text=file:read('*a'); file:close(); os.remove(result_path)
+  local ok,value=pcall(JSON.decode,text)
   if not ok or type(value)~='table' or type(value.pid)~='number' or type(value.start)~='string' then
-    error('Detached process could not be launched: '..output,0)
+    error('Detached process could not be launched: '..text,0)
   end
   return {pid=value.pid,start=value.start,name=value.name}
 end

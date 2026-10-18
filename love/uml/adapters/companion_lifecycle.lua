@@ -63,6 +63,7 @@ local function factory(options,selected,identity)
     canonical=options and options.canonical,selected=selected,
     runner={executable=executable,argv={executable,game,'companion-runner'}},
     recovery={controller={executable=executable,argv={game,'companion-controller'}}},
+    progress=options and options.progress,
   })
 end
 

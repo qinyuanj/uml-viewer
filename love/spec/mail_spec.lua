@@ -69,6 +69,11 @@ describe('viewer mailbox files and user events',function()
       load=function(p) local s=D.new(E.parse('{:layers []}'),1); s.path=p; return s end}
     local waiting=D.waiting_state('stale.edn',0)
     assert.is_true(waiting.waiting)
+    assert.are.equal('map',E.kind(waiting.scene))
+    for _,key in ipairs{'classes','packages','edges','sections'} do
+      assert.are.equal('vector',E.kind(g(waiting.scene,key)))
+      assert.are.equal(0,#g(waiting.scene,key))
+    end
     assert.are.equal(0,waiting.mail_seen)
     waiting.project_root='C:/project'
     local shown=D.poll_mail(waiting,mailbox,boundary)

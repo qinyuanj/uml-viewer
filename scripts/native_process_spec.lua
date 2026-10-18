@@ -21,6 +21,16 @@ describe('native bounded process fixtures',function()
     local r=Process.run({'pwsh.exe','-NoProfile','-NonInteractive','-Command','[Diagnostics.Process]::GetProcessById('..owner.pid..').WaitForExit()'},10000)
     assert.equals(0,r.exit); assert.is_nil(Process.owner(owner.pid))
   end)
+  it('returns without waiting for a detached child to release stdio',function()
+    local Clock=require('uml.adapters.clock')
+    local started=Clock.monotonic_ms()
+    local owner=Process.spawn_detached('pwsh.exe',{'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 5'})
+    local elapsed=Clock.monotonic_ms()-started
+    local r=Process.run({'pwsh.exe','-NoProfile','-NonInteractive','-Command',
+      '[Diagnostics.Process]::GetProcessById('..owner.pid..').WaitForExit()'},15000)
+    assert.equals(0,r.exit)
+    assert.is_true(elapsed<3000,'spawn_detached waited '..tostring(elapsed)..'ms for the detached child')
+  end)
   it('recognizes a terminated process even while its object remains open',function()
     local path=os.tmpname(); os.remove(path)
     local ping=(os.getenv('SystemRoot') or 'C:\\Windows')..'\\System32\\ping.exe'

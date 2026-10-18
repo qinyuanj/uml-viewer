@@ -260,6 +260,7 @@ function M.new(identity,options)
     base.backend='herdr'; base.owner_role='companion'; base.session=session
     base.cwd=B.canonical(cwd); base.command=H.copy(command); base.provisional=true
     B.write_companion(base.cwd,base)
+    if B.options.progress then B.options.progress('server') end
     local owner=B.launch_server(session,base.cwd)
     base.server_pid=tostring(owner.pid); base.server_start=owner.start
     B.write_companion(base.cwd,base)
@@ -269,6 +270,7 @@ function M.new(identity,options)
     B.compatible(status)
     base.socket=status.socket
     B.write_companion(base.cwd,base)
+    if B.options.progress then B.options.progress('workspace') end
     local created=B.cli(session,'workspace','create','--cwd',base.cwd,'--no-focus').result
     local pane=created.root_pane
     base.workspace=created.workspace.workspace_id; base.pane=pane.pane_id; base.terminal_id=pane.terminal_id
@@ -284,6 +286,7 @@ function M.new(identity,options)
       gate_file=root..'recovery-gate.lock',lock_file=root..'recovery-controller.lock'}
     B.write_companion(base.cwd,base)
     B.observe(base,session,base.pane)
+    if B.options.progress then B.options.progress('runner') end
     B.pane_run(session,base.pane,H.pane_command(B.runner_command(base,command),shell.name))
     local state=B.poll(30000,100,function() return B.runner_state(base) end,
       'Herdr runner did not acknowledge startup')
@@ -293,8 +296,10 @@ function M.new(identity,options)
     B.observe(base,session,base.pane)
     local owned=H.copy(base); owned.provisional=nil
     B.write_companion(owned.cwd,owned)
+    if B.options.progress then B.options.progress('recovery') end
     local start=B.options.start_recovery or Recovery.start
     start(owned,B.options.recovery)
+    if B.options.progress then B.options.progress('committed') end
     B.identity=owned
     return owned
   end
