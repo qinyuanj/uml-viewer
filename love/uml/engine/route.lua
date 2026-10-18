@@ -114,7 +114,7 @@ local function stable_sort(xs,scorefn)
 end
 function M.route(scene)
   local cs,idx={},{}; local lr=G.name(g(g(scene,'diagram'),'direction')); lr=lr=='lr' or lr=='rl'
-  for _,c in ipairs(g(scene,'classes')) do local r=g(c,'rect'); if type(g(r,'x'))=='number' and type(g(r,'y'))=='number' then local x={r=rect(r),id=E.encode(g(c,'id')),rank=g(c,'rank') or 0,dummy=g(c,'dummy?')}; cs[#cs+1]=x; idx[x.id]=x end end
+  for _,c in ipairs(g(scene,'classes')) do local r=g(c,'rect'); if type((g(r,'x')))=='number' and type((g(r,'y')))=='number' then local x={r=rect(r),id=E.encode(g(c,'id')),rank=g(c,'rank') or 0,dummy=g(c,'dummy?')}; cs[#cs+1]=x; idx[x.id]=x end end
   local es,from,to,hops={},{},{},{}
   for _,e in ipairs(g(g(scene,'diagram'),'edges') or {}) do local f,t=idx[E.encode(g(e,'from'))],idx[E.encode(g(e,'to'))]; if f and t then
     local x={edge=e,a=f,b=t}; es[#es+1]=x; from[f.id]=from[f.id] or {}; from[f.id][#from[f.id]+1]=x; to[t.id]=to[t.id] or {}; to[t.id][#to[t.id]+1]=x
