@@ -13,8 +13,13 @@ end
 function M.new(imgui,callbacks)
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
   local api={}
+  local bounds={}
+  function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
+  local function remember(key)
+    local a,b=imgui.GetItemRectMin(),imgui.GetItemRectMax(); bounds[key]={x=(a.x+b.x)/2,y=(a.y+b.y)/2,left=a.x,top=a.y,right=b.x,bottom=b.y}
+  end
   function api.draw(state)
     imgui.SetNextWindowPos(imgui.ImVec2(love.graphics.getWidth()-360,12),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowSize(imgui.ImVec2(348,700),imgui.ImGuiCond_FirstUseEver)
@@ -22,10 +27,11 @@ function M.new(imgui,callbacks)
       imgui.TextUnformatted('Namespace tree / Proposals')
       for n,c in ipairs(I.commands(state)) do
         if imgui.Selectable_Bool(c.label..'##diagram-'..n,c.active) and callbacks.choose then callbacks.choose(c.id) end
+        remember(c.id and 'proposal:'..G.name(c.id) or 'real')
       end
       imgui.Separator(); imgui.TextUnformatted('Proposal name')
       if focus then imgui.SetKeyboardFocusHere(); focus=false end
-      imgui.InputText('##proposal-name',buffer,1024)
+      imgui.InputText('##proposal-name',buffer,1024); remember('proposal-name')
       if callbacks.name_changed then callbacks.name_changed(api.name()) end
       imgui.TextUnformatted('P: namespace tree')
       local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
@@ -45,6 +51,7 @@ function M.new(imgui,callbacks)
                 if row.kind=='rel' then if callbacks.pick then callbacks.pick(row.id) end
                 elseif callbacks.open_source then callbacks.open_source(Detail.member_ident(model,row['op-name'])) end
               end
+              remember(row.module and 'module' or row['op-name'] and 'member:'..row['op-name'] or 'rel:'..G.name(row.id))
             else imgui.TextUnformatted(text) end
           end
         end
