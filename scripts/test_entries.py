@@ -278,7 +278,7 @@ class Entries(unittest.TestCase):
                         if os.name == 'nt' else [str(self.project / 'uml')])
         help_result = self.run_entry(native_entry + ['--help'])
         self.assertEqual(0, help_result.returncode)
-        self.assertEqual('usage: uml [--backend herdr] [--restart | ir | crap | mutate] [args]',
+        self.assertEqual('usage: uml [--runtime jvm|love] [--backend herdr] [--restart | ir | crap | mutate] [args]',
                          help_result.stdout.strip())
         tools = self.root / 'backend tools'
         tools.mkdir()
