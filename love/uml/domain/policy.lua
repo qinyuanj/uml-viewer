@@ -68,7 +68,8 @@ local function nse_entry(x)
   if E.kind(x)~='map' then return id(x) end
   local cid=id(default(get(x,'id'),get(x,'label'))); local nses=V()
   for _,n in ipairs(seq(get(x,'nses'))) do nses[#nses+1]=nse_entry(n) end
-  return map{id=cid,label=default(get(x,'label'),name(cid)),nses=nses}
+  local out=copy(x); put(out,'id',cid); put(out,'label',default(get(x,'label'),name(cid))); put(out,'nses',nses)
+  return out
 end
 function M.nse_ids(nses)
   local r=V(); for _,x in ipairs(seq(nses)) do
@@ -79,7 +80,8 @@ local function layers_from(xs)
   local r=V(); for i,x in ipairs(seq(xs)) do if E.kind(x)=='map' then
     local cid=id(default(get(x,'id'),default(get(x,'label'),'layer-'..(i-1)))); local nses=V()
     for _,n in ipairs(seq(get(x,'nses'))) do nses[#nses+1]=nse_entry(n) end
-    r[#r+1]=map{id=cid,label=default(get(x,'label'),name(cid)),nses=nses}
+    local out=copy(x); put(out,'id',cid); put(out,'label',default(get(x,'label'),name(cid))); put(out,'nses',nses)
+    r[#r+1]=out
   end end; return r
 end
 function M.normalize_proposal(p)
@@ -91,7 +93,11 @@ end
 local function named(p,i)
   if E.kind(p)~='map' then return nil end
   local cid=id(default(get(p,'id'),'proposal-'..i)); local normalized=M.normalize_proposal(p)
-  return map{id=cid,name=tostring(default(get(p,'name'),default(get(p,'label'),name(cid)))),layers=normalized and get(normalized,'layers') or V(),omit=ids(get(p,'omit')),notice=default(get(p,'notice'),M.proposal_notice)}
+  local out=copy(p)
+  put(out,'id',cid); put(out,'name',tostring(default(get(p,'name'),default(get(p,'label'),name(cid)))))
+  put(out,'layers',normalized and get(normalized,'layers') or V())
+  put(out,'omit',ids(get(p,'omit'))); put(out,'notice',default(get(p,'notice'),M.proposal_notice))
+  return out
 end
 function M.named_proposals(x)
   local xs,one=get(x,'proposals'),get(x,'proposal'); local r=V()
