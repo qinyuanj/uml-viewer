@@ -254,6 +254,20 @@ describe('recovery journal IO',function()
       remove_root(f.root)
     end
   end)
+  it('leaves an absent journal alone',function()
+    local root=temp_root()
+    local identity={cwd=root,session='uml-viewer-A',runner_token='initial',
+      runner_state=root..'/.uml-viewer/runner.edn',supervisor=supervisor(root)}
+    assert.is_nil(Recovery.retire_completed(identity))
+    local names={}
+    for name in lfs.dir(root..'/.uml-viewer') do
+      if name~='.' and name~='..' then names[#names+1]=name end
+    end
+    assert.are.same({},names)
+    assert.is_nil(io.open(identity.supervisor.state_file,'rb'))
+    assert.is_nil(io.open(identity.supervisor.control_file,'rb'))
+    remove_root(root)
+  end)
   it('coerces JVM keyword phases and journals into the same state model',function()
     local root=temp_root()
     local target=root..'/.uml-viewer/recovery.edn'

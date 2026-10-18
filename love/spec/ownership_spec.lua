@@ -46,6 +46,27 @@ local function minimal_owned(root)
     ..':socket "C:/s" :workspace "w1" :pane "w1:p1" :terminal-id "t" :shell-pid 1 '
     ..':owner-start "o" :server-pid "2" :server-start "r" :command ["claude.exe"]}'
 end
+local alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+local function decode_utf16le(text)
+  local bytes={}
+  local buffer,bits=0,0
+  for i=1,#text do
+    local char=text:sub(i,i)
+    if char=='=' then break end
+    local value=alphabet:find(char,1,true)
+    if value then
+      buffer=buffer*64+(value-1); bits=bits+6
+      if bits>=8 then
+        bits=bits-8
+        bytes[#bytes+1]=math.floor(buffer/2^bits)%256
+        buffer=buffer%2^bits
+      end
+    end
+  end
+  local out={}
+  for i=1,#bytes,2 do out[#out+1]=string.char(bytes[i]) end
+  return table.concat(out)
+end
 
 describe('companion lifecycle ownership',function()
   it('names a fresh session uniquely per launch within the Herdr grammar',function()
@@ -139,6 +160,33 @@ describe('companion lifecycle ownership',function()
   end)
 end)
 
+describe('Herdr Windows full session client',function()
+  it('opens the Windows full session client with nesting disabled only in its child environment',function()
+    local calls={}
+    local opened=Lifecycle.open_window('uml-viewer-owned',{
+      windows=true,herdr='C:/tools/herdr.exe',
+      run=function(argv,timeout,env_remove)
+        calls[#calls+1]={argv=argv,timeout=timeout,env_remove=env_remove}
+        return {exit=0,out=''}
+      end})
+    assert.are.equal('windows-terminal',opened.terminal)
+    assert.are.equal(1,#calls)
+    local call=calls[1]
+    assert.are.equal('wt.exe',call.argv[1])
+    assert.are.equal('new-tab',call.argv[4])
+    assert.are.equal('--title',call.argv[5])
+    assert.are.equal('uml-viewer-owned',call.argv[6])
+    assert.are.equal('pwsh.exe',call.argv[7])
+    assert.are.equal('-EncodedCommand',call.argv[9])
+    assert.are.equal(10000,call.timeout)
+    assert.are.same({'HERDR_ENV','NO_COLOR'},call.env_remove)
+    local script=decode_utf16le(call.argv[10])
+    assert.is_truthy(script:find("session attach 'uml-viewer-owned'",1,true))
+    assert.is_truthy(script:find("& 'C:/tools/herdr.exe'",1,true))
+    assert.is_truthy(script:find('$env:HERDR_ENV=$null',1,true))
+    assert.is_truthy(script:find('$env:NO_COLOR=$null',1,true))
+  end)
+end)
 describe('Claude executable discovery boundary',function()
   it('accepts a configured executable with spaces and preserves it literally',function()
     local seen
