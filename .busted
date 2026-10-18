@@ -1,0 +1,6 @@
+return {
+  default = {
+    lpath = "love/?.lua;love/?/init.lua",
+    ROOT = { "love/spec" },
+  },
+}

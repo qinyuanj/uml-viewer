@@ -31,7 +31,7 @@ local function parse_args(args)
       local selected=args[index+1]
       if selected~='herdr' then error('Unknown or duplicate companion backend; use --backend herdr') end
       backend=selected; index=index+1
-    elseif value:sub(1,1)=='-' then error('usage: uml --runtime love [--backend herdr] [--restart] [diagram.edn]')
+    elseif value:sub(1,1)=='-' then error('usage: uml [--backend herdr] [--restart] [diagram.edn]')
     elseif not path then path=value end
     index=index+1
   end

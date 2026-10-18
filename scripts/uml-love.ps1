@@ -29,7 +29,6 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
         & $love.Source (Join-Path $toolRoot 'love') ir $policy @forward
         return
     }
-    if ($viewerArgs.Count -gt 0 -and $viewerArgs[0] -in @('crap', 'mutate')) { throw '--runtime love currently selects viewer or ir; quality dispatch uses the default runtime.' }
     # One short-lived LOVE process performs read-only Herdr selection. It loads
     # no viewer, creates no owner/server, and never starts a JVM. Native stderr
     # carries the selection diagnostic; it must not be merged into the one-line

@@ -167,44 +167,16 @@ class StandardQuality(unittest.TestCase):
         self.assertIn('keep.lua', result.stdout)
         self.assertNotIn('omit.lua', result.stdout)
 
-    def test_clojure_aliases_keep_existing_arguments_and_status(self):
-        (self.project / 'deps.edn').write_text(
-            '{:paths ["src"] :aliases {:crap {:main-opts ["-m" "fixture"]} '
-            ':mutate {:main-opts ["-m" "fixture"]}}}')
-        src = self.project / 'src'
-        src.mkdir()
-        (src / 'fixture.clj').write_text(
-            '(ns fixture)\n(defn -main [& args] '
-            '(doseq [arg args] (println arg)) '
-            '(binding [*out* *err*] (println "alias diagnostic")) (System/exit 7))')
-        for command in ['crap', 'mutate']:
-            result = self.run_quality(command, 'src/file with spaces.clj', 'literal;$value')
-            self.assertEqual(7, result.returncode, result.stdout + result.stderr)
-            self.assertEqual(['src/file with spaces.clj', 'literal;$value'], result.stdout.splitlines())
-            self.assertIn('alias diagnostic', result.stderr)
-
-    def test_alias_findings_require_explicit_repository_contract(self):
-        (self.project / 'deps.edn').write_text(
-            '{:paths ["src"] :aliases {:mutate {:main-opts ["-m" "fixture"]}}}')
-        src = self.project / 'src'
-        src.mkdir()
-        (src / 'fixture.clj').write_text(
-            '(ns fixture) (defn -main [& args] (doseq [arg args] (println arg)) (System/exit 3))')
+    def test_alias_only_manifest_is_rejected_without_launch(self):
+        # The Clojure alias route was deleted with the JVM implementation.
+        (self.project / 'uml-quality.json').write_text(
+            json.dumps({'version': 1, 'aliasResultExitCodes': {'mutate': [0, 3]}}))
         record = self.project / '.uml-viewer/quality-result.json'
-        result = self.run_quality('mutate', 'src/one.clj')
-        self.assertEqual(3, result.returncode, result.stderr)
-        self.assertFalse(json.loads(record.read_text())['validResult'])
-        config = self.project / 'uml-quality.json'
-        config.write_text(json.dumps({'version': 1, 'aliasResultExitCodes': {'mutate': [0, 3]}}))
-        result = self.run_quality('mutate', 'src/one.clj')
-        self.assertEqual(3, result.returncode, result.stderr)
-        self.assertEqual(['src/one.clj'], result.stdout.splitlines())
-        self.assertTrue(json.loads(record.read_text())['validResult'])
-        for codes in [[], [True], [256], ['3']]:
-            config.write_text(json.dumps({'version': 1, 'aliasResultExitCodes': {'mutate': codes}}))
-            result = self.run_quality('mutate', 'src/one.clj')
-            self.assertEqual(1, result.returncode, result.stderr)
-            self.assertFalse(record.exists())
+        record.write_text('{"validResult":true}')
+        result = self.run_quality('mutate')
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('aliasResultExitCodes', result.stderr)
+        self.assertFalse(record.exists())
 
     def test_standard_mutation_preserves_differential_files_output_and_findings_status(self):
         self.fixture_tool('mutator')

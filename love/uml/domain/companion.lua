@@ -28,9 +28,8 @@ After every later source or policy change:
    diagram above Proposals to return to the namespace tree. If instructed,
    add a named proposal to :proposals in the policy (default name is a
    timestamp) and regenerate the IR.
-TypeScript, Rust, Python, and Lua are scanners beside Clojure. A Clojure project keeps
-:lang :clojure (the default) and the CRAP and mutation steps below.
-Another language sets :lang. More than one language sets :sources, each
+TypeScript, Rust, Python, and Lua are the supported scanners. One language sets
+:lang for the whole tree; more than one language sets :sources, each
 entry {:lang :root :prefix?}. The policy :prefix is stripped to make
 ids. A source :prefix is that tree's namespace root, for example
 bookwriter.rust beside TypeScript modules under bookwriter. Dots in the
@@ -44,17 +43,17 @@ a.b module. Non-local functions are the operations. A top-level
 setmetatable(t, {__index = Base}) or setmetatable(t, Base), with Base
 from local Base = require("m"), is inheritance from m.
 Snapshots join by the class :ns, then by the class id.
-./uml ir runs the IR generator on this project's policy. Use the public
+./uml ir runs the LOVE IR generator on this project's policy. Use the public
 ./uml crap and ./uml mutate quality dispatch for mailbox refreshes: it
-shares CLI routing, optional uml-quality.json overrides, standard tool
-scope/exclusions and Clojure aliases. If the entry is absent, install it
-with get-uml-viewer --install-only before refreshing; direct clj commands
+shares CLI routing, optional uml-quality.json overrides and standard tool
+scope/exclusions. If the entry is absent, install it
+with get-uml-viewer --install-only before refreshing; direct tool commands
 do not publish a result record.
 2. Run ./uml crap with declared scope: standard tools cover the whole
    business tree; an operation override may declare targets scope.
    Preserve unrelated class metrics under the selected tool contract.
 3. Run ./uml mutate on each changed source file (differential).
-   For Clojure components invoke once per source file, never a file list.
+   Invoke mutation once per source file, never a file list.
    Retain explicit targets; never inject --source-root on scoped mutation.
    Uncovered mutants and survivors are findings: keep the snapshot;
    do not re-run the file or pass --mutate-all because of findings.
@@ -66,7 +65,7 @@ do not publish a result record.
    validResult exactly true. Missing, stale, malformed or mismatched
    records and validResult false stop this request's IR/display; report
    the cause. Exit 3 is valid only under the tool or explicit project
-   alias/operation contract, never by a universal success rule.
+   operation contract, never by a universal success rule.
    Every invocation in a component must pass this gate before IR.
 5. Only then run ./uml ir; only IR exit 0 permits :display. An IR
    failure stops display and reports the cause. Continue later FIFO
@@ -95,14 +94,14 @@ A companion wake-up means mail is waiting. If idle, pop and handle each
 to-agent command in order. If busy, finish first. Do not control the session backend yourself.
 After successful regen only, write :display with the generated EDN path.
 Prefer ./uml (fresh start: spawn this companion, wait for :display)
-and ./uml --restart (new JVM, keep this session, restore last view).
-If ./uml is missing, use aliases :uml-viewer and :uml-viewer-restart,
-or tell the user to run get-uml-viewer in this directory (it clones
-uml-viewer into gitignored .uml-viewer/uml-viewer/).
+and ./uml --restart (new LOVE viewer, keep this session, restore last view).
+The viewer runs on LOVE 11.5 with cimgui-love; there is no JVM or Clojure
+dependency. If ./uml is missing, tell the user to run get-uml-viewer in this
+directory (it clones uml-viewer into gitignored .uml-viewer/uml-viewer/).
 Do not start the viewer on launch; it reloads EDN when the file mtime
-changes. To restart it: write :quit-for-restart, wait for the JVM to
+changes. To restart it: write :quit-for-restart, wait for the viewer to
 exit, then ./uml --restart. Do not pass --restart except through that
-wrapper (or :uml-viewer-restart). Do not SIGKILL. Closing the viewer
+wrapper. Do not SIGKILL. Closing the viewer
 closes only this project's Herdr session. Verified abnormal exits receive
 at most three retries (1, 2, 4 seconds); normal or unknown exits do not recover.
 Recovery resumes this Claude session and drains queued mail without fresh scanning.

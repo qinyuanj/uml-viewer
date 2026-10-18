@@ -1,27 +1,17 @@
 # Optional repository-owned dispatch. Dot-sourced by the shared public wrapper.
+. "$PSScriptRoot/uml-standard-quality.ps1"
 function Read-UmlQualityConfig([string]$ProjectRoot) {
     $path = Join-Path $ProjectRoot 'uml-quality.json'
     if (-not (Test-Path -LiteralPath $path)) { return $null }
     try { $config = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable }
     catch { throw "Invalid uml-quality.json: $_" }
-    if ($config -isnot [System.Collections.IDictionary] -or
-        ($config.version -isnot [long] -and $config.version -isnot [int]) -or $config.version -ne 1 -or
-        (-not $config.ContainsKey('standardTools') -and -not $config.ContainsKey('operations') -and
-         -not $config.ContainsKey('aliasResultExitCodes'))) {
-        throw 'Invalid uml-quality.json: version 1 and standardTools, operations or aliasResultExitCodes are required.'
-    }
+    if ($config -isnot [System.Collections.IDictionary]) { throw 'Invalid uml-quality.json: expected an object.' }
     if ($config.ContainsKey('aliasResultExitCodes')) {
-        $aliases = $config.aliasResultExitCodes
-        if ($aliases -isnot [System.Collections.IDictionary] -or $aliases.Count -eq 0) {
-            throw 'aliasResultExitCodes must declare at least one quality alias.'
-        }
-        foreach ($name in $aliases.Keys) {
-            $codes = $aliases[$name]
-            if ($name -cnotin @('crap', 'mutate') -or $codes -isnot [array] -or $codes.Count -eq 0 -or
-                @($codes | Where-Object { ($_ -isnot [long] -and $_ -isnot [int]) -or $_ -lt 0 -or $_ -gt 255 }).Count -gt 0) {
-                throw 'Invalid aliasResultExitCodes: crap/mutate require nonempty integer exit codes from 0 to 255.'
-            }
-        }
+        throw 'Invalid uml-quality.json: aliasResultExitCodes belongs to the removed Clojure runtime; declare standardTools instead.'
+    }
+    if (($config.version -isnot [long] -and $config.version -isnot [int]) -or $config.version -ne 1 -or
+        (-not $config.ContainsKey('standardTools') -and -not $config.ContainsKey('operations'))) {
+        throw 'Invalid uml-quality.json: version 1 and standardTools or operations are required. The Clojure alias route was removed.'
     }
     if ($config.ContainsKey('standardTools')) {
         $standard = $config.standardTools
@@ -46,7 +36,6 @@ function Read-UmlQualityConfig([string]$ProjectRoot) {
             }
             if ($needsValue) { throw "$optionKey has an option missing its value." }
         }
-        . "$PSScriptRoot/uml-standard-quality.ps1"
         $null = @(Get-UmlBusinessRoots $ProjectRoot $standard)
     }
     if (-not $config.ContainsKey('operations')) { return $config }

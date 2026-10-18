@@ -45,7 +45,11 @@ describe('viewer mailbox files and user events',function()
     local selection=E.parse('{:kind :class :id :c}')
     local labels={}; for _,entry in ipairs(Menu.entries()) do labels[#labels+1]=entry.label end
     assert.are.same({'Refresh CRAP','Refresh Mutation','Refresh All Mutation','Omit'},labels)
-    local mail=Mail.new('unused',{outbox=mailbox})
+    -- The root is only a fallback for a mutant that bypasses the supplied
+    -- outbox; keep it in the system temp directory so no generated mail can
+    -- appear inside the working tree.
+    local root=os.tmpname(); os.remove(root)
+    local mail=Mail.new(root,{outbox=mailbox})
     for _,entry in ipairs(Menu.entries()) do mail.menu_action(s,selection,entry.op) end
     local expected=E.parse('{:next-id 5 :queue [{:id 1 :op :refresh-crap :target {:id :c :kind :component :ns "app.c" :proposal-id :p}} {:id 2 :op :refresh-mutate :target {:id :c :kind :component :ns "app.c" :proposal-id :p}} {:id 3 :op :refresh-mutate-all :target {:id :c :kind :component :ns "app.c" :proposal-id :p}} {:id 4 :op :omit :target {:id :c :kind :component :ns "app.c" :proposal-id :p}}]}')
     assert.is_true(E.equal(expected,read(path)))
@@ -53,6 +57,8 @@ describe('viewer mailbox files and user events',function()
     assert.is_true(E.equal(E.parse('{:context :real}'),s.discussion_context))
     assert.is_true(E.equal(E.parse('{:id 5 :op :context :context :real}'),g(read(path),'queue')[5]))
     os.remove(path)
+    local lfs=require('lfs')
+    os.remove(root..'/.uml-viewer/to-agent.edn'); lfs.rmdir(root..'/.uml-viewer'); lfs.rmdir(root)
   end)
   it('keeps a fresh companion on the waiting canvas until a startup :display arrives',function()
     local D=require('uml.application.document')
