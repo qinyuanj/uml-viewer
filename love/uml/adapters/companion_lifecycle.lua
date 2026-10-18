@@ -8,6 +8,8 @@ local Preflight=require('uml.adapters.companion_preflight')
 local Recovery=require('uml.adapters.recovery')
 local Herdr=require('uml.adapters.herdr')
 local Claude=require('uml.adapters.claude')
+local Process=require('uml.adapters.process')
+local Text=require('uml.domain.text')
 local M={}
 
 local function love_executable()
@@ -67,6 +69,26 @@ end
 function M.select(root,options)
   local preflight=options and options.preflight or {}
   return Preflight.select(root,{'--backend','herdr'},preflight).selected
+end
+
+-- Windows has no direct terminal attach: open the full session client in a new
+-- Windows Terminal tab. Nesting variables are removed only for that child and
+-- cleared inside its PowerShell script; this process's environment is untouched.
+function M.open_window(session,options)
+  options=options or {}
+  local windows=options.windows
+  if windows==nil then windows=Process.windows() end
+  local herdr=options.herdr or 'herdr'
+  local attach=(windows and '& ' or '')..Text.shell_word(herdr)..' session attach '..Text.shell_word(session)
+  if not windows then return {terminal='none',session=session,attach=attach} end
+  local script='$env:HERDR_ENV=$null;$env:NO_COLOR=$null;& '..Text.ps_word(herdr)
+    ..' session attach '..Text.ps_word(session)..';exit $LASTEXITCODE'
+  local run=options.run or Process.run
+  local result=run({'wt.exe','-w','new','new-tab','--title',session,
+    'pwsh.exe','-NoProfile','-EncodedCommand',Text.encoded(script)},
+    10000,{'HERDR_ENV','NO_COLOR'})
+  local ok=type(result)=='table' and result.exit==0
+  return {terminal=ok and 'windows-terminal' or 'none',session=session,attach=attach}
 end
 
 function M.create(root,options)

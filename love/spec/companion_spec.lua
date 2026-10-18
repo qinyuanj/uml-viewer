@@ -182,6 +182,30 @@ describe('selected Herdr among several installed releases',function()
   end)
 end)
 
+describe('Herdr schema failures',function()
+  it('rejects missing malformed or failed bundled schema without further commands',function()
+    local schemas={
+      {exit=nil,out=''},
+      {exit=1,out='{"$schema":"fixture","protocol":22,'},
+      {exit=0,out='not json'},
+      {exit=0,out='{"$schema":"fixture","protocol":21,"schema_version":1}'},
+    }
+    for _,schema in ipairs(schemas) do
+      local calls={}
+      local run=function(argv)
+        calls[#calls+1]=argv
+        if argv[2]=='--version' then return {exit=0,out='herdr 0.9.3'} end
+        return schema
+      end
+      local err=error_of(function() C.select_herdr({'/x/herdr'},run) end)
+      assert.is_truthy(err)
+      assert.are.equal(2,#calls)
+      assert.are.same({'/x/herdr','--version'},calls[1])
+      assert.are.same({'/x/herdr','api','schema','--json'},calls[2])
+    end
+  end)
+end)
+
 describe('companion selection argv',function()
   it('removes only the exact lowercase backend option and retains other argv',function()
     assert.are.same({args={'--BACKEND','custom.edn','--restart'},backend='herdr'},
