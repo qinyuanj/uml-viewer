@@ -64,6 +64,26 @@ function M.rows(model)
   return rows
 end
 function M.content_h(rows) local last=rows and rows[#rows]; return last and last.y+last.h+16 or 32 end
+-- The card is translated by a clamped content-space offset. One wheel notch
+-- moves one step; the offset never leaves [0, content_h - view_h].
+M.scroll_step=48
+function M.max_scroll(rows,view_h)
+  return math.max(0,M.content_h(rows)-(view_h or 0))
+end
+function M.scroll(rows,view_h,offset,delta)
+  local maximum=M.max_scroll(rows,view_h)
+  return math.max(0,math.min(maximum,(offset or 0)+(delta or 0)*M.scroll_step))
+end
+-- Hovered row state mirrors the draw contract: an operation name, or the
+-- :module keyword for the source-identity row.
+function M.highlight(rows,hover)
+  if hover==nil then return nil end
+  local module=E.kind(hover)=='keyword' and G.name(hover)=='module'
+  for _,r in ipairs(rows or {}) do
+    if module then if r.module then return r end
+    elseif r['op-name']~=nil and r['op-name']==hover then return r end
+  end
+end
 local function at(rows,y,key) for _,r in ipairs(rows or {}) do if r[key] and y>=r.y and y<=r.y+r.h-1 then return r[key] end end end
 function M.rel_at(rows,y) for _,r in ipairs(rows or {}) do if r.kind=='rel' and y>=r.y and y<=r.y+r.h-1 then return r.id end end end
 function M.member_at(rows,y) return at(rows,y,'op-name') end
