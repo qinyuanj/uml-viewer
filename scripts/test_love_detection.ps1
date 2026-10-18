@@ -20,6 +20,7 @@ function Run([string]$Name,[string]$Policy,[string]$ErrorText='') {
   } elseif($process.ExitCode -ne 0 -or -not [IO.File]::Exists($output)) { throw "${Name}: exit=$($process.ExitCode) $text" }
   "${Name}: exit=$($process.ExitCode)"
 }
+Run 'no-markers' '{}' ':lang or :sources'
 Put 'src/a.lua' 'function M.run() end'
 Run 'lua-marker' '{:prefix "app"}'
 Put 'package.json' '{}'
