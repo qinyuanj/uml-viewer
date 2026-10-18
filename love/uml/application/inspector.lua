@@ -5,11 +5,71 @@ local G=require('uml.domain.geom')
 local H=require('uml.domain.hierarchy')
 local Events=require('uml.application.events')
 local M={}
+M.sidebar_w=280
+M.inspector_pad=16
+M.inspector_row_h=22
+M.inspector_btn_h=28
+M.inspector_btn_gap=8
+M.real_diagram_y=40
+M.proposals_label_y=66
+M.proposal_rows_y=82
+function M.inspector_x(window_w) return window_w-M.sidebar_w+M.inspector_pad end
+function M.inspector_inner_w() return M.sidebar_w-2*M.inspector_pad end
+function M.real_diagram_rect(window_w) return G.rect(M.inspector_x(window_w),M.real_diagram_y,M.inspector_inner_w(),M.inspector_row_h) end
+function M.proposal_row_rect(window_w,i) return G.rect(M.inspector_x(window_w),M.proposal_rows_y+i*M.inspector_row_h,M.inspector_inner_w(),M.inspector_row_h) end
+function M.new_proposal_rect(window_w,n) return G.rect(M.inspector_x(window_w),M.proposal_rows_y+n*M.inspector_row_h+M.inspector_btn_gap,M.inspector_inner_w(),M.inspector_btn_h) end
+function M.declutter_rect(window_w,n)
+  local r=M.new_proposal_rect(window_w,n); return G.rect(G.get(r,'x'),G.get(r,'y')+M.inspector_btn_h+M.inspector_btn_gap,G.get(r,'w'),G.get(r,'h'))
+end
+function M.regen_button(window_w,window_h) return G.rect(window_w-M.sidebar_w+16,window_h-56,M.sidebar_w-32,32) end
+function M.in_rect(r,x,y) return r~=nil and x>=G.get(r,'x') and x<G.right(r) and y>=G.get(r,'y') and y<G.bottom(r) end
+function M.regen_hit(x,y,window_w,window_h) return M.in_rect(M.regen_button(window_w,window_h),x,y) end
 function M.commands(state)
   local active=G.get(state.extra,'proposal-id')
   local out={{kind='real',label=G.get(state.document,'title') or 'Real diagram',active=not active}}
   for _,p in ipairs(H.named_proposals(state.document)) do local id=G.get(p,'id'); out[#out+1]={kind='proposal',id=id,label=G.get(p,'name') or G.name(id),active=E.equal(active,id)} end
   return out
+end
+-- Screen-space hit test for the inspector list: proposal rows first, then the
+-- real-diagram link, New Proposal, and Declutter. Nil means no inspector hit.
+function M.hit(state,x,y,window_w)
+  local proposals=H.named_proposals(state.document)
+  for i=0,#proposals-1 do
+    if M.in_rect(M.proposal_row_rect(window_w,i),x,y) then
+      return G.map{kind=E.keyword('proposal'),id=G.get(proposals[i+1],'id'),index=i}
+    end
+  end
+  if M.in_rect(M.real_diagram_rect(window_w),x,y) then return G.map{kind=E.keyword('real-diagram')} end
+  if M.in_rect(M.new_proposal_rect(window_w,#proposals),x,y) then return G.map{kind=E.keyword('new-proposal')} end
+  if M.in_rect(M.declutter_rect(window_w,#proposals),x,y) then return G.map{kind=E.keyword('declutter')} end
+end
+function M.press(state,hit,opts)
+  local kind=G.name(G.get(hit,'kind'))
+  if kind=='real-diagram' then return Events.show_proposal(state,nil) end
+  if kind=='proposal' then return Events.show_proposal(state,G.get(hit,'id')) end
+  if kind=='new-proposal' then return Events.add_proposal(state,opts) end
+  if kind=='declutter' then return Events.cycle_declutter(state) end
+  return state
+end
+function M.menu(state,id,pointer)
+  pointer=pointer or {}
+  local found
+  for _,p in ipairs(H.named_proposals(state.document)) do if E.equal(G.get(p,'id'),id) then found=p end end
+  if not found then return nil end
+  local entries=E.vector()
+  entries[1]=G.map{label='Rename',op=E.keyword('rename')}
+  entries[2]=G.map{label='Delete',op=E.keyword('delete')}
+  return G.map{id=id,name=G.get(found,'name'),anchor=G.map{x=pointer.x or 0,y=pointer.y or 0},entries=entries}
+end
+function M.menu_action(state,op,id,new_name,opts)
+  local kind=G.name(op)
+  if kind=='rename' then
+    local operation=Events.rename_op(id,new_name)
+    if not operation then return state end
+    return Events.apply_proposal_op(state,operation,opts)
+  end
+  if kind=='delete' then return Events.delete_proposal(state,id,opts) end
+  return state
 end
 function M.choose(state,id)
   for _,c in ipairs(M.commands(state)) do if (not id and c.kind=='real') or (id and E.equal(id,c.id)) then

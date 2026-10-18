@@ -139,4 +139,42 @@ function M.poll_mail(state,mailbox,boundary)
     else state=copy(state); state.mail_seen=g(cmd,'id'); state.error=tostring(next_state) end
   end
 end
+-- Sibling "<stem>.policy.edn" of an IR path, only when the injected file
+-- predicate agrees that it exists. Filesystem access stays in the adapter.
+function M.policy_path_for(edn_path,is_file)
+  if type(edn_path)~='string' or edn_path:sub(-4)~='.edn' then return nil end
+  local path=edn_path:sub(1,-5)..'.policy.edn'
+  if is_file and is_file(path) then return path end
+end
+local function without(m,key)
+  local r=E.map(); for _,entry in ipairs(m or {}) do if not E.equal(entry[1],E.keyword(key)) then r[#r+1]={entry[1],entry[2]} end end; return r
+end
+-- Persistence projects named proposals to their durable shape; omit/notice are
+-- derived view data and are not written back to policy.
+function M.proposal_records(doc)
+  local out=V()
+  for _,proposal in ipairs(H.named_proposals(doc)) do
+    local record=E.map()
+    for _,key in ipairs{'id','name','layers'} do E.assoc(record,E.keyword(key),g(proposal,key)) end
+    out[#out+1]=record
+  end
+  return out
+end
+-- Write named proposals to the IR and, when present, its sibling policy file.
+-- `boundary` supplies exists/read/write; the module never touches the filesystem.
+function M.write_proposals(edn_path,doc,boundary)
+  boundary=boundary or {}
+  local records=M.proposal_records(doc)
+  local out=E.map(); for _,entry in ipairs(doc or {}) do out[#out+1]={entry[1],entry[2]} end
+  E.assoc(out,E.keyword('proposals'),records)
+  local policy_path=g(doc,'policy-file')
+  if not policy_path and edn_path and boundary.exists then policy_path=M.policy_path_for(edn_path,boundary.exists) end
+  if edn_path then boundary.write(edn_path,require('uml.application.ir_generator').emit(out)) end
+  if policy_path and boundary.exists and boundary.exists(policy_path) then
+    local policy=E.parse(boundary.read(policy_path)); assert(E.kind(policy)=='map','policy must be an EDN map')
+    E.assoc(policy,E.keyword('proposals'),records)
+    boundary.write(policy_path,E.encode(without(policy,'proposal'))..'\n')
+  end
+  return out
+end
 return M

@@ -18,6 +18,7 @@ local Session=require('uml.application.session')
 local ProcessIdentity=require('uml.adapters.process_identity')
 local Lifecycle=require('uml.adapters.companion_lifecycle')
 local Mailbox=require('uml.adapters.mailbox')
+local PolicyFile=require('uml.adapters.policy_file')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
 local function parse_args(args)
@@ -111,6 +112,14 @@ function M.run(args,services)
     if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source}) end
     inspector=Inspector.new(imgui,{
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
+      new_proposal=function() state=InspectorModel.press(state,G.map{kind=E.keyword('new-proposal')},{boundary=PolicyFile}); publish() end,
+      declutter=function() state=InspectorModel.press(state,G.map{kind=E.keyword('declutter')}); publish() end,
+      regen=function()
+        local ok=pcall(mail.request,'regen',G.map{})
+        state.mail_status=ok and (companion and 'Regen requested.' or 'Regen queued; Claude session not attached.') or 'Regen failed.'
+      end,
+      rename=function(id,name) state=Events.rename_proposal(state,id,name,{boundary=PolicyFile}); publish() end,
+      delete=function(id) state=Events.delete_proposal(state,id,{boundary=PolicyFile}); publish() end,
       pick=function(id) state.selected=G.map{kind=E.keyword('class'),id=id} end,
       open_source=function(ident) if source_window then source_window.open(ident) end end})
     -- A refused or invalid startup never overwrites an existing identity.
@@ -172,7 +181,10 @@ function M.run(args,services)
   function love.mousemoved(x,y) if not imgui.love.GetWantCaptureMouse() then state=Events.on_move(state,x,y) end end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
-    if button==2 and not imgui.love.GetWantCaptureMouse() then state=Events.on_press(state,x,y); if state.selected then imgui.OpenPopup_Str('uml-element-mail') end end
+    if button==2 and not imgui.love.GetWantCaptureMouse() then
+      state=Events.on_press(state,x,y)
+      if Events.element_menu(state.selected) then imgui.OpenPopup_Str('uml-element-mail') end
+    end
     if button==1 and not imgui.love.GetWantCaptureMouse() then
       local back=(#state.focus>0 or G.get(state.extra,'open-layer')) and y<44 and x<320
       state=Events.on_press(state,x,y)
