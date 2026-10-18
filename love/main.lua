@@ -18,4 +18,4 @@ function love.errorhandler(message)
 end
 local viewer_args={}
 for i=(game_args[1]=='viewer' and 2 or 1),#game_args do viewer_args[#viewer_args+1]=game_args[i] end
-require('uml.adapters.viewer').run(viewer_args)
+require('uml.adapters.viewer').run(viewer_args,{source=require('uml.main.source')})
