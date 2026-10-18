@@ -1,4 +1,4 @@
-# Native Windows wrapper check: LOVE identity recognition and cross-runtime refusal.
+# Native Windows wrapper check: LOVE identity recognition and JVM-record refusal.
 param()
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -41,18 +41,19 @@ $args | ConvertTo-Json -AsArray | Set-Content -LiteralPath $env:UML69_RECORD
     while (@(Get-ChildItem -LiteralPath $directory -Filter 'launch-*.json').Count -ne 0 -and
            [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
 
-    # A JVM-owned session must refuse LOVE restart before any ownership write.
+    # A launcher record from the removed JVM runtime must refuse restart before
+    # any ownership write; viewer-jvm.json is no longer recognized.
     $before = '{"pid": 2147483647, "started": "1", "runtime": "jvm"}'
     Set-Content -LiteralPath $launcher -Value $before -Encoding utf8 -NoNewline
     Remove-Item -LiteralPath $record -Force
-    $output = (& pwsh -NoProfile -File $scripts $root '--runtime' 'love' '--restart' 2>&1 | Out-String)
+    $output = (& pwsh -NoProfile -File $scripts $root '--restart' 2>&1 | Out-String)
     $code = $LASTEXITCODE
-    if ($code -eq 0) { throw 'cross-runtime restart must fail' }
-    if ($output -notmatch 'Cannot restart a JVM viewer as love') { throw "unclear refusal: $output" }
+    if ($code -eq 0) { throw 'JVM-runtime restart must fail' }
+    if ($output -notmatch 'LOVE cutover') { throw "unclear refusal: $output" }
     if ((Get-Content -LiteralPath $launcher -Raw) -cne $before) { throw 'refused restart changed launcher ownership' }
     if (Test-Path -LiteralPath $record) { throw 'refused restart launched the LOVE runtime' }
     if (@(Get-ChildItem -LiteralPath $directory -Filter 'launch-*.json').Count -ne 0) { throw 'refused restart wrote a launch manifest' }
-    Write-Output 'LOVE restart identity recognition and cross-runtime refusal verified'
+    Write-Output 'LOVE restart identity recognition and JVM-record refusal verified'
 } finally {
     $env:UML_LOVE_EXECUTABLE, $env:UML69_RECORD = $previousLove, $previousRecord
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

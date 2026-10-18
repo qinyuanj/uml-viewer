@@ -1,7 +1,11 @@
 # Herdr SessionBackend 契约 — spec #13 / issue #14 产出
 
-本文档记录 Herdr 的能力证据和当前生命周期契约。#23 退役后 Herdr 是原生
-Windows/macOS 唯一 companion 后端；`--backend herdr` 保留为兼容选项。
+本文档记录 Herdr 的能力证据和生命周期契约。**#72 LOVE 切换后，本轮仅支持
+原生 Windows；macOS 不受支持。** 文中 Java/JVM 与 macOS 部分是切换前的实现和
+验收证据；当前实现是 `love/uml/adapters/` 的 LOVE runner/controller，进程创建、
+等待和 OS 单例 lock 通过平台 adapter 提供，ownership、预算、FIFO 与质量门控契约
+保持不变。当前身份文件与重启规则见 §9.1。#23 退役后 Herdr 是唯一 companion
+后端；`--backend herdr` 保留为兼容选项。
 Windows 完整生命周期仅部分原生验收；macOS 端到端验收由 spec #32 完成
 （Herdr 0.9.4，见 §8）。能力实验与端到端验收分开记录；未验证项不按官网
 声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
@@ -275,17 +279,14 @@ LOVE viewer（本轮仅 Windows 原生）通过 FFI 调用 `GetCurrentProcessId`
   字符串保存，避免 Lua number 精度损失；wrapper 与 .NET
   `Process.StartTime.ToUniversalTime().Ticks`（0001 起算）逐 tick 精确比较，
   不设毫秒截断或时间窗容差。进程名校验接受 `love` / `lovec`。
-- JVM 仍写 `.uml-viewer/viewer-jvm.json`。wrapper 同时识别两种文件：
-  `./uml --restart`（默认 JVM）只验证 JVM 记录，`./uml --runtime love --restart`
-  只验证 LOVE 记录。
+- #72 切换后 JVM 实现已删除：wrapper **不再识别**
+  `.uml-viewer/viewer-jvm.json`，`./uml --restart` 只验证 LOVE 记录。
 - 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 增加
-  `runtime` 字段（`jvm` 或 `love`），作为当前会话的权威来源。存在该字段时，
-  另一运行时的陈旧身份文件不影响重启；字段缺失且两种身份文件同时存在时视为
-  含糊并拒绝重启。
-- 跨运行时重启（JVM 会话以 `--runtime love` 重启，或 LOVE 会话以默认 JVM
-  重启）在写 launch manifest 或替换任何 ownership 之前拒绝，并明确提示应使用
-  的 `--runtime`。记录缺失、PID/启动时间不符、进程名不符或身份文件无效同样
-  拒绝；已有身份文件保持原字节，不删除、不改写、不以新进程替代。
+  `runtime` 字段（只允许 `love`），作为当前会话的权威来源。声明 `jvm` 的
+  旧记录被明确拒绝，不以 LOVE 记录猜测替代。
+- 记录缺失、PID/启动时间不符、进程名不符或身份文件无效同样拒绝；已有身份
+  文件保持原字节，不删除、不改写、不以新进程替代。`--runtime jvm` 被拒绝；
+  `--runtime love` 仅作为兼容写法保留。
 - 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。LOVE 的
   `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
   独立 discussion context、视图（focus/proposal/layer/declutter/camera/

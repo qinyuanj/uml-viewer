@@ -21,33 +21,23 @@ function Get-UmlLauncherOwner {
 
 function Get-UmlRuntimeProvenance {
     param($Root, $LauncherRecord)
-    # The launcher record is written for every new launch and names the runtime
-    # that owns the current session, so stale records from the other runtime do
-    # not make an otherwise unambiguous restart ambiguous.
+    # The launcher record names the runtime that owns the current session.
+    # After the LOVE cutover only that runtime exists; viewer-jvm.json is no
+    # longer recognized and a legacy JVM record is refused instead of guessed.
     $declared = if ($null -ne $LauncherRecord) { $LauncherRecord.runtime } else { $null }
     if ($null -ne $declared -and [string]$declared -ne '') {
         $value = [string]$declared
-        if ($value -cnotin @('jvm', 'love')) { throw "Invalid viewer runtime '$value'; cannot safely restart." }
-        return $value
+        if ($value -cne 'love') { throw "Viewer runtime '$value' was removed in the LOVE cutover; cannot safely restart. Start a fresh LOVE viewer." }
+        return 'love'
     }
-    $jvm = Test-Path -LiteralPath (Join-Path $Root '.uml-viewer/viewer-jvm.json')
-    $love = Test-Path -LiteralPath (Join-Path $Root '.uml-viewer/viewer-process-identity.json')
-    if ($jvm -and $love) { return 'ambiguous' }
-    if ($jvm) { return 'jvm' }
-    if ($love) { return 'love' }
+    if (Test-Path -LiteralPath (Join-Path $Root '.uml-viewer/viewer-process-identity.json')) { return 'love' }
     return $null
 }
 
 function Assert-UmlRestartRuntime {
     param([string]$Root, $LauncherRecord, [Parameter(Mandatory = $true)][string]$Expected)
     $actual = Get-UmlRuntimeProvenance $Root $LauncherRecord
-    if ($actual -ceq 'ambiguous') {
-        throw 'Viewer runtime identity is ambiguous (both JVM and LOVE process records); cannot safely restart.'
-    }
-    if ($null -ne $actual -and $actual -cne $Expected) {
-        $label = if ($actual -ceq 'jvm') { 'JVM' } else { 'LOVE' }
-        throw "Cannot restart a $label viewer as $Expected; use --runtime $actual."
-    }
+    if ($Expected -cne 'love') { throw "Unsupported restart runtime '$Expected'; the JVM runtime was removed." }
     return $actual
 }
 
