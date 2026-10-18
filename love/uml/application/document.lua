@@ -149,13 +149,12 @@ end
 local function without(m,key)
   local r=E.map(); for _,entry in ipairs(m or {}) do if not E.equal(entry[1],E.keyword(key)) then r[#r+1]={entry[1],entry[2]} end end; return r
 end
--- Persistence projects named proposals to their durable shape; omit/notice are
--- derived view data and are not written back to policy.
+-- Keep authored proposal fields, including omissions and grouping state.
+-- Only view annotations are discarded; map/vector order remains intact.
 function M.proposal_records(doc)
   local out=V()
   for _,proposal in ipairs(H.named_proposals(doc)) do
-    local record=E.map()
-    for _,key in ipairs{'id','name','layers'} do E.assoc(record,E.keyword(key),g(proposal,key)) end
+    local record=without(without(proposal,'notice'),'proposal')
     out[#out+1]=record
   end
   return out

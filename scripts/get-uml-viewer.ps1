@@ -38,6 +38,29 @@ function Get-LoveCommand {
     }
     return $command
 }
+function Install-Cimgui([string]$Directory, [scriptblock]$Download = { param($Url,$Destination) Invoke-WebRequest -Uri $Url -OutFile $Destination }, $Pin = $null) {
+    # Prototype #52 provenance: prototypes/cjk-ime/evidence/acceptance.json.
+    if (-not $Pin) { $Pin = @{
+        Url = 'https://github.com/apicici/cimgui-love/releases/download/1.90-1/cimgui-love-windows-x64-1.90-1.zip'
+        ArchiveSha256 = '5CC57755FE01E2A6338778708528A5F5C4F9D7C333F79116913244F0417A6EC1'
+        DllSha256 = 'D44012572DA3009DC84BD64D1EE51F067DB59D39442885FCB1C91F2BBB0BBF3D'
+    } }
+    if ((Test-Path "$Directory/cimgui/init.lua") -and (Test-Path "$Directory/cimgui.dll") -and
+        (Get-FileHash "$Directory/cimgui.dll").Hash -eq $Pin.DllSha256) { return }
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ('uml-cimgui-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory "$temp/download", "$temp/expanded"
+    try {
+        $archive = "$temp/download/cimgui.zip"
+        & $Download $Pin.Url $archive
+        if ((Get-FileHash $archive).Hash -ne $Pin.ArchiveSha256) { throw 'cimgui-love archive SHA256 mismatch' }
+        Expand-Archive -LiteralPath $archive -DestinationPath "$temp/expanded"
+        if ((Get-FileHash "$temp/expanded/cimgui.dll").Hash -ne $Pin.DllSha256 -or
+            -not (Test-Path "$temp/expanded/cimgui/init.lua")) { throw 'cimgui-love release payload mismatch' }
+        $null = New-Item -ItemType Directory -Force $Directory
+        Copy-Item "$temp/expanded/cimgui.dll" $Directory -Force
+        Copy-Item "$temp/expanded/cimgui" $Directory -Recurse -Force
+    } finally { Remove-Item -LiteralPath $temp -Recurse -Force }
+}
 function Assert-Cimgui([string]$LovePath) {
     $directory = Setting 'UML_CIMGUI_DIRECTORY' ''
     if (-not $directory) { $directory = Split-Path $LovePath -Parent }
@@ -49,23 +72,30 @@ function Assert-Cimgui([string]$LovePath) {
     }
 }
 function Assert-Herdr {
-    $command = Get-Command herdr -ErrorAction SilentlyContinue
-    if (-not $command -or $command.CommandType -notin @('Application', 'ExternalScript')) {
-        throw 'Herdr >= 0.9.3 is required. Install a release from https://github.com/herdrdev/herdr/releases and put herdr on PATH.'
+    # ADR 0004: highest compatible PATH candidate, equal versions keep PATH order.
+    # Same version/schema contract as uml.domain.companion.probe_herdr.
+    $best = $null; $rejected = @(); $seen = @{}
+    foreach ($directory in ($env:PATH -split [IO.Path]::PathSeparator)) {
+        $directory = $directory.Trim('"')
+        if (-not $directory) { continue }
+        foreach ($name in @('herdr.exe', 'herdr.ps1')) {
+            $path = Join-Path $directory $name
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $path = [IO.Path]::GetFullPath($path)
+            if ($seen.ContainsKey($path)) { continue }; $seen[$path] = $true
+            try {
+                $text = (@(& $path --version 2>&1) | ForEach-Object { ([string]$_).Trim() }) -join "`n"
+                if ($LASTEXITCODE -ne 0 -or $text -cnotmatch '^herdr (\d+\.\d+\.\d+)$') { throw 'not a herdr X.Y.Z >= 0.9.3' }
+                $release = [version]$Matches[1]
+                if ($release -lt [version]'0.9.3') { throw 'not a herdr X.Y.Z >= 0.9.3' }
+                $schema = (@(& $path api schema --json 2>&1) | ForEach-Object { [string]$_ }) -join "`n"
+                if ($LASTEXITCODE -ne 0 -or $schema -cnotmatch '^\s*\{\s*"\$schema"\s*:\s*"[^"]*"\s*,\s*"protocol"\s*:\s*22\s*[,}]') { throw 'bundled schema is not protocol 22' }
+                if (-not $best -or $release -gt $best.Release) { $best = @{Path=$path; Release=$release} }
+            } catch { $rejected += "$path ($_)" }
+        }
     }
-    $version = @(& $command.Source --version 2>&1)
-    $text = ($version | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ }) -join "`n"
-    if ($LASTEXITCODE -ne 0 -or $text -notmatch '^herdr (\d+)\.(\d+)\.(\d+)$') {
-        throw "Herdr >= 0.9.3 is required; '$($command.Source) --version' did not report herdr X.Y.Z."
-    }
-    $found = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
-    $floor = @(0, 9, 3)
-    for ($index = 0; $index -lt 3; $index++) {
-        if ($found[$index] -gt $floor[$index]) { return }
-        if ($found[$index] -lt $floor[$index]) { break }
-    }
-    if (($found[0] -eq $floor[0]) -and ($found[1] -eq $floor[1]) -and ($found[2] -eq $floor[2])) { return }
-    throw "Herdr >= 0.9.3 is required; found $($found -join '.')."
+    if ($best) { return $best }
+    throw ('Herdr >= 0.9.3 with protocol 22 is required. Install from https://github.com/herdrdev/herdr/releases. Candidates on PATH: ' + ($rejected -join '; '))
 }
 function Get-PythonCommand {
     $override = Setting 'UML_PYTHON_EXECUTABLE' ''
@@ -112,12 +142,13 @@ try {
         throw 'git is required. Install Git: https://git-scm.com/downloads'
     }
     $love = Get-LoveCommand
-    Assert-Cimgui $love.Source
-    Assert-Herdr
+    if ($env:UML_CIMGUI_DIRECTORY) { Assert-Cimgui $love.Source }
+    $null = Assert-Herdr
     $python = Get-PythonCommand
     $root = (Get-Location).Path
     New-Item -ItemType Directory -Force '.uml-viewer' | Out-Null
     Fetch-Repo '.uml-viewer/uml-viewer' (Setting 'UML_VIEWER_REPO_URL' 'https://github.com/qinyuanj/uml-viewer.git') (Setting 'UML_VIEWER_REF' 'lua')
+    if (-not $env:UML_CIMGUI_DIRECTORY) { Install-Cimgui '.uml-viewer/cimgui-love-1.90-1' }
     # Both quality tools are mandatory for every project, independent of any
     # deps.edn left over from the removed Clojure implementation.
     $toolErrors = @()

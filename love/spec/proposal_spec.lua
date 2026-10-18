@@ -97,6 +97,40 @@ describe('proposal transitions',function()
     cleanup(dir)
     assert.is_true(ok,message)
   end)
+  it('preserves omissions and authored grouping state through CRUD, persistence and reload',function()
+    local D=require('uml.application.document')
+    local Events=require('uml.application.events')
+    local PolicyFile=require('uml.adapters.policy_file')
+    local dir=temp_dir(); local path=dir..'/diagram.edn'; local policy=dir..'/diagram.policy.edn'
+    local proposal='{:id :kept :name "Named" :layers [{:id :group :nses [:app] :layout [:c :a]}] :omit [:app.hidden :app.other] :layout {:order [:b :a]} :notice "derived" :proposal true}'
+    local doc=E.parse('{:hierarchical true :title "T" :classes [] :edges [] :order [] :proposals ['..proposal..']}')
+    local original=E.parse('{:title "Keep" :lang :lua :omit [:global.hidden] :custom {:order [:z :a]} :proposals ['..proposal..']}')
+    local file=assert(io.open(policy,'wb')); file:write(E.encode(original)); file:close()
+    local ok,message=pcall(function()
+      local state=D.new(doc,'one'); state.path=path
+      local function check(s,stamp)
+        local reloaded,changed,err=D.reload(s,PolicyFile.read(path),stamp)
+        assert.is_nil(err); assert.is_true(changed)
+        local persisted=E.parse(PolicyFile.read(policy))
+        for _,record in ipairs{G.get(reloaded.document,'proposals')[1],G.get(persisted,'proposals')[1]} do
+          assert.is_true(E.equal(E.parse('[:app.hidden :app.other]'),G.get(record,'omit')))
+          assert.is_true(E.equal(E.parse('{:order [:b :a]}'),G.get(record,'layout')))
+          assert.is_true(E.equal(E.parse('[:c :a]'),G.get(G.get(record,'layers')[1],'layout')))
+          assert.is_nil(G.get(record,'notice')); assert.is_nil(G.get(record,'proposal'))
+        end
+        for _,key in ipairs{'title','lang','omit','custom'} do assert.is_true(E.equal(G.get(original,key),G.get(persisted,key))) end
+        return reloaded
+      end
+      state=check(Events.add_proposal(state,{now=1700000000,boundary=PolicyFile}),'two')
+      local added=G.get(state.extra,'proposal-id')
+      state=check(Events.rename_proposal(state,E.keyword('kept'),'Renamed',{boundary=PolicyFile}),'three')
+      assert.equals('Renamed',G.get(G.get(state.document,'proposals')[1],'name'))
+      state=check(Events.delete_proposal(state,added,{boundary=PolicyFile}),'four')
+      assert.equals(1,#G.get(state.document,'proposals'))
+      check(D.new(D.write_proposals(path,state.document,PolicyFile),'zero'),'five')
+    end)
+    cleanup(dir); assert.is_true(ok,message)
+  end)
   it('renames, deletes, or ignores a proposal op',function()
     local Events=require('uml.application.events')
     assert.is_nil(Events.rename_op(E.keyword('ccp'),nil))

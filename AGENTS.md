@@ -70,9 +70,10 @@ The diagram is already on screen.
   launch is unsupported. Legacy tmux/psmux or unmarked ownership
   is retained and refused; before migration read
   `docs/herdr-backend-contract.md` §9.
-- Installer prerequisites are LOVE 11.5 with the cimgui-love dynamic
-  libraries, PowerShell 7, git, Herdr >= 0.9.3, and Python 3.11+.
-  `get-uml-viewer` always fetches both crapper and mutator and provisions
+- Installer prerequisites are LOVE 11.5, PowerShell 7, git,
+  Herdr >= 0.9.3, and Python 3.11+. `get-uml-viewer` provisions pinned
+  cimgui-love 1.90-1 bindings and DLL automatically into `.uml-viewer/`.
+  It always fetches both crapper and mutator and provisions
   their project-local `.uml-viewer/<tool>/.venv` environments.
 
 Do not commit or push unless asked. Esc interrupts a turn in this terminal;
