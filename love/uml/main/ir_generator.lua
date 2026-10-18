@@ -3,7 +3,12 @@ local E=require('uml.edn')
 local G=require('uml.graph')
 local IR=require('uml.application.ir_generator')
 local Files=require('uml.adapters.project_files')
-local Lua=require('uml.lua_language.graph_lua')
+local scanners={
+  lua='uml.lua_language.graph_lua',
+  typescript='uml.typescript_language.graph_typescript',
+  rust='uml.rust_language.graph_rust',
+  python='uml.python_language.graph_python'
+}
 local M={}
 local function get(m,k,d) local v=E.get(m,E.keyword(k)); if v==nil or v==E.nil_value or v==false then return d end; return v end
 function M.run(args)
@@ -20,14 +25,18 @@ function M.run(args)
   assert(love.system.getOS()=='Windows','IR native path adapter currently supports Windows')
   local paths=require('uml.adapters.windows_path'); root=paths.canonical(root)
   local files=Files.new(root,paths)
-  local function register(lang,scanner)
-    G.register(lang,function(source,opts) local canonical,snapshot=files.snapshot(source,scanner,opts); return scanner.scan(canonical,opts,snapshot,root) end)
+  for lang,module in pairs(scanners) do
+    local selected=module
+    G.register(lang,function(source,opts)
+      local ok,scanner=pcall(require,selected)
+      if not ok then error('Scanner unavailable: '..selected..': '..tostring(scanner),0) end
+      local canonical,snapshot=files.snapshot(source,scanner,opts)
+      return scanner.scan(canonical,opts,snapshot,root)
+    end)
   end
-  register('lua',Lua)
   local path=positional[1] or 'examples/uml-viewer.policy.edn'
-  local p=IR.read_policy(path,files); local lang=get(p,'lang',E.keyword('clojure')); local impl=G.lookup(lang)
-  if not impl and #get(p,'sources',E.vector())==0 then error('no LanguageGraph for :'..lang.name) end
-  local out=IR.generate(impl,path,positional[2] or get(p,'out','examples/uml-viewer.edn'),files)
+  local p=IR.read_policy(path,files)
+  local out=IR.generate(nil,path,positional[2] or get(p,'out','examples/uml-viewer.edn'),files)
   print('Wrote '..out); return 0
 end
 return M
