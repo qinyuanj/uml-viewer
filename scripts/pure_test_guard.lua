@@ -15,9 +15,15 @@ end
 local Atomic=require('uml.adapters.atomic_file')
 local write=Atomic.write
 local function fixture_replace(source,target)
-  local backup=target..'.fixture-backup'
+  local reserved=os.tmpname()
+  local backup=target..'.'..reserved:gsub('.*[/\\\\]','')..'.fixture-backup'
+  os.remove(reserved)
   local had=io.open(target,'rb')
-  if had then had:close(); assert(os.rename(target,backup)) end
+  if had then
+    had:close()
+    local moved,err=os.rename(target,backup)
+    if not moved then return nil,err end
+  end
   local ok,err=os.rename(source,target)
   if not ok and had then assert(os.rename(backup,target)) end
   if ok and had then assert(os.remove(backup)) end

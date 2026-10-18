@@ -48,7 +48,7 @@ local function fake_cli(calls,state)
       return response{session=session,socket=owned.socket,running=not state.stopped,
         version='0.9.3',protocol=22,compatible=true,endpoint_compatible=true}
     elseif op[1]=='api' and op[2]=='snapshot' then
-      local panes=JSON.array{{pane_id='w1:p1',workspace_id='w1',terminal_id=state.terminal or 'term_A',cwd=owned.cwd}}
+      local panes=JSON.array{{pane_id='w1:p1',workspace_id='w1',terminal_id=state.terminal or 'term_A',cwd=state.cwd or owned.cwd}}
       local workspaces=state.closed and JSON.array{} or JSON.array{{workspace_id='w1'}}
       local agents=state.no_agent and JSON.array{} or JSON.array{{pane_id='w1:p1',terminal_id='term_A',agent='claude'}}
       return response{result={snapshot={version='0.9.3',protocol=22,workspaces=workspaces,panes=panes,agents=agents}}}
@@ -207,7 +207,11 @@ describe('Herdr owned session backend',function()
       runner={executable='love',argv={'love','C:/love','companion-runner'}},
       runner_state=function(record) return {token=record.runner_token,phase='started'} end,
       start_recovery=function(record) state.recovery=record end})
-    local identity=B.create('uml-viewer-A',owned.cwd,original)
+    local root=os.tmpname(); os.remove(root); assert(lfs.mkdir(root)); state.cwd=root
+    local ok,identity=pcall(B.create,'uml-viewer-A',root,original)
+    os.remove(root..'/.uml-viewer/uml-viewer-A-runner.edn.launch.edn')
+    lfs.rmdir(root..'/.uml-viewer'); lfs.rmdir(root)
+    assert.is_true(ok,identity)
     assert.are.same(original,identity.command)
     assert.is_nil(identity.provisional)
     assert.are.equal('term_A',identity.terminal_id)
