@@ -51,7 +51,8 @@ policy, not the IR. See [Policy](#policy).
 
 Needs LOVE 11.5, PowerShell 7, git, Herdr >= 0.9.3, and Python 3.11+.
 The installer provisions pinned cimgui-love 1.90-1 Windows x64 bindings and
-DLL automatically. There is no Java or Clojure dependency.
+DLL and the pinned Sarasa Mono SC Regular font automatically. There is no
+Java or Clojure dependency.
 
 From **this repo** (the viewer and IR generator are the `love/` tree):
 
@@ -89,6 +90,11 @@ cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
 project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
 it with an existing matching binding and DLL. Set `UML_LOVE_EXECUTABLE` when
 `love` is not on PATH.
+The installer also downloads Sarasa Gothic v1.0.42, verifies the archive and
+`SarasaMonoSC-Regular.ttf` SHA256, and places the font in
+`.uml-viewer/fonts/`; any failure exits non-zero. The viewer's font lookup is
+an explicit path, then `UML_CJK_FONT`, then that provisioned Sarasa, then
+system Microsoft YaHei with a one-time stderr warning to run `get-uml-viewer`.
 Install Herdr >= 0.9.3 from
 https://github.com/herdrdev/herdr/releases. The installer preserves existing
 policies and proposals and does not create a policy or generate a diagram
@@ -392,18 +398,21 @@ retained; follow the migration instructions before starting fresh.
   The window close box or a `:quit-for-restart` mail message exits the app.
 - Hover an arrow for a popup of every `from -> to` it bundles, in any
   declutter mode. Violating pairs are red.
-- Right-click a class or component for **Refresh CRAP**, **Refresh
-  Mutation**, **Refresh All Mutation**, or **Omit**. Each writes
+- Right-click a class or component for **刷新 CRAP**, **刷新 mutation**,
+  **全量 mutation**, or **隐藏** (Refresh CRAP / Refresh Mutation / Refresh
+  All Mutation / Omit). Each writes
   `to-agent.edn` and wakes the companion. CRAP runs on that class or the
   files under that component. Mutation is differential `./uml mutate` on
   those src files; All Mutation passes `--mutate-all`. Omit adds the id to
   the current proposal's `:omit`, or to policy `:omit` on the real diagram.
 - Component titles paint **on top of** crossing arrows.
-- The inspector lists the **real diagram** (the namespace tree) above
+- The viewer UI is Chinese (one string table, `love/uml/application/strings.lua`);
+  metric and tool names stay English. The inspector (检查器) lists the
+  **real diagram** (源码图, the namespace tree) above
   **Proposals**. Click the real row to return to the tree; click a proposal
   to show it (marked as not in the code). Either click writes `:context`
   so the companion treats that diagram as the discussion. **New Proposal**
-  adds a timestamp-named proposal. Right-click to rename or delete.
+  (新建提案) adds a timestamp-named proposal. Right-click to rename or delete.
   **Declutter** cycles Declutter arrows / Remove arrows / Declutter
   elements / Declutter classes / Declutter none. **Remove arrows** hides
   the lines and puts a triangle on the top (incoming) and bottom
@@ -534,7 +543,7 @@ tree's namespace root. `src/model.ts` becomes `bookwriter.model`
 | `:hierarchical` | Namespace tree (default when `:packages` is omitted) |
 | `:order` | Order of **existing** top-level ns segments, not new component names |
 | `:levels` | Groups of those segments, **inner (higher-level) first**. Same group = same rank |
-| `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector **Real diagram** row returns to the ns tree |
+| `:proposals` | Named groupings of real segments; **not** instantiated in source. Inspector **源码图** (real diagram) row returns to the ns tree |
 | `:omit` | On a proposal or the policy: nses (and their children) left off the diagram |
 | `:edge-kinds` | Override parser kind for `[from to]` (usually `:association`) |
 | `:omit-edges` | Drop `[from to]` |
