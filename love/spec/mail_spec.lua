@@ -44,7 +44,7 @@ describe('viewer mailbox files and user events',function()
     local s={scene=E.parse('{:classes [{:id :c :ns "app.c" :contents [{:id :child}]}]}'),extra=E.parse('{:proposal-id :p}')}
     local selection=E.parse('{:kind :class :id :c}')
     local labels={}; for _,entry in ipairs(Menu.entries()) do labels[#labels+1]=entry.label end
-    assert.are.same({'Refresh CRAP','Refresh Mutation','Refresh All Mutation','Omit'},labels)
+    assert.are.same({'刷新 CRAP','刷新 mutation','全量 mutation','隐藏'},labels)
     -- The root is only a fallback for a mutant that bypasses the supplied
     -- outbox; keep it in the system temp directory so no generated mail can
     -- appear inside the working tree.

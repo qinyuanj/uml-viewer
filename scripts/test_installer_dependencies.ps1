@@ -20,6 +20,38 @@ try {
   }
   if($downloads.Count -ne 1){throw 'repeat install downloaded again'}
   'PASS clean and repeat pinned provisioning'
+  # Sarasa: real 7z fixtures through the installer's own bsdtar extraction.
+  $fontSource=Join-Path $root 'font-fixture'; $null=New-Item -ItemType Directory $fontSource
+  [IO.File]::WriteAllText("$fontSource/SarasaMonoSC-Regular.ttf",'fixture regular font')
+  [IO.File]::WriteAllText("$fontSource/SarasaMonoSC-Bold.ttf",'fixture bold font')
+  $font7z=Join-Path $root 'sarasa.7z'
+  Push-Location $fontSource; try { & (Get-SystemTar) --format 7zip -cf $font7z 'SarasaMonoSC-Regular.ttf' 'SarasaMonoSC-Bold.ttf'; if($LASTEXITCODE -ne 0){throw 'could not build 7z fixture'} } finally { Pop-Location }
+  $fontPin=@{ Url='fixture://sarasa'; ArchiveSha256=(Get-FileHash $font7z).Hash; FontSha256=(Get-FileHash "$fontSource/SarasaMonoSC-Regular.ttf").Hash }
+  $fontDownloads=[Collections.Generic.List[string]]::new()
+  $fontDownload={param($url,$destination) $fontDownloads.Add($url); Copy-Item $font7z $destination}.GetNewClosure()
+  $fonts=Join-Path $root 'fonts'
+  foreach($iteration in 1..2){ Install-Sarasa $fonts -Download $fontDownload -Pin $fontPin }
+  if((Get-FileHash "$fonts/SarasaMonoSC-Regular.ttf").Hash -ne $fontPin.FontSha256){throw 'Sarasa Regular not installed'}
+  if(Test-Path "$fonts/SarasaMonoSC-Bold.ttf"){throw 'installer extracted more than the Regular face'}
+  if($fontDownloads.Count -ne 1){throw 'repeat Sarasa install downloaded again'}
+  'PASS Sarasa clean and repeat provisioning from a 7z archive'
+  function Assert-SarasaFails([string]$Case,[string]$Expect,[scriptblock]$Download,$Pin){
+    $target=Join-Path $root ("fonts-$Case"); $failed=$null
+    try { Install-Sarasa $target -Download $Download -Pin $Pin } catch { $failed=$_.Exception.Message }
+    if(-not $failed){throw "Sarasa $Case did not fail"}
+    if(-not $failed.Contains($Expect)){throw "Sarasa $Case failed for the wrong reason: $failed"}
+    if(Test-Path "$target/SarasaMonoSC-Regular.ttf"){throw "Sarasa $Case left a font installed"}
+    "PASS Sarasa $Case fails: $failed"
+  }
+  $seen=[Collections.Generic.List[string]]::new()
+  Assert-SarasaFails 'pinned-release' 'archive SHA256 mismatch' {param($url,$destination) $seen.Add($url); [IO.File]::WriteAllText($destination,'tampered')}.GetNewClosure() $null
+  if($seen[0] -ne 'https://github.com/be5invis/Sarasa-Gothic/releases/download/v1.0.42/SarasaMonoSC-TTF-1.0.42.7z'){throw "default Sarasa pin is not the fixed release: $($seen[0])"}
+  'PASS default Sarasa pin is release v1.0.42'
+  Assert-SarasaFails 'archive-checksum' 'archive SHA256 mismatch' $fontDownload (@{Url='fixture://sarasa'; ArchiveSha256=('0'*64); FontSha256=$fontPin.FontSha256})
+  Assert-SarasaFails 'font-checksum' 'SarasaMonoSC-Regular.ttf SHA256 mismatch' $fontDownload (@{Url='fixture://sarasa'; ArchiveSha256=$fontPin.ArchiveSha256; FontSha256=('0'*64)})
+  Assert-SarasaFails 'download' 'offline fixture' {param($url,$destination) throw 'offline fixture'} $fontPin
+  $broken=Join-Path $root 'broken.7z'; [IO.File]::WriteAllText($broken,'not a 7z archive')
+  Assert-SarasaFails 'extraction' 'extraction failed' {param($url,$destination) Copy-Item $broken $destination}.GetNewClosure() (@{Url='fixture://sarasa'; ArchiveSha256=(Get-FileHash $broken).Hash; FontSha256=$fontPin.FontSha256})
   if($RealBinding){
     # Network archive and extraction use Install-Cimgui's fresh empty directories.
     $installed=Join-Path $root '.uml-viewer/cimgui-love-1.90-1'

@@ -61,6 +61,34 @@ function Install-Cimgui([string]$Directory, [scriptblock]$Download = { param($Ur
         Copy-Item "$temp/expanded/cimgui" $Directory -Recurse -Force
     } finally { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+function Get-SystemTar {
+    # Windows bsdtar reads 7z; a Git/GNU tar earlier on PATH does not.
+    $system = Join-Path ([Environment]::GetFolderPath('System')) 'tar.exe'
+    if (Test-Path -LiteralPath $system) { return $system }
+    return 'tar'
+}
+function Install-Sarasa([string]$Directory, [scriptblock]$Download = { param($Url,$Destination) Invoke-WebRequest -Uri $Url -OutFile $Destination }, $Pin = $null) {
+    # The viewer's only UI font (#82). Provenance: prototypes/viewer-visual-revised/provision-font.ps1.
+    if (-not $Pin) { $Pin = @{
+        Url = 'https://github.com/be5invis/Sarasa-Gothic/releases/download/v1.0.42/SarasaMonoSC-TTF-1.0.42.7z'
+        ArchiveSha256 = 'AA2150E99EB38C5F9D3A00FE58E3F90A9D89495C795A8AC80934D1C3E6C377EE'
+        FontSha256 = '82E09460F6F55010296F670B85E346DDEAF91B967724840D2BF5514137F68A83'
+    } }
+    $name = 'SarasaMonoSC-Regular.ttf'
+    if ((Test-Path -LiteralPath "$Directory/$name") -and (Get-FileHash -LiteralPath "$Directory/$name").Hash -eq $Pin.FontSha256) { return }
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ('uml-sarasa-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory "$temp/download", "$temp/expanded"
+    try {
+        $archive = "$temp/download/sarasa.7z"
+        & $Download $Pin.Url $archive
+        if ((Get-FileHash -LiteralPath $archive).Hash -ne $Pin.ArchiveSha256) { throw 'Sarasa font archive SHA256 mismatch' }
+        & (Get-SystemTar) -xf $archive -C "$temp/expanded" $name
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "$temp/expanded/$name")) { throw "Sarasa font archive extraction failed ($LASTEXITCODE)" }
+        if ((Get-FileHash -LiteralPath "$temp/expanded/$name").Hash -ne $Pin.FontSha256) { throw "$name SHA256 mismatch" }
+        $null = New-Item -ItemType Directory -Force $Directory
+        Copy-Item -LiteralPath "$temp/expanded/$name" $Directory -Force
+    } finally { Remove-Item -LiteralPath $temp -Recurse -Force }
+}
 function Assert-Cimgui([string]$LovePath) {
     $directory = Setting 'UML_CIMGUI_DIRECTORY' ''
     if (-not $directory) { $directory = Split-Path $LovePath -Parent }
@@ -149,6 +177,8 @@ try {
     New-Item -ItemType Directory -Force '.uml-viewer' | Out-Null
     Fetch-Repo '.uml-viewer/uml-viewer' (Setting 'UML_VIEWER_REPO_URL' 'https://github.com/qinyuanj/uml-viewer.git') (Setting 'UML_VIEWER_REF' 'main')
     if (-not $env:UML_CIMGUI_DIRECTORY) { Install-Cimgui '.uml-viewer/cimgui-love-1.90-1' }
+    # The viewer probes this exact path before falling back to YaHei.
+    Install-Sarasa '.uml-viewer/fonts'
     # Both quality tools are mandatory for every project, independent of any
     # deps.edn left over from the removed Clojure implementation.
     $toolErrors = @()

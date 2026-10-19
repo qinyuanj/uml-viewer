@@ -15,6 +15,8 @@ $original = [IO.File]::GetLastWriteTimeUtc($path)
 $env:UML_CIMGUI_DIRECTORY = (Resolve-Path $CimguiDirectory).Path
 $env:UML_VIEWER_EVIDENCE = $evidence
 $env:UML_VIEWER_TEST_SECONDS = '6'
+# Stderr must stay empty: name the font explicitly so no Sarasa fallback warning prints.
+$env:UML_CJK_FONT = Join-Path $env:WINDIR 'Fonts/msyh.ttc'
 $info = [Diagnostics.ProcessStartInfo]::new($Love)
 $info.UseShellExecute = $false
 $info.WorkingDirectory = $repo

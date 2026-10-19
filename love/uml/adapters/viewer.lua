@@ -10,6 +10,7 @@ local Boxes=require('uml.adapters.class_boxes')
 local Edges=require('uml.adapters.edges')
 local Metrics=require('uml.adapters.metrics')
 local Inspector=require('uml.adapters.inspector')
+local Fonts=require('uml.adapters.fonts')
 local InspectorModel=require('uml.application.inspector')
 local Mail=require('uml.adapters.mail')
 local Menu=require('uml.adapters.mail_menu')
@@ -45,7 +46,7 @@ function M.run(args,services)
   if dependencies then dependencies=dependencies:gsub('\\','/'); package.path=dependencies..'/?.lua;'..dependencies..'/?/init.lua;'..package.path; package.cpath=dependencies..'/?.dll;'..package.cpath end
   local imgui=require('cimgui')
   local metrics=Metrics.new()
-  local state,renderer,inspector,source_window,mail,elapsed,frames= nil,nil,nil,nil,nil,0,0
+  local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0
   local companion,keeping_companion,lifecycle_options=nil,false,nil
   local function load_document(p)
     local snapshots,stamp=metrics.snapshot(metrics.root(p))
@@ -65,7 +66,7 @@ function M.run(args,services)
   function love.load()
     love.window.setTitle('UML viewer — LOVE')
     love.window.setMode(1100,760,{resizable=true})
-    imgui.love.Init(); Inspector.fonts(imgui); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui)
+    imgui.love.Init(); fonts=Fonts.load(imgui,Fonts.defaults(project_root)); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
     local snapshot=restart and SessionFile.read(project_root) or nil
     path=Paths.canonical(Session.path(explicit_path,snapshot,path))
     local mail_seen
@@ -101,7 +102,7 @@ function M.run(args,services)
       rename=function(id,name) state=Events.rename_proposal(state,id,name,{boundary=PolicyFile}); publish() end,
       delete=function(id) state=Events.delete_proposal(state,id,{boundary=PolicyFile}); publish() end,
       pick=function(id) state.selected=G.map{kind=E.keyword('class'),id=id} end,
-      open_source=function(ident) if source_window then source_window.open(ident) end end})
+      open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
     -- A refused or invalid startup never overwrites an existing identity.
     if not companion then ProcessIdentity.record(project_root) end
     publish()
@@ -143,7 +144,7 @@ function M.run(args,services)
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
     if probe then
-      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,imgui=imgui,mail=mail})
+      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,imgui=imgui,mail=mail,fonts=fonts})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
     end
     imgui.love.Update(dt); imgui.NewFrame()
@@ -158,7 +159,7 @@ function M.run(args,services)
     inspector.draw(state)
     Menu.draw(imgui,state,state.selected,function(op,extra) mail.request(op,extra) end)
     if source_window then source_window.draw() end
-    if #state.focus>0 or G.get(state.extra,'open-layer') then love.graphics.setColor(1,1,1,1); love.graphics.print('< Back',12,12) end
+    if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back() end
     imgui.Render(); imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end

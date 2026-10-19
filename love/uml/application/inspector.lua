@@ -5,6 +5,7 @@ local G=require('uml.domain.geom')
 local H=require('uml.domain.hierarchy')
 local Events=require('uml.application.events')
 local Detail=require('uml.application.detail')
+local S=require('uml.application.strings')
 local M={}
 M.sidebar_w=280
 M.inspector_pad=16
@@ -14,14 +15,7 @@ M.inspector_btn_gap=8
 M.real_diagram_y=40
 M.proposals_label_y=66
 M.proposal_rows_y=82
-M.empty_message=[[Click a component for its card.
-Double-click a component to open it.
-Esc (or ←) goes up a level.
-Scroll to pan; Shift-scroll for horizontal.
-Ctrl+/− zoom 10%; Ctrl+0 resets.
-R reloads.
-Click the real diagram above Proposals,
-or a proposal to show it.]]
+M.empty_message=S.help
 -- The explanation occupies the detail area only while nothing is selected.
 function M.empty_explanation(state)
   if state==nil or state.selected==nil then return M.empty_message end
@@ -39,7 +33,7 @@ function M.in_rect(r,x,y) return r~=nil and x>=G.get(r,'x') and x<G.right(r) and
 function M.regen_hit(x,y,window_w,window_h) return M.in_rect(M.regen_button(window_w,window_h),x,y) end
 function M.commands(state)
   local active=G.get(state.extra,'proposal-id')
-  local out={{kind='real',label=G.get(state.document,'title') or 'Real diagram',active=not active}}
+  local out={{kind='real',label=G.get(state.document,'title') or S.real_diagram,active=not active}}
   for _,p in ipairs(H.named_proposals(state.document)) do local id=G.get(p,'id'); out[#out+1]={kind='proposal',id=id,label=G.get(p,'name') or G.name(id),active=E.equal(active,id)} end
   return out
 end
@@ -70,8 +64,8 @@ function M.menu(state,id,pointer)
   for _,p in ipairs(H.named_proposals(state.document)) do if E.equal(G.get(p,'id'),id) then found=p end end
   if not found then return nil end
   local entries=E.vector()
-  entries[1]=G.map{label='Rename',op=E.keyword('rename')}
-  entries[2]=G.map{label='Delete',op=E.keyword('delete')}
+  entries[1]=G.map{label=S.rename,op=E.keyword('rename')}
+  entries[2]=G.map{label=S.delete,op=E.keyword('delete')}
   return G.map{id=id,name=G.get(found,'name'),anchor=G.map{x=pointer.x or 0,y=pointer.y or 0},entries=entries}
 end
 function M.menu_action(state,op,id,new_name,opts)
