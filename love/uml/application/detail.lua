@@ -43,7 +43,7 @@ function M.rows(model)
   local c=g(model,'class'); local rows,y={},16
   local function emit(kind,text,extra) local r=extra or {}; r.kind=kind; r.text=text; r.y=y; r.h=r.h or 18; rows[#rows+1]=r; y=y+r.h end
   local function heading(label) y=y+12; emit('heading',label) end
-  emit('name',g(c,'name'))
+  emit('name',g(c,'name'),{h=20})
   if g(c,'level')~=nil then emit('muted',S.level..g(c,'level')) end
   if g(c,'stereotype') then emit('muted','«'..G.name(g(c,'stereotype'))..'»') end
   local file=g(model,'file'); local module=g(model,'ns'); local base=file and file:gsub('\\','/'):match('[^/]+$')

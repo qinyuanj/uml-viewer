@@ -1,9 +1,9 @@
--- The viewer's one font: Sarasa Mono SC at two sizes in the imgui atlas.
+-- Sarasa Mono SC: body/class text and native raster sizes for canvas corners.
 -- Lookup: explicit path -> UML_CJK_FONT -> provisioned Sarasa -> system YaHei.
 -- Messages here are stderr/assertions and stay English.
 local S=require('uml.application.strings')
 local M={}
-M.sizes={body=16,title=20}
+M.sizes={body=18,title=18,badge=9,level=11,marker=12}
 M.sarasa='SarasaMonoSC-Regular.ttf'
 function M.provisioned(root) return (root or '.'):gsub('\\','/')..'/.uml-viewer/fonts/'..M.sarasa end
 local function exists(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
@@ -30,7 +30,7 @@ function M.resolve(opts)
   end
   return {path=yahei,source='yahei'}
 end
--- Adds the body and title fonts to the atlas before imgui.love.BuildFontAtlas.
+-- Adds each actually used raster size before imgui.love.BuildFontAtlas.
 -- The merged glyph ranges are kept on the returned table so the vector stays
 -- alive through the atlas build.
 function M.load(imgui,opts)
@@ -43,11 +43,12 @@ function M.load(imgui,opts)
   builder:AddText(S.glyph_text(),nil)
   local ranges=builder:BuildRanges()
   local fonts={path=choice.path,source=choice.source,ranges=ranges,builder=builder}
-  for _,role in ipairs{'body','title'} do
+  for _,role in ipairs{'badge','level','marker','body'} do
     local font=atlas:AddFontFromFileTTF(choice.path,M.sizes[role],nil,ranges.Data)
     assert(font~=nil,'CJK font could not be loaded: '..choice.path)
     fonts[role]=font
   end
+  fonts.title=fonts.body
   io.FontDefault=fonts.body
   M.current=fonts
   return fonts

@@ -65,7 +65,7 @@ function M.run(args,services)
   project_root=Paths.canonical(project_root)
   function love.load()
     love.window.setTitle('UML viewer — LOVE')
-    love.window.setMode(1100,760,{resizable=true})
+    love.window.setMode(1500,920,{resizable=true})
     imgui.love.Init(); fonts=Fonts.load(imgui,Fonts.defaults(project_root)); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
     local snapshot=restart and SessionFile.read(project_root) or nil
     path=Paths.canonical(Session.path(explicit_path,snapshot,path))
@@ -193,12 +193,14 @@ function M.run(args,services)
   end
   function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
   function love.wheelmoved(x,y)
-    imgui.love.WheelMoved(x,y)
     if inspector and inspector.detail_hovered() then
       state=inspector.wheel(state,-y)
-    elseif not imgui.love.GetWantCaptureMouse() then
-      local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
-      state=Events.on_scroll(state,x~=0 and -x or -y,d)
+    else
+      imgui.love.WheelMoved(x,y)
+      if not imgui.love.GetWantCaptureMouse() then
+        local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
+        state=Events.on_scroll(state,x~=0 and -x or -y,d)
+      end
     end
   end
   function love.keyreleased(k) imgui.love.KeyReleased(k) end

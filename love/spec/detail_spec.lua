@@ -5,6 +5,12 @@ local function scene(text) return require('uml.engine.compose').compile_diagram(
 local function find(rows,key,value) for _,r in ipairs(rows) do if r[key]==value then return r end end end
 local tiny=[[{:title "Tiny" :packages [{:id :p :label "Domain" :classes [{:id :a :name "A" :ns "demo.a" :coverage 0.9 :crap 1.2 :ops [{:name "go" :args ["x"] :returns "void" :coverage 0.75 :cc 2 :crap 1.8 :killed 3 :survived 1 :uncovered 2 :sites 6} {:name "hide" :private true :crap 4.0}]} {:id :b :name "B"}]}] :edges [{:from :a :to :b :kind :dependency}]}]]
 describe('detail public class card',function()
+  it('reserves a 20px detail title row followed by 18px body rows',function()
+    local rows=require('uml.application.detail').rows({class={name='中文类名',level=2},ns='demo.a'})
+    assert.are.equal(16,rows[1].y); assert.are.equal(20,rows[1].h)
+    assert.are.equal(36,rows[2].y); assert.are.equal(18,rows[2].h)
+    assert.are.equal(54,rows[3].y)
+  end)
   it('lays out all six metric columns and the two group spans',function()
     local Detail=require('uml.application.detail'); local cols=Detail.column_layout(); local groups=Detail.group_layout()
     local labels={}; for _,c in ipairs(cols) do labels[#labels+1]=c.label end

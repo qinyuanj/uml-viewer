@@ -18,7 +18,7 @@ end
 -- (top-right); text whose slot reaches into it must stop short of the badges.
 local band_bottom,dots_reserve,marker_reserve=16,32,46
 -- Vertical slots for a class's text lines. The layout keeps its golden 18px
--- line pitch, so the larger 20px name and 16px members are packed into each
+-- line pitch, so the 18px names and members are packed into each
 -- run of lines between rules (and the corner band / box bottom): nominal sizes
 -- when they fit, scaled down together when they do not, with even gaps.
 function M.text_slots(c,r,marker)
@@ -65,7 +65,7 @@ function M.commands(scene)
     quality(commands,c,'class')
     local stereo=G.name(G.get(c,'stereotype')); local marker=stereo=='abstract' or stereo=='interface'
     if marker then commands[#commands+1]={kind='marker',rect=r,text=stereo=='abstract' and 'α' or 'I',x=G.right(r)-44,y=G.get(r,'y')+3,size=12,color=0xffffffff} end
-    if G.get(c,'level')~=nil then commands[#commands+1]={kind='level',rect=r,text=tostring(G.get(c,'level')),x=G.get(r,'x')+4,y=G.get(r,'y')+3,size=10,color=0xffeeeeee} end
+    if G.get(c,'level')~=nil then commands[#commands+1]={kind='level',rect=r,text=tostring(G.get(c,'level')),x=G.get(r,'x')+4,y=G.get(r,'y')+3,size=F.sizes.level,color=0xffeeeeee} end
     for _,line in ipairs(M.text_slots(c,r,marker)) do commands[#commands+1]=line end
   end  return commands
 end
@@ -73,9 +73,9 @@ end
 -- to the monospace estimate (16px Sarasa half-width = layout char_w).
 local function measure(font,size,text)
   if font and font.CalcTextSizeA then return font:CalcTextSizeA(size,1e9,0,text,nil,nil).x end
-  return L.text_w(text)/F.sizes.body*size
+  return L.text_w(text)/16*size
 end
--- The layout's 8px/char estimate fixes box widths (JVM goldens); a 20px name
+-- The layout's 8px/char estimate fixes box widths (JVM goldens); an 18px name
 -- may be wider, so the drawn size shrinks until the text, bold offset and
 -- italic shear fit inside max_w. Never grows past the nominal size.
 function M.fit(font,size,text,max_w,bold,italic)
@@ -113,7 +113,7 @@ function M.new(imgui,fonts)
       elseif c.kind=='quality' then
         local color=c.band=='red' and 0xff5555dd or c.band=='yellow' and 0xff55ccee or 0xff77bb77
         list:AddCircleFilled(point(c.x,c.y),c.radius*scale,color,0)
-        text(fonts.body,9,nil,c.x-3,c.y-5,0xffffffff,c.text)
+        text(fonts.badge or fonts.body,F.sizes.badge,nil,c.x-3,c.y-4.5,0xffffffff,c.text)
       elseif c.kind=='rule' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),0xff777777,1)
       elseif c.kind=='text' then
         -- Fit the slot height and the width budget, then centre in the slot.
@@ -121,7 +121,7 @@ function M.new(imgui,fonts)
         local size=M.fit(font,math.min(c.size,c.h or c.size),c.text,c.max_w,c.bold,c.italic)
         text(font,size,c.max_w,c.x,(c.top or c.y)+((c.h or size)-size)/2,c.color or 0xffeeeeee,c.text,c.italic,c.bold)
       elseif c.kind=='marker' or c.kind=='level' then
-        text(fonts.body,c.size or 13,nil,c.x,c.y,c.color or 0xffeeeeee,c.text)
+        text((c.kind=='marker' and fonts.marker or fonts.level) or fonts.body,c.size or 13,nil,c.x,c.y,c.color or 0xffeeeeee,c.text)
       end
     end
   end

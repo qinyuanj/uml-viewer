@@ -46,7 +46,8 @@ return function(frame,state,ui)
     check(state.detail_scroll==0,'underscroll must clamp to zero')
     love.wheelmoved(0,-3)
   elseif frame==10 then
-    check(state.detail_scroll==144,'three wheel notches must restore 144px')
+    check(state.detail_scroll==144,'three wheel notches must restore 144px (actual '..tostring(state.detail_scroll)..')')
+    check(bounds('new-proposal') and bounds('new-proposal').top>=12,'detail wheel must not scroll the Inspector parent controls out of view')
     pin('member:op8')
   elseif frame==11 then
     check(ins.detail().hover=='op8','hovered operation must be published from the drawn row')

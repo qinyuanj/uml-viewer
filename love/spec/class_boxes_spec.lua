@@ -24,7 +24,7 @@ describe('class box public renderer commands',function()
   it('distinguishes italic classifier and grouping names from plain class and member text',function()
     local s=scene('[{:id :a :stereotype :interface} {:id :b :stereotype :abstract} {:id :c :drill? true} {:id :d :contents [{:id :kid :name "Kid"}]} {:id :e :stereotype :class :fields ["field"]}]')
     local classes=G.get(s,'classes'); G.put(classes[3],'drill?',true); G.put(classes[4],'contents',E.parse('[{:id :kid :name "Kid"}]'))
-    local styles={}; for _,c in ipairs(select_commands(s,'text')) do if c.role=='name' then styles[#styles+1]=c.italic; assert.are.equal(20,c.size); assert.is_true(c.bold) elseif c.text=='field' then assert.is_false(c.italic); assert.is_false(c.bold); assert.are.equal(16,c.size) end end
+    local styles={}; for _,c in ipairs(select_commands(s,'text')) do if c.role=='name' then styles[#styles+1]=c.italic; assert.are.equal(18,c.size); assert.is_true(c.bold) elseif c.text=='field' then assert.is_false(c.italic); assert.is_false(c.bold); assert.are.equal(18,c.size) end end
     assert.are.same({true,true,true,true,false},styles)
   end)
   it('renders italic names as slanted glyph geometry while leaving members upright',function()
@@ -56,7 +56,7 @@ describe('class box public renderer commands',function()
     local alpha; for _,t in ipairs(texts) do if t.text=='α' then alpha=t end end
     assert.is_not_nil(alpha); assert.are.equal(fonts.body,alpha.font); assert.are.equal(0xffffffff,alpha.color)
   end)
-  it('draws names in the 20px title font and members in the 16px body font, fitted inside the box',function()
+  it('draws names in the 18px title font and members in the 18px body font, fitted inside the box',function()
     -- A monospace fake: half-width glyphs advance 0.5em, CJK 1em (Sarasa Mono).
     local L=require('uml.engine.layout')
     local function font(name) return {name=name,CalcTextSizeA=function(_,size,_,_,text) return {x=L.text_w(text)/16*size} end} end
@@ -73,13 +73,13 @@ describe('class box public renderer commands',function()
       assert.are.equal(fonts.title,p[1].font); assert.is_true(p[2].x>p[1].x)
       local right=p[2].x+fonts.title:CalcTextSizeA(p[2].size,1e9,0,name).x
       assert.is_true(right<=G.right(r)-12+1e-9,'name overflows: '..name)
-      assert.is_true(p[1].size<=20)
+      assert.is_true(p[1].size<=18)
     end
-    assert.are.equal(20,passes('短')[1].size)
-    assert.is_true(passes('AVeryLongClassNameThatFillsTheBox')[1].size<20)
-    local field=passes('field')[1]; assert.are.equal(fonts.body,field.font); assert.are.equal(16,field.size)
+    assert.are.equal(18,passes('短')[1].size)
+    assert.is_true(passes('AVeryLongClassNameThatFillsTheBox')[1].size<18)
+    local field=passes('field')[1]; assert.are.equal(fonts.body,field.font); assert.are.equal(18,field.size)
   end)
-  it('keeps 20px names clear of the member rule, the stereotype line and the corner badges',function()
+  it('keeps 18px names clear of the member rule, the stereotype line and the corner badges',function()
     local L=require('uml.engine.layout')
     local font={CalcTextSizeA=function(_,size,_,_,text) return {x=L.text_w(text)/16*size} end}
     local texts,rules,dots={},{},{}
@@ -99,13 +99,24 @@ describe('class box public renderer commands',function()
       for _,o in ipairs(texts) do if o~=t and o.text~=t.text then assert.is_false(overlap(t,o),t.text..' overlaps '..o.text) end end
     end end
     local sizes={}; for _,t in ipairs(texts) do if names[t.text] then sizes[t.text]=t.size end end
-    assert.are.equal(20,sizes.Plain)
+    assert.are.equal(18,sizes.Plain)
+  end)
+  it('uses native 9px C/M, 11px Level and 12px marker fonts instead of shrinking the body atlas',function()
+    local drawn={}
+    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddLine=function() end,AddCircleFilled=function() end,
+      AddText_FontPtr=function(_,font,size,p,color,text) drawn[text]={font=font,size=size} end}
+    local fonts={body={},title={},badge={},level={},marker={}}
+    B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},fonts).draw(scene('[{:id :a :level 3 :stereotype :abstract}]'),1000,1000,{zoom=1})
+    assert.are.same({font=fonts.badge,size=9},drawn.C)
+    assert.are.same({font=fonts.badge,size=9},drawn.M)
+    assert.are.same({font=fonts.level,size=11},drawn['3'])
+    assert.are.same({font=fonts.marker,size=12},drawn['α'])
   end)
   it('draws the back label through the imgui draw list in the body font',function()
     local drawn={}; local list={AddText_FontPtr=function(_,f,size,point,color,text) drawn[#drawn+1]={font=f,size=size,x=point.x,y=point.y,text=text} end}
     local fonts={body={},title={}}
     B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},fonts).back()
-    assert.are.equal('< 返回',drawn[1].text); assert.are.equal(fonts.body,drawn[1].font); assert.are.equal(16,drawn[1].size)
+    assert.are.equal('< 返回',drawn[1].text); assert.are.equal(fonts.body,drawn[1].font); assert.are.equal(18,drawn[1].size)
     assert.are.same({12,12},{drawn[1].x,drawn[1].y})
   end)
   it('paints labeled quality circles with their independent colors through cimgui',function()
