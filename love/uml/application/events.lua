@@ -117,8 +117,8 @@ function M.zoom_at(s,factor,ax,ay)
   n.cam_x=(s.cam_x or 0)+ax/old-ax/n.zoom; n.cam_y=(s.cam_y or 0)+ay/old-ay/n.zoom; return n
 end
 -- The cursor anchors zooming when it is on the canvas; otherwise the canvas centre.
-local function anchor(dims)
-  local p=dims.pointer; if type(p)=='table' and p[1] and p[2] then return p[1],p[2] end
+local function anchor(dims,s)
+  local p=dims.pointer or (s and s.pointer); if type(p)=='table' and p[1] and p[2] then return p[1],p[2] end
   return (dims.view_w or dims.window_w or 1500)/2,(dims.window_h or 900)/2
 end
 -- Fit the whole scene into the usable canvas (window minus sidebar), centred.
@@ -139,7 +139,7 @@ function M.on_wheel(s,dx,dy,dims)
   dims=dims or {}; dx,dy=dx or 0,dy or 0
   if dims.control then
     if dy==0 then return s end
-    local ax,ay=anchor(dims); return M.zoom_at(s,M.zoom_step^dy,ax,ay)
+    local ax,ay=anchor(dims,s); return M.zoom_at(s,M.zoom_step^dy,ax,ay)
   end
   local d=copy(dims); d.horizontal=dx~=0 or dims.shift==true
   return M.on_scroll(s,dx~=0 and -dx or -dy,d)
@@ -156,7 +156,7 @@ function M.on_key(s,key,dims)
   local dir=dims.control and M.zoom_dir(key,dims)
   if dir then
     if dir=='reset' then return M.fit(s,dims) end
-    local ax,ay=anchor(dims); return M.zoom_at(s,dir=='in' and M.zoom_step or 1/M.zoom_step,ax,ay)
+    local ax,ay=anchor(dims,s); return M.zoom_at(s,dir=='in' and M.zoom_step or 1/M.zoom_step,ax,ay)
   end
   if key=='left' or key=='right' then local d=copy(dims); d.horizontal=true; return M.on_scroll(s,key=='left' and -2 or 2,d) end
   if key=='up' or key=='down' then local d=copy(dims); d.horizontal=false; return M.on_scroll(s,key=='up' and -2 or 2,d) end
@@ -197,6 +197,11 @@ end
 function M.on_move(s,x,y)
   local n=copy(s); local wx,wy=M.world_xy(s,x,y)
   n.hover=require('uml.engine.hit').at(s.scene,wx,wy); n.pointer={x,y}; return n
+end
+-- The pointer left the canvas (sidebar, window edge): no hover, no zoom anchor.
+function M.on_leave(s)
+  if s.hover==nil and s.pointer==nil then return s end
+  local n=copy(s); n.hover=nil; n.pointer=nil; return n
 end
 function M.on_press(s,x,y)
   if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end

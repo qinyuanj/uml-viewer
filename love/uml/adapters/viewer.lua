@@ -51,6 +51,8 @@ function M.run(args,services)
   local metrics=Metrics.new()
   local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0
   local detail_window
+  -- The usable canvas: the window minus the fixed sidebar.
+  local function canvas_dims() return InspectorModel.canvas_dims(love.graphics.getWidth(),love.graphics.getHeight()) end
   local companion,keeping_companion,lifecycle_options=nil,false,nil
   local function load_document(p)
     local snapshots,stamp=metrics.snapshot(metrics.root(p))
@@ -87,7 +89,8 @@ function M.run(args,services)
     else
       state=load_document(path)
       state.project_root=project_root
-      if restart then state=Session.restore(state,snapshot) end
+      -- A fresh load fits the canvas; a restart restores its saved view instead.
+      if restart then state=Session.restore(state,snapshot) else state.fit_pending=true end
     end
     local to_agent=Mailbox.open(project_root..'/.uml-viewer/to-agent.edn')
     local function notify_agent(cmd)
@@ -150,6 +153,8 @@ function M.run(args,services)
       end
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
+    -- Navigation and new loads request a fit; apply it with the live canvas size.
+    if state.fit_pending then state=Events.settle(state,canvas_dims()) end
     if probe then
       local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
@@ -188,19 +193,24 @@ function M.run(args,services)
     end
   end
   function love.textinput(t) imgui.love.TextInput(t) end
-  local function dims()
-    local d=InspectorModel.canvas_dims(love.graphics.getWidth(),love.graphics.getHeight())
-    d.control=love.keyboard.isDown('lctrl','rctrl'); return d
-  end
   -- Canvas pointer input stops at the fixed sidebar's left edge.
   local function on_canvas(x) return InspectorModel.in_canvas(x,love.graphics.getWidth()) end
+  local function dims()
+    -- Zoom anchors on state.pointer: the last canvas position from mousemoved.
+    local d=canvas_dims()
+    d.control=love.keyboard.isDown('lctrl','rctrl'); d.shift=love.keyboard.isDown('lshift','rshift')
+    return d
+  end
   function love.keypressed(k)
     imgui.love.KeyPressed(k)
     if not imgui.love.GetWantCaptureKeyboard() then state=Events.on_key(state,k,dims()) end
   end
   function love.mousemoved(x,y)
     imgui.love.MouseMoved(x,y)
-    if not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,x,y) end
+    -- An active canvas drag keeps panning even over the sidebar or a window.
+    if state.drag then state=Events.on_drag(state,x,y)
+    elseif not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,x,y)
+    else state=Events.on_leave(state) end
   end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
@@ -210,19 +220,20 @@ function M.run(args,services)
       if Events.element_menu(state.selected) then imgui.OpenPopup_Str('uml-element-mail') end
     elseif button==1 then
       -- Both transitions honour the back hotspot first.
-      if (presses or 1)>=2 then state=Events.on_double_press(state,x,y) else state=Events.on_press(state,x,y) end
+      if (presses or 1)>=2 then state=Events.on_double_press(state,x,y) else state=Events.on_left_press(state,x,y) end
     end
   end
-  function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
+  function love.mousereleased(x,y,button)
+    imgui.love.MouseReleased(button)
+    -- Release always ends a canvas drag, wherever the pointer now is.
+    if button==1 and state.drag then state=Events.on_release(state,x,y) end
+  end
   function love.wheelmoved(x,y)
     if detail_window and detail_window.detail_hovered() then
       state=detail_window.wheel(state,-y)
     else
       imgui.love.WheelMoved(x,y)
-      if not imgui.love.GetWantCaptureMouse() then
-        local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
-        state=Events.on_scroll(state,x~=0 and -x or -y,d)
-      end
+      if not imgui.love.GetWantCaptureMouse() then state=Events.on_wheel(state,x,y,dims()) end
     end
   end
   function love.keyreleased(k) imgui.love.KeyReleased(k) end
