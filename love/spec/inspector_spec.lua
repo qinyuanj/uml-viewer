@@ -21,6 +21,17 @@ describe('inspector public commands',function()
     selected.selected=require('uml.domain.geom').map{kind=E.keyword('class'),id=E.keyword('a')}
     assert.is_nil(I.empty_explanation(selected))
   end)
+  it('subtracts the fixed 280px sidebar from the canvas extent used by panning and hits',function()
+    local I=require('uml.application.inspector'); local Events=require('uml.application.events')
+    local d=I.canvas_dims(1500,920)
+    assert.are.same({1500,920,1220},{d.window_w,d.window_h,d.view_w})
+    assert.is_true(I.in_canvas(1219,1500)); assert.is_false(I.in_canvas(1220,1500)); assert.is_false(I.in_canvas(-1,1500))
+    assert.are.equal(0,I.canvas_dims(200,100).view_w)
+    local s=D.new(IR.read_document('{:hierarchical true :prefix "demo" :classes [{:id :a :ns "demo.a"}]}'))
+    s.scene=require('uml.domain.geom').map{size=require('uml.domain.geom').map{w=2000,h=900}}
+    d.horizontal=true
+    assert.are.equal(2000-1220,Events.on_scroll(s,1000,d).cam_x)
+  end)
   it('keeps detail scroll state within the card bounds',function()
     local I=require('uml.application.inspector')
     local state=D.new(IR.read_document('{:hierarchical true :prefix "demo" :classes [{:id :a :ns "demo.a"}]}'))

@@ -15,6 +15,7 @@ return function(frame,state,ui)
       for k,v in pairs(next_state) do state[k]=v end
       state.selected=G.map{kind=E.keyword('class'),id=E.keyword('demo.detail')}
     end
+    state.detail_id=G.get(state.selected,'id')
     state.zoom=1; state.cam_x=0; state.cam_y=0
   elseif frame==3 then
     local w,h=love.graphics.getDimensions()
@@ -32,10 +33,21 @@ return function(frame,state,ui)
       end
     end
     assert(count>0,'empty capture scene')
+    if frame==3 and os.getenv('UML_PARITY_SCENE')=='baseline' then
+      local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/quality-diagnosis.txt','wb'))
+      for _,c in ipairs(Boxes.commands(state.scene)) do if c.kind=='class' and E.equal(c.id,G.get(state.selected,'id')) then
+        f:write('Detail missing='..tostring(c.missing)..' band='..c.band..' continuousGrade='..c.grade..' stroke='..table.concat(c.stroke,',')..'\n')
+      end end
+      f:close()
+    end
     local rows=assert(Detail.rows(assert(Detail.model(state.scene,G.get(state.selected,'id')))),'selected detail missing')
     assert(rows[1].h==20)
     for i=2,#rows do assert(rows[i].h==18 and rows[i].y>=rows[i-1].y+rows[i-1].h) end
     local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/parity-pass.txt','wb'))
     f:write('PASS 1500x920 DPI1 zoom1 text bounds='..count..' detail rows='..#rows..'\n'); f:close()
-  elseif frame==6 then love.event.quit(0) end
+  elseif frame==6 then
+    state.detail_id=nil
+  elseif frame==8 then
+    love.graphics.captureScreenshot(function(data) local out=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/canvas.png','wb')); out:write(data:encode('png'):getString()); out:close() end)
+  elseif frame==10 then love.event.quit(0) end
 end

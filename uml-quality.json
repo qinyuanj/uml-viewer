@@ -3,7 +3,7 @@
   "standardTools": {
     "sourceRoots": ["love/uml"],
     "exclude": [],
-    "crapperOptions": [],
-    "mutatorOptions": ["--max-workers", "3"]
+    "crapperOptions": ["--coverage-command", "lua scripts/coverage.lua && lua scripts/coverage.lua report"],
+    "mutatorOptions": ["--max-workers", "3", "--coverage-command", "lua scripts/coverage.lua && lua scripts/coverage.lua report"]
   }
 }

@@ -10,8 +10,10 @@ local Boxes=require('uml.adapters.class_boxes')
 local Edges=require('uml.adapters.edges')
 local Metrics=require('uml.adapters.metrics')
 local Inspector=require('uml.adapters.inspector')
+local DetailWindow=require('uml.adapters.detail_window')
 local Fonts=require('uml.adapters.fonts')
 local InspectorModel=require('uml.application.inspector')
+local Hit=require('uml.engine.hit')
 local Mail=require('uml.adapters.mail')
 local Menu=require('uml.adapters.mail_menu')
 local SessionFile=require('uml.adapters.session')
@@ -20,6 +22,7 @@ local ProcessIdentity=require('uml.adapters.process_identity')
 local Worker=require('uml.adapters.companion_worker')
 local Mailbox=require('uml.adapters.mailbox')
 local PolicyFile=require('uml.adapters.policy_file')
+local T=require('uml.domain.theme')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
 local function parse_args(args)
@@ -47,6 +50,7 @@ function M.run(args,services)
   local imgui=require('cimgui')
   local metrics=Metrics.new()
   local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0
+  local detail_window
   local companion,keeping_companion,lifecycle_options=nil,false,nil
   local function load_document(p)
     local snapshots,stamp=metrics.snapshot(metrics.root(p))
@@ -90,7 +94,7 @@ function M.run(args,services)
       if companion then Worker.command(companion,'wake',{id=G.get(cmd,'id')}) end
     end
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,notify=notify_agent,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
-    if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source}) end
+    if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source,fonts=fonts}) end
     inspector=Inspector.new(imgui,{
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
       new_proposal=function() state=InspectorModel.press(state,G.map{kind=E.keyword('new-proposal')},{boundary=PolicyFile}); publish() end,
@@ -101,7 +105,10 @@ function M.run(args,services)
       end,
       rename=function(id,name) state=Events.rename_proposal(state,id,name,{boundary=PolicyFile}); publish() end,
       delete=function(id) state=Events.delete_proposal(state,id,{boundary=PolicyFile}); publish() end,
-      pick=function(id) state.selected=G.map{kind=E.keyword('class'),id=id} end,
+      open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
+    detail_window=DetailWindow.new(imgui,{
+      close=function() state=Events.close_detail(state) end,
+      pick=function(id) state=Events.open_detail(state,G.map{kind=E.keyword('class'),id=id}) end,
       open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
     -- A refused or invalid startup never overwrites an existing identity.
     if not companion then ProcessIdentity.record(project_root) end
@@ -144,19 +151,30 @@ function M.run(args,services)
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
     if probe then
-      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,imgui=imgui,mail=mail,fonts=fonts})
+      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
     end
     imgui.love.Update(dt); imgui.NewFrame()
     if test_seconds and elapsed>=test_seconds then love.event.quit(0) end
   end
   function love.draw()
-    love.graphics.clear(.09,.10,.12,1)
+    local bg=T.colors.canvas_bg
+    love.graphics.clear(bg[1]/255,bg[2]/255,bg[3]/255,1)
     local width,height=love.graphics.getWidth(),love.graphics.getHeight()
     local scale=Events.zoom_of(state)
-    Edges.draw(imgui,imgui.GetBackgroundDrawList_Nil(),state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale)
-    renderer.draw(state.scene,width,height,state)
+    local canvas_w=InspectorModel.canvas_w(width)
+    -- Edges are highlighted when they touch the selected class; the predicate
+    -- stays a pure function of the scene edge.
+    local sel_id=state.selected and G.get(state.selected,'id')
+    local selected_edge=sel_id and function(e) return E.equal(sel_id,G.get(e,'from')) or E.equal(sel_id,G.get(e,'to')) end or nil
+    local list=imgui.GetBackgroundDrawList_Nil()
+    -- Clip canvas painting to the usable area left of the fixed sidebar.
+    list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
+    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,selected_edge)
+    renderer.draw(state.scene,width,height,{zoom=scale,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover,selected_edges=selected_edge})
+    list:PopClipRect()
     inspector.draw(state)
+    if detail_window then detail_window.draw(state) end
     Menu.draw(imgui,state,state.selected,function(op,extra) mail.request(op,extra) end)
     if source_window then source_window.draw() end
     if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back() end
@@ -170,31 +188,35 @@ function M.run(args,services)
     end
   end
   function love.textinput(t) imgui.love.TextInput(t) end
-  local function dims() return {window_w=love.graphics.getWidth(),window_h=love.graphics.getHeight(),control=love.keyboard.isDown('lctrl','rctrl')} end
+  local function dims()
+    local d=InspectorModel.canvas_dims(love.graphics.getWidth(),love.graphics.getHeight())
+    d.control=love.keyboard.isDown('lctrl','rctrl'); return d
+  end
+  -- Canvas pointer input stops at the fixed sidebar's left edge.
+  local function on_canvas(x) return InspectorModel.in_canvas(x,love.graphics.getWidth()) end
   function love.keypressed(k)
     imgui.love.KeyPressed(k)
     if not imgui.love.GetWantCaptureKeyboard() then state=Events.on_key(state,k,dims()) end
   end
   function love.mousemoved(x,y)
     imgui.love.MouseMoved(x,y)
-    if not imgui.love.GetWantCaptureMouse() then state=Events.on_move(state,x,y) end
+    if not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,x,y) end
   end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
-    if button==2 and not imgui.love.GetWantCaptureMouse() then
+    if imgui.love.GetWantCaptureMouse() or not on_canvas(x) then return end
+    if button==2 then
       state=Events.on_press(state,x,y)
       if Events.element_menu(state.selected) then imgui.OpenPopup_Str('uml-element-mail') end
-    end
-    if button==1 and not imgui.love.GetWantCaptureMouse() then
-      local back=(#state.focus>0 or G.get(state.extra,'open-layer')) and y<44 and x<320
-      state=Events.on_press(state,x,y)
-      if not back and (presses or 1)>=2 then local id=Events.layer_id(state.selected); if id then state=Events.drill(state,id) end end
+    elseif button==1 then
+      -- Both transitions honour the back hotspot first.
+      if (presses or 1)>=2 then state=Events.on_double_press(state,x,y) else state=Events.on_press(state,x,y) end
     end
   end
   function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
   function love.wheelmoved(x,y)
-    if inspector and inspector.detail_hovered() then
-      state=inspector.wheel(state,-y)
+    if detail_window and detail_window.detail_hovered() then
+      state=detail_window.wheel(state,-y)
     else
       imgui.love.WheelMoved(x,y)
       if not imgui.love.GetWantCaptureMouse() then

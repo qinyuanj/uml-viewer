@@ -48,9 +48,10 @@ describe('viewer font lookup chain',function()
     assert.are.equal(S.glyph_text(),texts[1])
     assert.is_true(built)
     local sizes={}; for _,font in ipairs(added) do sizes[#sizes+1]=font.size end
-    assert.are.same({9,11,12,18},sizes)
+    assert.are.same({9,11,12,13,18},sizes)
     for _,f in ipairs(added) do assert.are.equal(sarasa,f.path); assert.are.equal('merged',f.ranges) end
-    assert.are.equal(added[4],fonts.body); assert.are.equal(fonts.body,fonts.title); assert.are.equal(fonts.body,io.FontDefault)
+    assert.are.equal(added[4],fonts.code); assert.are.equal(13,F.sizes.code)
+    assert.are.equal(added[5],fonts.body); assert.are.equal(fonts.body,fonts.title); assert.are.equal(fonts.body,io.FontDefault)
     assert.are.equal(added[1],fonts.badge); assert.are.equal(added[2],fonts.level); assert.are.equal(added[3],fonts.marker)
     assert.are.equal('sarasa',fonts.source); assert.are.equal(sarasa,fonts.path)
     assert.are.equal(18,F.sizes.body); assert.are.equal(18,F.sizes.title)
