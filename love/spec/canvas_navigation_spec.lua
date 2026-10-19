@@ -63,4 +63,41 @@ describe('canvas navigation',function()
     local cleared=Events.cycle_declutter(settled); assert.is_nil(cleared.fit_pending); near(2,cleared.zoom)
     assert.are.equal(settled,Events.settle(settled,dims),'nothing pending leaves the view alone')
   end)
+  it('fits a newly displayed diagram but retains the view on same-diagram display and reloads (ADR 0002)',function()
+    local text='{:hierarchical true :title "Tree" :classes [{:id :source} {:id :source.lua} {:id :other}] :edges []}'
+    local boundary={resolve=function(p) return p end,canonical=function(p) return p end,
+      load=function(p) local s=D.new(E.parse(text),'m1'); s.path=p; return s end}
+    local function display(s,path,id) return D.apply_mail(s,G.map{id=id,op=k('display'),path=path},boundary) end
+    local current=boundary.load('a.edn'); current.project_root='.'; current.zoom=2.5; current.cam_x=33; current.cam_y=44
+    current.selected=G.map{kind=k('class'),id=k('source')}
+    local same=display(current,'a.edn',1)
+    assert.is_nil(same.fit_pending); near(2.5,same.zoom); near(33,same.cam_x); near(44,same.cam_y)
+    assert.is_true(E.equal(k('source'),g(same.selected,'id')))
+    local other=display(current,'b.edn',2); assert.is_true(other.fit_pending)
+    local waiting=D.waiting_state('a.edn',0); waiting.project_root='.'
+    assert.is_true(display(waiting,'a.edn',1).fit_pending,'first display after a fresh launch is a new load')
+    local reloaded=D.reload(same,text,'m2',nil,'stamp'); assert.is_nil(reloaded.fit_pending); near(2.5,reloaded.zoom)
+  end)
+  local function class_point(s,id)
+    local r=g(Hit.class_by_id(s.scene,k(id)),'rect'); local z=Events.zoom_of(s)
+    return (g(r,'x')+5-(s.cam_x or 0))*z,(g(r,'y')+5-(s.cam_y or 0))*z
+  end
+  it('pans by dragging blank canvas, keeping the selection, and clicks blank to clear it',function()
+    local s=tree(); s.zoom=2; s.cam_x=10; s.cam_y=20; s.selected=G.map{kind=k('class'),id=k('source')}
+    local a=Events.on_left_press(s,1000,800); assert.is_not_nil(a.drag)
+    local b=Events.on_drag(a,1001,801); near(10,b.cam_x,'below the drag threshold nothing pans')
+    local c=Events.on_drag(b,960,700); near(30,c.cam_x); near(70,c.cam_y)
+    local d=Events.on_release(c,960,700); assert.is_nil(d.drag)
+    assert.is_true(E.equal(k('source'),g(d.selected,'id')),'a pan keeps the selection')
+    near(30,d.cam_x)
+    local click=Events.on_release(Events.on_left_press(s,1000,800),1000,800)
+    assert.is_nil(click.selected,'a blank click clears the selection'); near(10,click.cam_x)
+  end)
+  it('does nothing when a drag starts on a class, which a press still selects',function()
+    local s=tree(); local x,y=class_point(s,'source')
+    local a=Events.on_left_press(s,x,y); assert.is_nil(a.drag)
+    assert.is_true(E.equal(k('source'),g(a.selected,'id')))
+    local b=Events.on_release(Events.on_drag(a,x+200,y+200),x+200,y+200)
+    near(0,b.cam_x or 0); near(0,b.cam_y or 0); assert.is_true(E.equal(k('source'),g(b.selected,'id')))
+  end)
 end)

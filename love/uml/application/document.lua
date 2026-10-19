@@ -107,7 +107,13 @@ function M.apply_mail(state,cmd,boundary)
     local path=boundary.resolve(g(cmd,'path'),state.project_root)
     local loaded=boundary.load(path)
     local same=state.path and boundary.canonical(state.path)==boundary.canonical(path)
+    -- The first display after a fresh launch is a new load even for the same
+    -- path: the waiting state holds no view to retain.
+    if state.waiting then same=false end
     s=same and M.restore_session(loaded,state) or loaded
+    -- A new diagram fits the canvas once the adapter knows its size; the same
+    -- diagram keeps its retained camera, zoom and focus (ADR 0002).
+    s.fit_pending=not same or nil
     if not same then
       -- A different diagram starts at its root view; browsing state is not
       -- transferred, but declutter and a proposal that still exists are kept.

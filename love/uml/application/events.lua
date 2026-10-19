@@ -205,6 +205,33 @@ function M.on_press(s,x,y)
   if kind=='child' or kind=='port' then return M.open_detail(s,hit) end
   return M.select(s,hit)
 end
+-- Left-button lifecycle. A press on a class, child row, port or dependency
+-- triangle keeps its click meaning and starts no drag. Elsewhere (blank canvas,
+-- package frame, edge) the press arms a drag: moving past the threshold pans,
+-- releasing without moving applies the click.
+M.drag_threshold=3
+local grabs={class=true,child=true,port=true,dep=true}
+local function on_back_hotspot(s,x,y) return (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 end
+function M.on_left_press(s,x,y)
+  if on_back_hotspot(s,x,y) then return M.back(s) end
+  local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
+  if grabs[G.name(G.get(hit,'kind'))] then return M.on_press(s,x,y) end
+  local n=copy(s); n.drag={x=x,y=y,cam_x=s.cam_x or 0,cam_y=s.cam_y or 0,moved=false}; return n
+end
+function M.on_drag(s,x,y)
+  local d=s.drag; if not d then return M.on_move(s,x,y) end
+  local dx,dy=x-d.x,y-d.y
+  if not d.moved and math.abs(dx)<M.drag_threshold and math.abs(dy)<M.drag_threshold then return s end
+  local n=copy(s); local z=M.zoom_of(s)
+  n.drag={x=d.x,y=d.y,cam_x=d.cam_x,cam_y=d.cam_y,moved=true}
+  n.cam_x=d.cam_x-dx/z; n.cam_y=d.cam_y-dy/z; n.pointer={x,y}; return n
+end
+function M.on_release(s,x,y)
+  local d=s.drag; if not d then return s end
+  local n=copy(s); n.drag=nil
+  if d.moved then return n end
+  return M.on_press(n,d.x,d.y)
+end
 function M.on_double_press(s,x,y)
   if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end
   local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
