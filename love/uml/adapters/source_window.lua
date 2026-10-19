@@ -1,5 +1,6 @@
 -- Independent Dear ImGui window in the viewer's LOVE process.
 local Source=require('uml.source')
+local S=require('uml.application.strings')
 local M={}
 local function read(path)
   local f,err=io.open(path,'rb'); if not f then return nil,err end
@@ -47,7 +48,7 @@ function M.new(imgui,options)
     imgui.SetNextWindowSize(imgui.ImVec2_Float(900,640),imgui.ImGuiCond_FirstUseEver)
     local expanded=imgui.Begin(current.title..'###uml-source',visible,imgui.ImGuiWindowFlags_HorizontalScrollbar)
     if expanded then
-      if imgui.Button('Close source') then visible[0]=false end
+      if imgui.Button(S.close_source..'##close-source') then visible[0]=false end
       imgui.TextUnformatted(current.file)
       imgui.BeginChild_Str('source-lines',imgui.ImVec2_Float(0,0),0,imgui.ImGuiWindowFlags_HorizontalScrollbar)
       viewport={scroll_y=imgui.GetScrollY(),target_visible=false}

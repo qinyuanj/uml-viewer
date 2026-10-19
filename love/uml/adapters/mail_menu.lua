@@ -2,10 +2,10 @@
 local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local Events=require('uml.application.events')
+local S=require('uml.application.strings')
 local M={}
 function M.entries()
-  return {{label='Refresh CRAP',op='refresh-crap'},{label='Refresh Mutation',op='refresh-mutate'},
-    {label='Refresh All Mutation',op='refresh-mutate-all'},{label='Omit',op='omit'}}
+  local out={}; for _,op in ipairs{'refresh-crap','refresh-mutate','refresh-mutate-all','omit'} do out[#out+1]={label=S.menu[op],op=op} end; return out
 end
 local function classes(doc,into)
   into=into or {}

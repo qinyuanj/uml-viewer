@@ -4,6 +4,7 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local I=require('uml.application.inspector')
 local Detail=require('uml.application.detail')
+local S=require('uml.application.strings')
 local M={}
 function M.fonts(imgui,path)
   path=path or os.getenv('UML_CJK_FONT') or ((os.getenv('WINDIR') or 'C:/Windows')..'/Fonts/msyh.ttc')
@@ -54,8 +55,8 @@ function M.new(imgui,callbacks)
   function api.draw(state)
     imgui.SetNextWindowPos(imgui.ImVec2_Float(love.graphics.getWidth()-360,12),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowSize(imgui.ImVec2_Float(348,700),imgui.ImGuiCond_FirstUseEver)
-    if imgui.Begin('Inspector') then
-      imgui.TextUnformatted('Namespace tree / Proposals')
+    if imgui.Begin(S.inspector..'###uml-inspector') then
+      imgui.TextUnformatted(S.tree_and_proposals)
       for n,c in ipairs(I.commands(state)) do
         if imgui.Selectable_Bool(c.label..'##diagram-'..n,c.active) and callbacks.choose then callbacks.choose(c.id) end
         if c.kind=='proposal' and hovered() and clicked(1) then
@@ -64,29 +65,29 @@ function M.new(imgui,callbacks)
         end
         remember(c.id and 'proposal:'..G.name(c.id) or 'real')
       end
-      if imgui.Button('New Proposal') and callbacks.new_proposal then callbacks.new_proposal() end
+      if imgui.Button(S.new_proposal..'##new-proposal') and callbacks.new_proposal then callbacks.new_proposal() end
       remember('new-proposal')
-      if imgui.Button('Declutter') and callbacks.declutter then callbacks.declutter() end
+      if imgui.Button(S.declutter..'##declutter') and callbacks.declutter then callbacks.declutter() end
       remember('declutter')
       menu_open=imgui.BeginPopup('uml-proposal-menu')
       if menu_open then
-        if imgui.MenuItem_Bool('Rename',nil,false,true) then
+        if imgui.MenuItem_Bool(S.rename,nil,false,true) then
           local name
           for _,c in ipairs(I.commands(state)) do if E.equal(c.id,menu_id) then name=c.label end end
           rename_id=menu_id; set_name(name); focus=true
         end
-        if imgui.MenuItem_Bool('Delete',nil,false,true) and callbacks.delete then callbacks.delete(menu_id) end
+        if imgui.MenuItem_Bool(S.delete,nil,false,true) and callbacks.delete then callbacks.delete(menu_id) end
         imgui.EndPopup()
       end
-      imgui.Separator(); imgui.TextUnformatted('Proposal name')
+      imgui.Separator(); imgui.TextUnformatted(S.proposal_name)
       if focus then imgui.SetKeyboardFocusHere(); focus=false end
       imgui.InputText('##proposal-name',buffer,1024); remember('proposal-name')
-      if rename_id and imgui.Button('Rename proposal') then
+      if rename_id and imgui.Button(S.rename_proposal..'##rename-proposal') then
         if callbacks.rename then callbacks.rename(rename_id,api.name()) end
         rename_id=nil
       end
       if callbacks.name_changed then callbacks.name_changed(api.name()) end
-      imgui.TextUnformatted('P: namespace tree')
+      imgui.TextUnformatted(S.p_hint)
       local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
       empty_rendered=false; detail_hovered=false
       if model then
@@ -104,8 +105,14 @@ function M.new(imgui,callbacks)
           local next_hover=nil
           for n,row in ipairs(rows) do
             imgui.SetCursorPosY(row.y-scroll)
-            if row.kind=='group-header' then imgui.TextUnformatted('--crap--                         --mutation--')
-            elseif row.kind=='col-header' then imgui.TextUnformatted('Crap   CC   Cov   killed   survived   uncovered')
+            if row.kind=='group-header' then imgui.TextUnformatted(S.group_crap..'                         '..S.group_mutation)
+            elseif row.kind=='col-header' then
+              -- Metric names stay English; hovering a header explains it in Chinese.
+              for i,col in ipairs(Detail.column_layout()) do
+                if i>1 then imgui.SameLine() end
+                imgui.TextUnformatted(col.label)
+                if hovered() then imgui.BeginTooltip(); imgui.TextUnformatted(S.column_tips[col.id]); imgui.EndTooltip() end
+              end
             else
               local text=row.text or ''
               if row.kind=='stats' then
@@ -130,7 +137,7 @@ function M.new(imgui,callbacks)
         local kind=G.name(G.get(state.selected,'kind'))
         if kind=='package' then
           local p=require('uml.engine.hit').package_by_id(state.scene,id)
-          if p then imgui.TextUnformatted(G.get(p,'label') or G.name(id)); local count=0; for _,c in ipairs(G.get(state.scene,'classes') or {}) do if E.equal(id,G.get(c,'package')) then count=count+1 end end; imgui.TextUnformatted('Classes: '..count) end
+          if p then imgui.TextUnformatted(G.get(p,'label') or G.name(id)); local count=0; for _,c in ipairs(G.get(state.scene,'classes') or {}) do if E.equal(id,G.get(c,'package')) then count=count+1 end end; imgui.TextUnformatted(S.class_count..count) end
         end
       else
         local message=I.empty_explanation(state)
@@ -138,7 +145,7 @@ function M.new(imgui,callbacks)
       end
       local w,h=love.graphics.getWidth(),love.graphics.getHeight()
       imgui.SetCursorScreenPos(imgui.ImVec2_Float(w-360+16,h-56))
-      if imgui.Button('Regen') and callbacks.regen then callbacks.regen() end
+      if imgui.Button(S.regen..'##regen') and callbacks.regen then callbacks.regen() end
     end
     imgui.End()
   end
