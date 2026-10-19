@@ -1,5 +1,5 @@
 -- Runs only in a newly launched native viewer. Records which font the lookup
--- chain chose and checks every string-table glyph at both atlas sizes.
+-- chain chose and checks every string-table glyph at every used raster size.
 local S=require('uml.application.strings')
 local function codepoints(s)
   local out,seen={},{}
@@ -18,15 +18,17 @@ return function(frame,state,ui)
   assert(fonts.source==expect,'font source '..tostring(fonts.source)..' expected '..tostring(expect))
   local missing={}
   local probe=S.glyph_text()..(os.getenv('UML_FONT_TEST_EXTRA') or '')
-  for _,role in ipairs{'body','title'} do
+  local width,height=love.graphics.getDimensions()
+  assert(width==1500 and height==920,'default viewer window must be 1500x920')
+  for _,role in ipairs{'body','title','badge','level','marker'} do
     local font=assert(fonts[role],'missing '..role..' font')
-    assert(math.abs(font.FontSize-({body=16,title=20})[role])<0.01,role..' font size '..tostring(font.FontSize))
+    assert(math.abs(font.FontSize-({body=18,title=18,badge=9,level=11,marker=12})[role])<0.01,role..' font size '..tostring(font.FontSize))
     for _,code in ipairs(codepoints(probe)) do
       if font:FindGlyphNoFallback(code)==nil then missing[#missing+1]=role..':'..string.format('U+%04X',code) end
     end
   end
   assert(#missing==0,'missing glyphs '..table.concat(missing,' '))
   local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/fonts-pass.txt','wb'))
-  f:write('PASS '..fonts.source..' '..fonts.path..' body=16 title=20 glyphs='..#codepoints(probe)..'\n'); f:close()
+  f:write('PASS '..fonts.source..' '..fonts.path..' body=18 title=18 badge=9 level=11 marker=12 glyphs='..#codepoints(probe)..'\n'); f:close()
   love.event.quit(0)
 end
