@@ -121,10 +121,7 @@ function M.on_key(s,key,dims)
   end
   if key=='left' or key=='right' then local d=copy(dims); d.horizontal=true; return M.on_scroll(s,key=='left' and -2 or 2,d) end
   if key=='up' or key=='down' then local d=copy(dims); d.horizontal=false; return M.on_scroll(s,key=='up' and -2 or 2,d) end
-  if key=='escape' or key=='esc' then
-    if G.get(s.extra,'open-layer') or #(s.focus or {})>0 then return M.back(s) end
-    local n=copy(s); n.selected=nil; return n
-  end
+  if key=='escape' or key=='esc' then return M.escape(s) end
   if key=='p' or key=='P' then return M.show_proposal(s,nil) end
   if key=='r' then local n=copy(s); n.waiting=nil; n.mtime=0; n.metrics_stamp=nil; return n end
   return s
@@ -134,6 +131,23 @@ function M.layer_id(hit)
   if kind=='class' and G.get(hit,'drill?') then return G.get(hit,'id') end
   if kind=='child' then return G.get(hit,'parent') end
   if kind=='package' and H.proposal_package_id(G.get(hit,'id')) then return G.get(hit,'id') end
+end
+-- The separate detail window opens for the class behind a selection: a class
+-- itself, or the parent of a child row or port. Other hits open nothing.
+function M.detail_id_for(hit)
+  local kind=G.name(G.get(hit,'kind'))
+  if kind=='class' then return G.get(hit,'id') end
+  if kind=='child' or kind=='port' then return G.get(hit,'parent') end
+end
+function M.select(s,hit)
+  local n=copy(s); n.selected=hit
+  local id=M.detail_id_for(hit)
+  -- Switching the detail target restarts its scroll at the top.
+  if id and (not s.detail_id or not E.equal(id,s.detail_id)) then n.detail_scroll=0 end
+  return n
+end
+function M.open_detail(s,hit)
+  local n=M.select(s,hit); local id=M.detail_id_for(hit); if id then n.detail_id=id end; return n
 end
 -- Right-click opens the element mail menu for a class, a child row, or a
 -- collapsed proposal package; other selections keep the canvas menu closed.
@@ -147,6 +161,22 @@ function M.on_move(s,x,y)
 end
 function M.on_press(s,x,y)
   if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end
-  local n=copy(s); local wx,wy=M.world_xy(s,x,y); n.selected=require('uml.engine.hit').at(s.scene,wx,wy); return n
+  local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
+  local kind=G.name(G.get(hit,'kind'))
+  if kind=='child' or kind=='port' then return M.open_detail(s,hit) end
+  return M.select(s,hit)
 end
+function M.on_double_press(s,x,y)
+  if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end
+  local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
+  local layer=M.layer_id(hit); if layer then return M.drill(s,layer) end
+  return M.open_detail(s,hit)
+end
+-- Escape keeps its existing meaning: back one level, else clear the selection.
+-- The detail window closes through its own close control (close_detail).
+function M.escape(s)
+  if G.get(s.extra,'open-layer') or #(s.focus or {})>0 then return M.back(s) end
+  local n=copy(s); n.selected=nil; return n
+end
+function M.close_detail(s) local n=copy(s); n.detail_id=nil; return n end
 return M

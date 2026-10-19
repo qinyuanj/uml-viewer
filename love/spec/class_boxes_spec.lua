@@ -29,7 +29,7 @@ describe('class box public renderer commands',function()
   end)
   it('renders italic names as slanted glyph geometry while leaving members upright',function()
     local vertices={Size=0,Data={}}; local painted={}
-    local list={VtxBuffer=vertices,AddRect=function() end,AddLine=function() end,AddCircleFilled=function() end,
+    local list={VtxBuffer=vertices,AddRect=function() end,AddRectFilled=function() end,AddLine=function() end,AddCircleFilled=function() end,
       AddText_FontPtr=function(_,font,size,point,color,text)
         local i=vertices.Size; vertices.Data[i]={pos={x=point.x,y=point.y}}; vertices.Data[i+1]={pos={x=point.x,y=point.y+size}}; vertices.Size=i+2
         painted[text]={vertices.Data[i].pos,vertices.Data[i+1].pos}
@@ -49,7 +49,7 @@ describe('class box public renderer commands',function()
     assert.are.equal('red',select_commands(absent,'package')[1].band)
   end)
   it('draws the abstract alpha as a font glyph now that Greek is in the atlas',function()
-    local texts={}; local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddCircleFilled=function() end,AddLine=function() end,
+    local texts={}; local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddRectFilled=function() end,AddCircleFilled=function() end,AddLine=function() end,
       AddText_FontPtr=function(_,font,size,point,color,text) texts[#texts+1]={font=font,text=text,color=color} end}
     local fonts={body={name='body'},title={name='title'}}
     B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},fonts).draw(scene('[{:id :a :stereotype :abstract}]'),1000,1000)
@@ -62,7 +62,7 @@ describe('class box public renderer commands',function()
     local function font(name) return {name=name,CalcTextSizeA=function(_,size,_,_,text) return {x=L.text_w(text)/16*size} end} end
     local fonts={body=font('body'),title=font('title')}
     local drawn={}
-    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddCircleFilled=function() end,AddLine=function() end,
+    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddRectFilled=function() end,AddCircleFilled=function() end,AddLine=function() end,
       AddText_FontPtr=function(_,f,size,point,color,text) drawn[#drawn+1]={font=f,size=size,x=point.x,y=point.y,text=text} end}
     local s=scene('[{:id :a :name "AVeryLongClassNameThatFillsTheBox" :fields ["field"]} {:id :b :name "短"} {:id :c :name "中文类名中文类名中文类名"}]')
     B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},fonts).draw(s,1000,1000,{zoom=1,cam_x=0,cam_y=0})
@@ -83,8 +83,8 @@ describe('class box public renderer commands',function()
     local L=require('uml.engine.layout')
     local font={CalcTextSizeA=function(_,size,_,_,text) return {x=L.text_w(text)/16*size} end}
     local texts,rules,dots={},{},{}
-    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,
-      AddLine=function(_,a,b,color) if color==0xff777777 then rules[#rules+1]={left=a.x,right=b.x,y=a.y} end end,
+    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddRectFilled=function() end,
+      AddLine=function(_,a,b,color,w) if w==require('uml.domain.theme').widths.rule then rules[#rules+1]={left=a.x,right=b.x,y=a.y} end end,
       AddCircleFilled=function(_,p,r) dots[#dots+1]={left=p.x-r,right=p.x+r,top=p.y-r,bottom=p.y+r} end,
       AddText_FontPtr=function(_,f,size,p,color,text) local w=font:CalcTextSizeA(size,1e9,0,text).x; texts[#texts+1]={text=text,size=size,left=p.x,right=p.x+w,top=p.y,bottom=p.y+size} end}
     local s=scene('[{:id :a :name "Plain" :fields ["field"]} {:id :b :name "Stereotyped" :stereotype :bean :ops [{:name "go" :text "go()"}]} {:id :c :name "LeveledNameIsLong" :level 3 :fields ["x"]} {:id :d :name "OnlyANameButQuiteLong"}]')
@@ -103,7 +103,7 @@ describe('class box public renderer commands',function()
   end)
   it('uses native 9px C/M, 11px Level and 12px marker fonts instead of shrinking the body atlas',function()
     local drawn={}
-    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddLine=function() end,AddCircleFilled=function() end,
+    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,AddRectFilled=function() end,AddLine=function() end,AddCircleFilled=function() end,
       AddText_FontPtr=function(_,font,size,p,color,text) drawn[text]={font=font,size=size} end}
     local fonts={body={},title={},badge={},level={},marker={}}
     B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},fonts).draw(scene('[{:id :a :level 3 :stereotype :abstract}]'),1000,1000,{zoom=1})
@@ -121,10 +121,10 @@ describe('class box public renderer commands',function()
   end)
   it('paints labeled quality circles with their independent colors through cimgui',function()
     local painted,texts={},{}
-    local list={AddRect=function() end,AddLine=function() end,
+    local list={AddRect=function() end,AddRectFilled=function() end,AddLine=function() end,
       AddCircleFilled=function(_,point,r,color) painted[#painted+1]={point.x,point.y,r,color} end,
       AddText_FontPtr=function(_,font,size,point,color,text) texts[text]=true end}
     B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end}).draw(scene('[{:id :a :crap {:mu 2}}]'),1000,1000)
-    assert.are.equal(0xff77bb77,painted[#painted-1] and painted[#painted-1][4]); assert.are.equal(0xff5555dd,painted[#painted] and painted[#painted][4]); assert.is_true(texts.C); assert.is_true(texts.M)
+    local T=require('uml.domain.theme'); local C=require('uml.domain.config'); assert.are.equal(T.pack(T.fill(C.crap_grade(2))),painted[#painted-1] and painted[#painted-1][4]); assert.are.equal(T.pack(T.fill(C.mutation_grade(nil))),painted[#painted] and painted[#painted][4]); assert.is_true(texts.C); assert.is_true(texts.M)
   end)
 end)

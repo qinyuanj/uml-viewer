@@ -1,4 +1,4 @@
-param([string]$Love='C:/Program Files/LOVE/lovec.exe',[Parameter(Mandatory)][string]$CimguiDirectory,[Parameter(Mandatory)][string]$SarasaFont)
+param([string]$Love='C:/Program Files/LOVE/lovec.exe',[Parameter(Mandatory)][string]$CimguiDirectory,[Parameter(Mandatory)][string]$SarasaFont,[string]$BaselineDiagram,[string]$MetricsDirectory)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $names=@('UML_CIMGUI_DIRECTORY','UML_CJK_FONT','UML_VIEWER_EVIDENCE','UML_VIEWER_PROJECT_ROOT','UML_VIEWER_TEST_SECONDS','UML_VIEWER_TEST_DRIVER','UML_PARITY_SCENE'); $previous=@{}
@@ -8,7 +8,10 @@ try {
     $project=Join-Path ([IO.Path]::GetTempPath()) ('uml-font-parity-'+$scene+'-'+[guid]::NewGuid().ToString('N'))
     $null=New-Item -ItemType Directory $project
     $path=Join-Path $project 'diagram.edn'
-    if($scene -eq 'baseline') {Copy-Item "$repo/examples/uml-viewer.edn" $path}
+    if($scene -eq 'baseline') {
+      Copy-Item $(if($BaselineDiagram){$BaselineDiagram}else{"$repo/examples/uml-viewer.edn"}) $path
+      if($MetricsDirectory){Copy-Item $MetricsDirectory "$project/.metrics" -Recurse}
+    }
     else {[IO.File]::WriteAllText($path,'{:hierarchical true :prefix "demo" :classes [{:id :demo.detail :name "中文详情类名" :ns "demo.detail" :level 2 :stereotype :abstract :fields ["中文字段"] :ops [{:name "读取" :text "读取中文数据()" :crap 2 :coverage 0.9 :killed 3 :survived 0}]}]}')}
     $env:UML_CIMGUI_DIRECTORY=(Resolve-Path $CimguiDirectory).Path; $env:UML_CJK_FONT=(Resolve-Path $SarasaFont).Path
     $env:UML_VIEWER_EVIDENCE=$project; $env:UML_VIEWER_PROJECT_ROOT=$project; $env:UML_VIEWER_TEST_SECONDS='30'

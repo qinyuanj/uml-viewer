@@ -2,6 +2,7 @@
 .uml-viewer/
 .scratch/
 target/
+coverage/
 uml-viewer-log.txt
 
 # teaching workspace (/teach)

@@ -3,7 +3,7 @@
 -- Messages here are stderr/assertions and stay English.
 local S=require('uml.application.strings')
 local M={}
-M.sizes={body=18,title=18,badge=9,level=11,marker=12}
+M.sizes=require('uml.domain.theme').fonts
 M.sarasa='SarasaMonoSC-Regular.ttf'
 function M.provisioned(root) return (root or '.'):gsub('\\','/')..'/.uml-viewer/fonts/'..M.sarasa end
 local function exists(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
@@ -43,7 +43,7 @@ function M.load(imgui,opts)
   builder:AddText(S.glyph_text(),nil)
   local ranges=builder:BuildRanges()
   local fonts={path=choice.path,source=choice.source,ranges=ranges,builder=builder}
-  for _,role in ipairs{'badge','level','marker','body'} do
+  for _,role in ipairs{'badge','level','marker','code','body'} do
     local font=atlas:AddFontFromFileTTF(choice.path,M.sizes[role],nil,ranges.Data)
     assert(font~=nil,'CJK font could not be loaded: '..choice.path)
     fonts[role]=font

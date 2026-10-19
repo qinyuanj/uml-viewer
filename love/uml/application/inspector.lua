@@ -7,7 +7,15 @@ local Events=require('uml.application.events')
 local Detail=require('uml.application.detail')
 local S=require('uml.application.strings')
 local M={}
+-- The fixed right sidebar: the canvas extent and horizontal hit tests subtract
+-- this width (adapters pass it through dims.view_w; hit.clamp ignores presses
+-- inside the sidebar). The legacy geometry constants below only describe rows
+-- inside the sidebar itself.
+M.width=280
 M.sidebar_w=280
+function M.canvas_w(window_w) return math.max(0,(window_w or 0)-M.width) end
+function M.canvas_dims(window_w,window_h) return {window_w=window_w,window_h=window_h,view_w=M.canvas_w(window_w)} end
+function M.in_canvas(x,window_w) return x>=0 and x<M.canvas_w(window_w) end
 M.inspector_pad=16
 M.inspector_row_h=22
 M.inspector_btn_h=28
@@ -82,7 +90,7 @@ end
 -- clamping uses the rows and the viewport height reported by the adapter.
 function M.scroll(state,delta,view_h)
   local n={}; for k,v in pairs(state) do n[k]=v end
-  local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
+  local id=state.detail_id or G.get(state.selected,'id'); local model=id and Detail.for_state(state,id)
   local rows=model and Detail.rows(model)
   n.detail_scroll=Detail.scroll(rows,view_h,state.detail_scroll or 0,delta)
   return n

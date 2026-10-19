@@ -1,35 +1,29 @@
--- Native Cimgui boundary. All document choices and detail content are pure.
+-- Native Cimgui boundary for the fixed right sidebar: diagram choices and the
+-- selected element summary. All document choices and detail content are pure;
+-- the class card lives in the separate detail_window adapter.
 local ffi=require('ffi')
 local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local I=require('uml.application.inspector')
 local Detail=require('uml.application.detail')
 local S=require('uml.application.strings')
+local T=require('uml.domain.theme')
+local C=require('uml.domain.config')
 local M={}
+local function pack(c) return T.pack(c) end
 function M.new(imgui,callbacks,fonts)
   fonts=fonts or {}
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
   local rename_id,menu_id
   local api={}
   local bounds={}
-  local detail_hovered,detail_view_h,detail_scroll,detail_hover=false,0,0,nil
-  local empty_rendered=false
   local menu_open=false
   function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
-  function api.detail_hovered() return detail_hovered end
-  function api.detail() return {scroll=detail_scroll,view_h=detail_view_h,hover=detail_hover,rect=bounds['detail-card']} end
-  function api.empty_rendered() return empty_rendered end
+  function api.width() return I.width end
+  function api.empty_rendered() return bounds['empty-help']~=nil end
   function api.menu_open() return menu_open end
-  -- Wheel input stays an application transition; the adapter only decides
-  -- whether the pointer is over the detail card it drew last frame.
-  function api.wheel(state,delta)
-    if not detail_hovered then return state end
-    local id=G.get(state.selected,'id')
-    if not id or not Detail.model(state.scene,id) then return state end
-    return I.scroll(state,delta,detail_view_h)
-  end
   local function set_name(name)
     name=tostring(name or ''); ffi.fill(buffer,1024,0)
     for i=1,math.min(#name,1023) do buffer[i-1]=name:byte(i) end
@@ -48,12 +42,75 @@ function M.new(imgui,callbacks,fonts)
   local function remember(key)
     local a,b=imgui.GetItemRectMin(),imgui.GetItemRectMax(); bounds[key]={x=(a.x+b.x)/2,y=(a.y+b.y)/2,left=a.x,top=a.y,right=b.x,bottom=b.y}
   end
+  local function inked(text,color)
+    color=color or T.colors.ink
+    imgui.PushStyleColor_Vec4(imgui.ImGuiCol_Text,imgui.ImVec4_Float(color[1]/255,color[2]/255,color[3]/255,1))
+    imgui.TextUnformatted(tostring(text or ''))
+    imgui.PopStyleColor(1)
+  end
+  -- Selected class summary: identity, quality lines, then member lines. The
+  -- full six-column metrics card opens in the detail window, not here.
+  local function class_summary(model)
+    local c=model.class
+    inked(G.get(c,'name'))
+    local package=G.get(c,'package')
+    inked(S.package..(G.get(G.get(model,'package'),'label') or (package and G.name(package)) or 'foreign'),T.colors.muted)
+    if G.get(c,'level')~=nil then inked(S.level..G.get(c,'level'),T.colors.muted) end
+    if G.get(c,'stereotype') then inked('«'..G.name(G.get(c,'stereotype'))..'»',T.colors.muted) end
+    local crap=G.get(c,'crap')
+    if type(crap)=='number' then inked(S.crap_single:format(string.format('%.1f',crap)),T.colors.gold)
+    elseif crap and G.get(crap,'mu')~=nil then
+      inked(S.crap_line:format(string.format('%.1f',G.get(crap,'mu')),string.format('%.1f',G.get(crap,'max') or G.get(crap,'mu')),string.format('%.1f',G.get(crap,'sigma') or 0)),T.colors.gold)
+    end
+    local killed,survived,uncovered=G.get(c,'killed'),G.get(c,'survived'),G.get(c,'uncovered')
+    if killed~=nil or survived~=nil then
+      local line=S.package_mutation:format(killed or 0,survived or 0)
+      if uncovered and uncovered>0 then line=line..S.package_uncovered:format(uncovered) end
+      inked(line,T.colors.muted)
+    end
+    for _,line in ipairs(G.get(c,'lines') or {}) do
+      local kind=G.name(G.get(line,'kind'))
+      if kind=='field' or kind=='op' then inked(G.get(line,'text')) end
+    end
+    if G.get(crap,'mu')==nil and type(crap)~='number' then inked(S.no_data,T.colors.band.red) end
+  end
+  local function package_summary(state,id)
+    local p=require('uml.engine.hit').package_by_id(state.scene,id); if not p then return end
+    inked(G.get(p,'label') or G.name(id))
+    local crap=G.get(p,'crap')
+    if crap and G.get(crap,'mu')~=nil then
+      inked(S.package_crap:format(string.format('%.1f',G.get(crap,'mu')),string.format('%.1f',G.get(crap,'max') or G.get(crap,'mu')),string.format('%.1f',G.get(crap,'sigma') or 0)),T.colors.gold)
+    end
+    local killed,survived,uncovered=G.get(p,'killed'),G.get(p,'survived'),G.get(p,'uncovered')
+    if killed~=nil or survived~=nil then
+      local line=S.package_mutation:format(killed or 0,survived or 0)
+      if uncovered and uncovered>0 then line=line..S.package_uncovered:format(uncovered) end
+      inked(line,T.colors.muted)
+    end
+    local count=0; for _,c in ipairs(G.get(state.scene,'classes') or {}) do if E.equal(id,G.get(c,'package')) then count=count+1 end end
+    inked(S.class_count..count,T.colors.muted)
+    if crap==nil then inked(S.no_data,T.colors.band.red) end
+  end
   function api.draw(state)
-    imgui.SetNextWindowPos(imgui.ImVec2_Float(love.graphics.getWidth()-360,12),imgui.ImGuiCond_FirstUseEver)
-    imgui.SetNextWindowSize(imgui.ImVec2_Float(348,700),imgui.ImGuiCond_FirstUseEver)
-    if imgui.Begin(S.inspector..'###uml-inspector') then
-      imgui.TextUnformatted(S.tree_and_proposals)
+    local w,h=love.graphics.getWidth(),love.graphics.getHeight()
+    imgui.SetNextWindowPos(imgui.ImVec2_Float(w-I.width,0),imgui.ImGuiCond_Always)
+    imgui.SetNextWindowSize(imgui.ImVec2_Float(I.width,h),imgui.ImGuiCond_Always)
+    imgui.SetNextWindowBgAlpha(1)
+    local bg=T.colors.sidebar
+    imgui.PushStyleColor_Vec4(imgui.ImGuiCol_WindowBg,imgui.ImVec4_Float(bg[1]/255,bg[2]/255,bg[3]/255,1))
+    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_WindowPadding,imgui.ImVec2_Float(16,16))
+    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_ItemSpacing,imgui.ImVec2_Float(8,6))
+    imgui.PushStyleVar_Float(imgui.ImGuiStyleVar_FrameRounding,T.radius.button)
+    local flags=imgui.ImGuiWindowFlags_NoTitleBar+imgui.ImGuiWindowFlags_NoMove
+      +imgui.ImGuiWindowFlags_NoResize+imgui.ImGuiWindowFlags_NoCollapse
+      +imgui.ImGuiWindowFlags_NoBringToFrontOnFocus
+    if imgui.Begin('###uml-inspector',nil,flags) then
+      remember('inspector-window')
+      if fonts.title then imgui.PushFont(fonts.title) end
+      inked(S.inspector,T.colors.gold)
+      if fonts.title then imgui.PopFont() end
       for n,c in ipairs(I.commands(state)) do
+        if c.kind=='proposal' and (n==2 or #I.commands(state)==1) and n==2 then inked(S.proposals_label,T.colors.muted) end
         if imgui.Selectable_Bool(c.label..'##diagram-'..n,c.active) and callbacks.choose then callbacks.choose(c.id) end
         if c.kind=='proposal' and hovered() and clicked(1) then
           menu_id=c.id
@@ -61,9 +118,9 @@ function M.new(imgui,callbacks,fonts)
         end
         remember(c.id and 'proposal:'..G.name(c.id) or 'real')
       end
-      if imgui.Button(S.new_proposal..'##new-proposal') and callbacks.new_proposal then callbacks.new_proposal() end
+      if imgui.Button(S.new_proposal..'##new-proposal',imgui.ImVec2_Float(-1,0)) and callbacks.new_proposal then callbacks.new_proposal() end
       remember('new-proposal')
-      if imgui.Button(S.declutter..'##declutter') and callbacks.declutter then callbacks.declutter() end
+      if imgui.Button(S.declutter..'##declutter',imgui.ImVec2_Float(-1,0)) and callbacks.declutter then callbacks.declutter() end
       remember('declutter')
       menu_open=imgui.BeginPopup('uml-proposal-menu')
       if menu_open then
@@ -72,79 +129,43 @@ function M.new(imgui,callbacks,fonts)
           for _,c in ipairs(I.commands(state)) do if E.equal(c.id,menu_id) then name=c.label end end
           rename_id=menu_id; set_name(name); focus=true
         end
+        remember('rename-menu')
         if imgui.MenuItem_Bool(S.delete,nil,false,true) and callbacks.delete then callbacks.delete(menu_id) end
         imgui.EndPopup()
       end
-      imgui.Separator(); imgui.TextUnformatted(S.proposal_name)
-      if focus then imgui.SetKeyboardFocusHere(); focus=false end
-      imgui.InputText('##proposal-name',buffer,1024); remember('proposal-name')
-      if rename_id and imgui.Button(S.rename_proposal..'##rename-proposal') then
-        if callbacks.rename then callbacks.rename(rename_id,api.name()) end
-        rename_id=nil
+      if rename_id then
+        imgui.Separator(); inked(S.proposal_name,T.colors.muted)
+        if focus then imgui.SetKeyboardFocusHere(); focus=false end
+        imgui.InputText('##proposal-name',buffer,1024); remember('proposal-name')
+        if imgui.Button(S.rename_proposal..'##rename-proposal') then
+          if callbacks.rename then callbacks.rename(rename_id,api.name()) end
+          rename_id=nil
+        end
+        if imgui.Button(S.close_source..'##cancel-rename') then rename_id=nil end
       end
       if callbacks.name_changed then callbacks.name_changed(api.name()) end
-      imgui.TextUnformatted(S.p_hint)
-      local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
-      empty_rendered=false; detail_hovered=false
-      if model then
-        imgui.Separator()
-        local rows=Detail.rows(model)
-        local avail=imgui.GetContentRegionAvail()
-        detail_view_h=math.max(80,avail.y-24)
-        local scroll=Detail.scroll(rows,detail_view_h,state.detail_scroll or 0,0)
-        detail_scroll=scroll
-        local highlight=Detail.highlight(rows,detail_hover)
-        if imgui.BeginChild_Str('detail-card',imgui.ImVec2_Float(0,detail_view_h),
-            imgui.ImGuiChildFlags_None,
-            imgui.ImGuiWindowFlags_NoScrollbar+imgui.ImGuiWindowFlags_NoScrollWithMouse) then
-          detail_hovered=imgui.IsWindowHovered()
-          local next_hover=nil
-          for n,row in ipairs(rows) do
-            imgui.SetCursorPosY(row.y-scroll)
-            if row.kind=='group-header' then imgui.TextUnformatted(S.group_crap..'                         '..S.group_mutation)
-            elseif row.kind=='col-header' then
-              -- Metric names stay English; hovering a header explains it in Chinese.
-              for i,col in ipairs(Detail.column_layout()) do
-                if i>1 then imgui.SameLine() end
-                imgui.TextUnformatted(col.label)
-                if hovered() then imgui.BeginTooltip(); imgui.TextUnformatted(S.column_tips[col.id]); imgui.EndTooltip() end
-              end
-            else
-              local text=row.text or ''
-              if row.kind=='stats' then
-                local values={}; for _,col in ipairs(Detail.column_layout()) do values[#values+1]=row[col.key] or '' end
-                text=text..'    '..table.concat(values,'   ')..(row['mut-note'] and '  '..row['mut-note'] or '')
-              end
-              if row.module or row['op-name'] or row.kind=='rel' then
-                if imgui.Selectable_Bool(text..'##detail-'..n,row==highlight) then
-                  if row.kind=='rel' then if callbacks.pick then callbacks.pick(row.id) end
-                  elseif callbacks.open_source then callbacks.open_source(Detail.member_ident(model,row['op-name'])) end
-                end
-                if hovered() then next_hover=row.module and E.keyword('module') or row['op-name'] end
-                remember(row.module and 'module' or row['op-name'] and 'member:'..row['op-name'] or 'rel:'..G.name(row.id))
-              elseif row.kind=='name' and fonts.title then imgui.PushFont(fonts.title); imgui.TextUnformatted(text); imgui.PopFont()
-              else imgui.TextUnformatted(text) end
-            end
-          end
-          detail_hover=next_hover
-        end
-        imgui.EndChild()
-        remember('detail-card')
-      elseif state.selected then
+      inked(S.p_hint,T.colors.muted)
+      imgui.Separator()
+      local id=G.get(state.selected,'id')
+      if imgui.BeginChild_Str('summary-card',imgui.ImVec2_Float(0,-40),imgui.ImGuiChildFlags_None,0) then
         local kind=G.name(G.get(state.selected,'kind'))
-        if kind=='package' then
-          local p=require('uml.engine.hit').package_by_id(state.scene,id)
-          if p then imgui.TextUnformatted(G.get(p,'label') or G.name(id)); local count=0; for _,c in ipairs(G.get(state.scene,'classes') or {}) do if E.equal(id,G.get(c,'package')) then count=count+1 end end; imgui.TextUnformatted(S.class_count..count) end
+        local model=id and Detail.model(state.scene,id)
+        if model then class_summary(model)
+        elseif kind=='package' and id then package_summary(state,id)
+        else
+          local message=I.empty_explanation(state)
+          if message then inked(message,T.colors.muted); remember('empty-help')
+          elseif state.selected then inked(S.select_class,T.colors.muted); remember('empty-help') end
         end
-      else
-        local message=I.empty_explanation(state)
-        if message then imgui.TextUnformatted(message); empty_rendered=true end
       end
-      local w,h=love.graphics.getWidth(),love.graphics.getHeight()
-      imgui.SetCursorScreenPos(imgui.ImVec2_Float(w-360+16,h-56))
-      if imgui.Button(S.regen..'##regen') and callbacks.regen then callbacks.regen() end
+      imgui.EndChild()
+      remember('summary-card')
+      if imgui.Button(S.regen..'##regen',imgui.ImVec2_Float(-1,0)) and callbacks.regen then callbacks.regen() end
+      remember('regen')
     end
     imgui.End()
+    imgui.PopStyleColor(1)
+    imgui.PopStyleVar(3)
   end
   return api
 end

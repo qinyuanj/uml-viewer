@@ -24,7 +24,7 @@ return function(frame,state,ui)
   if not (ui and ui.source_window and ui.inspector) then failed=failed or 'viewer did not expose integrated callbacks'; return love.event.quit(1) end
   local io=ui.imgui.GetIO()
   local function row(key)
-    local b=ui.inspector.bounds()[key]
+    local b=ui.detail_window.bounds()[key]
     if not b then failed=failed or ('missing inspector row '..key) end
     return b
   end
@@ -35,8 +35,8 @@ return function(frame,state,ui)
     -- Actual viewer callback: double-click the namespace container to drill.
     check(click_rect(state,2)~=nil,'could not drill namespace')
   elseif frame==6 then
-    -- Actual viewer callback: single-click the selected leaf class.
-    check(click_rect(state,1)~=nil,'could not select leaf class')
+    -- Actual viewer callback: double-click the leaf to open separate details.
+    check(click_rect(state,2)~=nil,'could not open leaf detail')
   elseif frame==8 then pin('module')
   elseif frame==9 then down('module')
   elseif frame==10 then up('module')
@@ -67,7 +67,17 @@ return function(frame,state,ui)
       end
       screenshot('member.png')
     end
+  elseif frame==24 then
+    local v=ui.source_window.viewport(); local p=v and v.lines and v.lines[82]
+    if check(p~=nil,'source selection line bounds missing') then io:AddMousePosEvent(p.x+ui.fonts.code:CalcTextSizeA(13,1e9,0,'  ',nil,nil).x,p.y+p.h/2); io:AddMouseButtonEvent(0,true) end
   elseif frame==26 then
+    local v=ui.source_window.viewport(); local p=v and v.lines and v.lines[82]
+    if p then io:AddMousePosEvent(p.x+ui.fonts.code:CalcTextSizeA(13,1e9,0,'  function',nil,nil).x,p.y+p.h/2) end
+  elseif frame==28 then io:AddMouseButtonEvent(0,false)
+  elseif frame==30 then
+    check(ui.source_window.viewport().selection=='function','source drag must select actual text without gutter, got '..tostring(ui.source_window.viewport().selection))
+    screenshot('selection-chinese-tab.png')
+  elseif frame==32 then
     if failed then save('source-jump-fail.txt',failed); love.event.quit(1)
     else save('source-jump-pass.txt','PASS selected leaf -> module full file; member line 82 highlighted and scrolled\n'); love.event.quit(0) end
   end

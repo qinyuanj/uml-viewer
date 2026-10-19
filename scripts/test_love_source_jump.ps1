@@ -8,17 +8,17 @@ $evidence=Join-Path ([IO.Path]::GetTempPath()) ('uml-68-jump-'+[guid]::NewGuid()
 $null=New-Item -ItemType Directory $evidence
 $source=Join-Path $evidence 'source.lua'
 $diagram=Join-Path $evidence 'diagram.edn'
-[IO.File]::WriteAllText($source,"local M = {}`n"+((1..80 | ForEach-Object { "-- preceding line $_`n" }) -join '')+"function M.target() return 'target ## %' end`nreturn M`n")
+[IO.File]::WriteAllText($source,"local M = {}`n"+((1..80 | ForEach-Object { "-- preceding line $_`n" }) -join '')+"`tfunction M.target() local 变量 = 'target ## %'; return 变量 end`nreturn M`n")
 $sourceEDN=$source.Replace('\','/')
 [IO.File]::WriteAllText($diagram,('{:hierarchical true :title "Source jump acceptance" :classes [{:id :app.some_module :name "some_module" :ns "app.some_module" :lang :lua :file "'+$sourceEDN+'" :ops [{:name "M.target"}]}] :edges []}'))
-$names=@('UML_CIMGUI_DIRECTORY','UML_VIEWER_TEST_SECONDS','UML_VIEWER_TEST_DRIVER','UML68_EVIDENCE')
+$names=@('UML_CIMGUI_DIRECTORY','UML_VIEWER_TEST_SECONDS','UML_VIEWER_TEST_DRIVER','UML68_EVIDENCE','UML_VIEWER_EVIDENCE','UML_VIEWER_PROJECT_ROOT')
 $previous=@{}
 foreach ($name in $names) { $previous[$name]=[Environment]::GetEnvironmentVariable($name) }
 try {
   $env:UML_CIMGUI_DIRECTORY=(Resolve-Path $CimguiDirectory).Path
   $env:UML_VIEWER_TEST_SECONDS='30'
   $env:UML_VIEWER_TEST_DRIVER=Join-Path $repo 'scripts/test_love_source_jump.lua'
-  $env:UML68_EVIDENCE=$evidence
+  $env:UML68_EVIDENCE=$evidence; $env:UML_VIEWER_EVIDENCE=$evidence; $env:UML_VIEWER_PROJECT_ROOT=$evidence
   $info=[Diagnostics.ProcessStartInfo]::new($Love)
   $info.UseShellExecute=$false; $info.WorkingDirectory=$repo
   $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
