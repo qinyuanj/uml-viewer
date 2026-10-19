@@ -2,6 +2,11 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local M={}
 local C=require('uml.domain.config')
+local L=require('uml.engine.layout')
+local S=require('uml.application.strings')
+local F=require('uml.adapters.fonts')
+-- Text keeps the layout's 12px side padding; package titles also clear the C/M dots.
+local pad,package_title_reserve=12,48
 local function bands(c)
   return G.name(C.crap_band(C.crap_risk(G.get(c,'crap')))),G.name(C.mutation_band(C.mutation_ratio(c)))
 end
@@ -14,11 +19,17 @@ function M.commands(scene)
   local commands={}
   for _,p in ipairs(G.get(scene,'packages')) do
     local cb,mb=bands(p); local band=(cb=='red' or mb=='red') and 'red' or (cb=='yellow' or mb=='yellow') and 'yellow' or 'green'
-    commands[#commands+1]={kind='package',rect=G.get(p,'rect'),text=G.get(p,'title') or G.get(p,'label'),band=band,red=band=='red'}
+    local pr=G.get(p,'rect')
+    commands[#commands+1]={kind='package',rect=pr,text=G.get(p,'title') or G.get(p,'label'),band=band,red=band=='red',size=F.sizes.title,max_w=G.get(pr,'w')-package_title_reserve}
     quality(commands,p,'package')
   end
   for _,c in ipairs(G.get(scene,'classes')) do
     local C=require('uml.domain.config')
+local L=require('uml.engine.layout')
+local S=require('uml.application.strings')
+local F=require('uml.adapters.fonts')
+-- Text keeps the layout's 12px side padding; package titles also clear the C/M dots.
+local pad,package_title_reserve=12,48
     local r=G.get(c,'rect'); local cb=G.name(C.crap_band(C.crap_risk(G.get(c,'crap')))); local mb=G.name(C.mutation_band(C.mutation_ratio(c)))
     local band=(cb=='red' or mb=='red') and 'red' or (cb=='yellow' or mb=='yellow') and 'yellow' or 'green'
     commands[#commands+1]={kind='class',rect=r,shape=G.name(G.get(c,'shape')),red=band=='red',band=band,id=G.get(c,'id')}
@@ -32,43 +43,69 @@ function M.commands(scene)
       if kind=='rule' then commands[#commands+1]={kind='rule',x=G.get(r,'x'),y=y-4,w=G.get(r,'w')}; y=y+12
       else
         local italic=kind=='name' and ((stereo~=nil and stereo~='class') or G.get(c,'drill?')==true or #(G.get(c,'contents') or {})>0)
-        commands[#commands+1]={kind='text',role=kind,italic=italic,size=kind=='name' and 14 or 12,x=G.get(r,'x')+12,y=y,text=G.get(line,'text') or ''}; y=y+18
+        commands[#commands+1]={kind='text',role=kind,italic=italic,bold=kind=='name',size=kind=='name' and F.sizes.title or F.sizes.body,max_w=G.get(r,'w')-2*pad,x=G.get(r,'x')+pad,y=y,text=G.get(line,'text') or ''}; y=y+18
       end
     end
   end
   return commands
 end
-function M.new(imgui)
+-- Natural advance of text at a font size; a font that cannot measure falls back
+-- to the monospace estimate (16px Sarasa half-width = layout char_w).
+local function measure(font,size,text)
+  if font and font.CalcTextSizeA then return font:CalcTextSizeA(size,1e9,0,text,nil,nil).x end
+  return L.text_w(text)/F.sizes.body*size
+end
+-- The layout's 8px/char estimate fixes box widths (JVM goldens); a 20px name
+-- may be wider, so the drawn size shrinks until the text, bold offset and
+-- italic shear fit inside max_w. Never grows past the nominal size.
+function M.fit(font,size,text,max_w,bold,italic)
+  local extra=(bold and size*.05 or 0)+(italic and size*.2 or 0)
+  local natural=measure(font,size,text)+extra
+  if max_w and natural>max_w and natural>0 then return size*math.max(0,max_w)/natural end
+  return size
+end
+function M.new(imgui,fonts)
+  fonts=fonts or {}
   local function vec(x,y) return imgui.ImVec2_Float(x,y) end
-  return {draw=function(scene,width,height,view)
+  local api={}
+  api.draw=function(scene,width,height,view)
     local size=G.get(scene,'size'); local scale=view and (view.zoom or 1) or math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
     local list=imgui.GetBackgroundDrawList_Nil()
     local function point(x,y) return vec((x-(view and view.cam_x or 0))*scale,(y-(view and view.cam_y or 0))*scale) end
+    local function text(font,size,max_w,x,y,color,s,italic,bold)
+      size=M.fit(font,size,s,max_w,bold,italic)
+      for pass=1,bold and 2 or 1 do
+        local origin=point(x+(pass-1)*size*.05,y)
+        local first=italic and list.VtxBuffer.Size
+        list:AddText_FontPtr(font,size*scale,origin,color,s,nil,0,nil)
+        -- Shear only this text's newly emitted glyphs: portable oblique styling
+        -- without loading or redistributing a platform-specific italic font.
+        if first then for i=first,list.VtxBuffer.Size-1 do local pos=list.VtxBuffer.Data[i].pos; pos.x=pos.x+(origin.y+size*scale-pos.y)*.2 end end
+      end
+    end
     for _,c in ipairs(M.commands(scene)) do
       if c.kind=='package' or c.kind=='class' then
         local r=c.rect; local x,y,w,h=G.get(r,'x'),G.get(r,'y'),G.get(r,'w'),G.get(r,'h')
         local color=c.red and 0xff5555dd or c.band=='yellow' and 0xff55ccee or 0xff77bb77
         if c.shape=='oval' then list:AddEllipse(point(x+w/2,y+h/2),w/2*scale,h/2*scale,color,0,0,1.5)
         else list:AddRect(point(x,y),point(x+w,y+h),color,0,0,1.5) end
-        if c.kind=='package' then list:AddText_FontPtr(nil,13*scale,point(x+12,y+8),0xffdddddd,c.text or '',nil,0,nil) end
+        if c.kind=='package' then text(fonts.title,c.size,c.max_w,x+pad,y+8,0xffdddddd,c.text or '') end
       elseif c.kind=='quality' then
         local color=c.band=='red' and 0xff5555dd or c.band=='yellow' and 0xff55ccee or 0xff77bb77
         list:AddCircleFilled(point(c.x,c.y),c.radius*scale,color,0)
-        list:AddText_FontPtr(nil,9*scale,point(c.x-3,c.y-5),0xffffffff,c.text,nil,0,nil)
+        text(fonts.body,9,nil,c.x-3,c.y-5,0xffffffff,c.text)
       elseif c.kind=='rule' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),0xff777777,1)
-      elseif c.kind=='marker' and c.text=='α' then
-        -- Stroke the small alpha explicitly; ImGui's default atlas is Latin-only.
-        local pts={{8,3},{6,2},{3,2},{1,4},{1,7},{3,9},{6,9},{8,6},{9,2},{8,7},{9,9},{11,9}}
-        for i=2,#pts do local a,b=pts[i-1],pts[i]; list:AddLine(point(c.x+a[1],c.y+a[2]),point(c.x+b[1],c.y+b[2]),c.color,scale) end
-      elseif c.kind=='text' or c.kind=='marker' or c.kind=='level' then
-        local size=(c.size or 13)*scale; local origin=point(c.x,c.y)
-        local first=c.italic and list.VtxBuffer.Size
-        list:AddText_FontPtr(nil,size,origin,c.color or 0xffeeeeee,c.text,nil,0,nil)
-        -- Shear only this text's newly emitted glyphs: portable oblique styling
-        -- without loading or redistributing a platform-specific italic font.
-        if first then for i=first,list.VtxBuffer.Size-1 do local pos=list.VtxBuffer.Data[i].pos; pos.x=pos.x+(origin.y+size-pos.y)*.2 end end
+      elseif c.kind=='text' then
+        text(c.role=='name' and fonts.title or fonts.body,c.size,c.max_w,c.x,c.y,c.color or 0xffeeeeee,c.text,c.italic,c.bold)
+      elseif c.kind=='marker' or c.kind=='level' then
+        text(fonts.body,c.size or 13,nil,c.x,c.y,c.color or 0xffeeeeee,c.text)
       end
     end
-  end}
+  end
+  -- The back label, drawn on the same draw list as the canvas.
+  api.back=function()
+    imgui.GetBackgroundDrawList_Nil():AddText_FontPtr(fonts.body,F.sizes.body,vec(12,12),0xffffffff,S.back,nil,0,nil)
+  end
+  return api
 end
 return M

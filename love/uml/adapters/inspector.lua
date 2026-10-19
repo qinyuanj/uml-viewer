@@ -6,12 +6,8 @@ local I=require('uml.application.inspector')
 local Detail=require('uml.application.detail')
 local S=require('uml.application.strings')
 local M={}
-function M.fonts(imgui,path)
-  path=path or os.getenv('UML_CJK_FONT') or ((os.getenv('WINDIR') or 'C:/Windows')..'/Fonts/msyh.ttc')
-  local io=imgui.GetIO(); local font=io.Fonts:AddFontFromFileTTF(path,18,nil,io.Fonts:GetGlyphRangesChineseSimplifiedCommon())
-  assert(font~=nil,'CJK font could not be loaded: '..path); io.FontDefault=font; return font
-end
-function M.new(imgui,callbacks)
+function M.new(imgui,callbacks,fonts)
+  fonts=fonts or {}
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
   local rename_id,menu_id
   local api={}
@@ -126,6 +122,7 @@ function M.new(imgui,callbacks)
                 end
                 if hovered() then next_hover=row.module and E.keyword('module') or row['op-name'] end
                 remember(row.module and 'module' or row['op-name'] and 'member:'..row['op-name'] or 'rel:'..G.name(row.id))
+              elseif row.kind=='name' and fonts.title then imgui.PushFont(fonts.title); imgui.TextUnformatted(text); imgui.PopFont()
               else imgui.TextUnformatted(text) end
             end
           end
