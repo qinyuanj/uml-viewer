@@ -1,0 +1,66 @@
+-- Canvas navigation (#85): input event sequences through Events, observed as
+-- view state and the draw commands the canvas renders.
+local E=require('uml.edn')
+local G=require('uml.domain.geom')
+local D=require('uml.application.document')
+local Events=require('uml.application.events')
+local Hit=require('uml.engine.hit')
+local g,k=G.get,E.keyword
+local function near(a,b,message) assert.is_true(math.abs(a-b)<1e-9,(message or '')..' expected '..tostring(a)..' actual '..tostring(b)) end
+local function tree()
+  return D.new(E.parse('{:hierarchical true :title "Tree" :classes [{:id :source} {:id :source.lua} {:id :source.lua.parser} {:id :other}] :edges []}'),'one')
+end
+local dims={window_w=1500,window_h=900,view_w=1220}
+local function with(extra) local d={}; for key,v in pairs(dims) do d[key]=v end; for key,v in pairs(extra or {}) do d[key]=v end; return d end
+describe('canvas navigation',function()
+  it('zooms with control+wheel around the cursor, keeping the world point under it',function()
+    local s=tree(); s.cam_x=30; s.cam_y=40; s.zoom=1
+    local wx,wy=Events.world_xy(s,400,300)
+    local a=Events.on_wheel(s,0,1,with{control=true,pointer={400,300}})
+    near(1.1,a.zoom,'one notch in')
+    local ax,ay=Events.world_xy(a,400,300); near(wx,ax,'anchor x'); near(wy,ay,'anchor y')
+    local b=Events.on_wheel(a,0,-1,with{control=true,pointer={400,300}})
+    near(1,b.zoom,'one notch out'); near(30,b.cam_x); near(40,b.cam_y)
+    for _=1,100 do a=Events.on_wheel(a,0,1,with{control=true,pointer={10,10}}) end; near(10,a.zoom,'clamped high')
+    for _=1,100 do a=Events.on_wheel(a,0,-1,with{control=true,pointer={10,10}}) end; near(.1,a.zoom,'clamped low')
+  end)
+  it('pans with the plain wheel, sideways with shift or a horizontal wheel',function()
+    local s=tree(); s.scene=G.map{size=G.map{w=4000,h=4000}}
+    local down=Events.on_wheel(s,0,-1,with{}); near(48,down.cam_y); near(0,down.cam_x or 0); assert.is_nil(down.zoom)
+    local side=Events.on_wheel(s,0,-1,with{shift=true}); near(48,side.cam_x); near(0,side.cam_y or 0)
+    local wheel=Events.on_wheel(s,-2,0,with{}); near(96,wheel.cam_x)
+    s.zoom=2; near(24,Events.on_wheel(s,0,-1,with{}).cam_y,'pan distance shrinks with zoom')
+  end)
+  it('zooms with control+plus and control+minus around the cursor, else the canvas centre',function()
+    local s=tree(); s.cam_x=5; s.cam_y=7
+    local wx,wy=Events.world_xy(s,200,100)
+    local a=Events.on_key(s,'=',with{control=true,pointer={200,100}}); near(1.1,a.zoom)
+    local ax,ay=Events.world_xy(a,200,100); near(wx,ax); near(wy,ay)
+    local b=Events.on_key(a,'-',with{control=true,pointer={200,100}}); near(1,b.zoom); near(5,b.cam_x); near(7,b.cam_y)
+    local cx,cy=Events.world_xy(s,610,450)
+    local centred=Events.on_key(s,'kp+',with{control=true}); local x,y=Events.world_xy(centred,610,450); near(cx,x); near(cy,y)
+  end)
+  it('fits the whole diagram into the canvas left of the sidebar with control+0',function()
+    local s=tree(); s.zoom=3; s.cam_x=999; s.cam_y=-5
+    s.scene=G.map{size=G.map{w=2440,h=900,['min-x']=0,['min-y']=0}}
+    local f=Events.on_key(s,'0',with{control=true})
+    near(.5,f.zoom,'width-bound: 1220/2440')
+    -- Centred: the diagram middle sits at the canvas middle.
+    local mx,my=Events.world_xy(f,610,450); near(1220,mx); near(450,my)
+    s.scene=G.map{size=G.map{w=300,h=200,['min-x']=-100,['min-y']=0}}
+    local small=Events.fit(s,dims); near(1,small.zoom,'small diagrams are not blown up past 100%')
+    local sx,sy=Events.world_xy(small,610,450); near(100,sx); near(100,sy)
+  end)
+  it('fits after a drill, back or proposal switch once the canvas size is known, never on generic rebuilds',function()
+    local s=tree(); s.zoom=4; s.cam_x=50
+    local entered=Events.drill(s,k('source')); assert.is_true(entered.fit_pending)
+    local settled=Events.settle(entered,dims); assert.is_nil(settled.fit_pending)
+    local size=g(entered.scene,'size'); local w=g(size,'w')-(g(size,'min-x') or 0)
+    near(math.min(1,1220/w,900/(g(size,'h')-(g(size,'min-y') or 0))),settled.zoom)
+    assert.is_true(Events.back(settled).fit_pending)
+    assert.is_true(Events.show_proposal(settled,nil).fit_pending)
+    settled.zoom=2; settled.cam_x=11
+    local cleared=Events.cycle_declutter(settled); assert.is_nil(cleared.fit_pending); near(2,cleared.zoom)
+    assert.are.equal(settled,Events.settle(settled,dims),'nothing pending leaves the view alone')
+  end)
+end)

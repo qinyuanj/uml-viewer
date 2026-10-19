@@ -15,11 +15,14 @@ local function rebuild(s)
   end
   return s
 end
+-- Explicit navigation (drill, back, proposal switch) asks the adapter to fit the
+-- new view once it knows the canvas size; generic rebuilds never do.
+local function navigate(s) s=rebuild(s); s.fit_pending=true; return s end
 function M.show_proposal(s,id)
   if id then local found=false; for _,p in ipairs(H.named_proposals(s.document)) do if E.equal(id,G.get(p,'id')) then found=true end end; if not found then return s end end
   local n=copy(s); n.focus=E.vector(); n.extra=G.copy(s.extra)
   E.assoc(n.extra,E.keyword('proposal-id'),id or E.nil_value); E.assoc(n.extra,E.keyword('proposal'),id~=nil); E.assoc(n.extra,E.keyword('open-layer'),E.nil_value)
-  return rebuild(n)
+  return navigate(n)
 end
 local function with_proposals(doc,proposals)
   local out=G.copy(doc); E.assoc(out,K('proposals'),proposals); return out
@@ -83,14 +86,14 @@ function M.drill(s,id)
     for _,x in ipairs(s.focus or {}) do n.focus[#n.focus+1]=x end
     n.focus[#n.focus+1]=E.keyword(G.name(id):match('[^.]+$'))
   end
-  return rebuild(n)
+  return navigate(n)
 end
 function M.back(s)
   local layer=G.get(s.extra,'open-layer'); if not layer and #(s.focus or {})==0 then return s end
   local n=copy(s)
   if layer then n.extra=G.copy(s.extra); E.assoc(n.extra,E.keyword('open-layer'),E.nil_value)
   else n.focus=E.vector(); for i=1,#s.focus-1 do n.focus[i]=s.focus[i] end end
-  return rebuild(n)
+  return navigate(n)
 end
 function M.zoom_of(s) return s.zoom or 1 end
 function M.on_scroll(s,amount,dims)
@@ -104,6 +107,43 @@ function M.on_scroll(s,amount,dims)
   n[axis]=math.max(minimum,math.min(maximum,(s[axis] or 0)+amount*48/z)); return n
 end
 function M.world_xy(s,x,y) local z=M.zoom_of(s); return (s.cam_x or 0)+x/z,(s.cam_y or 0)+y/z end
+-- Zoom range and step stay those of the original viewer.
+M.zoom_min,M.zoom_max,M.zoom_step=.1,10,1.1
+local function clamp_zoom(z) return math.max(M.zoom_min,math.min(M.zoom_max,z)) end
+-- Scale the zoom by `factor`, keeping the world point under the screen anchor
+-- (ax, ay) fixed on screen.
+function M.zoom_at(s,factor,ax,ay)
+  local n=copy(s); local old=M.zoom_of(s); n.zoom=clamp_zoom(old*factor)
+  n.cam_x=(s.cam_x or 0)+ax/old-ax/n.zoom; n.cam_y=(s.cam_y or 0)+ay/old-ay/n.zoom; return n
+end
+-- The cursor anchors zooming when it is on the canvas; otherwise the canvas centre.
+local function anchor(dims)
+  local p=dims.pointer; if type(p)=='table' and p[1] and p[2] then return p[1],p[2] end
+  return (dims.view_w or dims.window_w or 1500)/2,(dims.window_h or 900)/2
+end
+-- Fit the whole scene into the usable canvas (window minus sidebar), centred.
+-- Small diagrams stay at 100% rather than being magnified to fill the canvas.
+function M.fit(s,dims)
+  dims=dims or {}; local size=G.get(s.scene,'size'); local n=copy(s); n.fit_pending=nil
+  local x0,y0=G.get(size,'min-x') or 0,G.get(size,'min-y') or 0
+  local w=math.max(1,(G.get(size,'w') or 800)-x0); local h=math.max(1,(G.get(size,'h') or 600)-y0)
+  local vw=dims.view_w or dims.window_w or 1500; local vh=dims.window_h or 900
+  n.zoom=clamp_zoom(math.min(1,vw/w,vh/h))
+  n.cam_x=x0+w/2-vw/(2*n.zoom); n.cam_y=y0+h/2-vh/(2*n.zoom); return n
+end
+-- Applies a fit requested by navigation or a new diagram load; else unchanged.
+function M.settle(s,dims) if s.fit_pending then return M.fit(s,dims) end; return s end
+-- Wheel input: control zooms around the cursor (one 1.1 step per notch);
+-- otherwise the wheel pans, shift or a horizontal wheel pans sideways.
+function M.on_wheel(s,dx,dy,dims)
+  dims=dims or {}; dx,dy=dx or 0,dy or 0
+  if dims.control then
+    if dy==0 then return s end
+    local ax,ay=anchor(dims); return M.zoom_at(s,M.zoom_step^dy,ax,ay)
+  end
+  local d=copy(dims); d.horizontal=dx~=0 or dims.shift==true
+  return M.on_scroll(s,dx~=0 and -dx or -dy,d)
+end
 local function key_name(x) if type(x)=='string' then return x end; if E.kind(x)=='keyword' then return G.name(x) end end
 function M.zoom_dir(key,dims)
   dims=dims or {}; key=key_name(key); local c=dims.key_code; local raw=type(dims.raw_key)=='string' and dims.raw_key:sub(1,1)
@@ -115,9 +155,8 @@ function M.on_key(s,key,dims)
   dims=dims or {}; key=key_name(key)
   local dir=dims.control and M.zoom_dir(key,dims)
   if dir then
-    local n=copy(s); local old=M.zoom_of(s); local z=dir=='reset' and 1 or dir=='in' and old*1.1 or old/1.1
-    n.zoom=math.max(.1,math.min(10,z)); local w=dims.view_w or dims.window_w or 1500; local h=dims.window_h or 900
-    n.cam_x=(s.cam_x or 0)+w/(2*old)-w/(2*n.zoom); n.cam_y=(s.cam_y or 0)+h/(2*old)-h/(2*n.zoom); return n
+    if dir=='reset' then return M.fit(s,dims) end
+    local ax,ay=anchor(dims); return M.zoom_at(s,dir=='in' and M.zoom_step or 1/M.zoom_step,ax,ay)
   end
   if key=='left' or key=='right' then local d=copy(dims); d.horizontal=true; return M.on_scroll(s,key=='left' and -2 or 2,d) end
   if key=='up' or key=='down' then local d=copy(dims); d.horizontal=false; return M.on_scroll(s,key=='up' and -2 or 2,d) end
