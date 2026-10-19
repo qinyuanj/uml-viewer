@@ -6,9 +6,23 @@ local g,m,put,copy,name=G.get,G.map,G.put,G.copy,G.name
 local V,K=E.vector,E.keyword
 local function seq(x) return x or {} end
 local function key(x) return E.encode(x) end
--- JVM String.count measures UTF-16 units, including surrogate pairs.
+-- Estimated advance of one half-width character: the body font's (16px Sarasa
+-- Mono) half-width advance, and the JVM char-w the golden geometry was made with.
+M.char_w=8
+-- East Asian Wide/Fullwidth BMP blocks: CJK, kana, Hangul, full-width forms.
+local wide={{0x1100,0x115F},{0x2E80,0x303E},{0x3041,0x33FF},{0x3400,0x4DBF},{0x4E00,0x9FFF},{0xA000,0xA4CF},{0xAC00,0xD7A3},{0xF900,0xFAFF},{0xFE30,0xFE4F},{0xFF00,0xFF60},{0xFFE0,0xFFE6}}
+local function units(ch)
+  if #ch==4 then return 2 end -- one JVM surrogate pair
+  if #ch==3 then
+    local a,b,c=ch:byte(1,3); local code=(a-224)*4096+(b-128)*64+(c-128)
+    for _,r in ipairs(wide) do if code>=r[1] and code<=r[2] then return 2 end end
+  end
+  return 1
+end
+-- Pure estimate (no font loaded): JVM String.count in UTF-16 units, except
+-- full-width CJK counts as two half-width characters. Lua 5.1 and 5.4 safe.
 function M.text_w(s)
-  local n=0; for ch in (s or ''):gmatch('[%z\1-\127\194-\244][\128-\191]*') do n=n+(#ch==4 and 2 or 1) end; return 8*n
+  local n=0; for ch in (s or ''):gmatch('[%z\1-\127\194-\244][\128-\191]*') do n=n+units(ch) end; return M.char_w*n
 end
 function M.class_lines(c)
   local lines=V(); local function add(kind,text,extra) local l=m{kind=K(kind),text=text or E.nil_value}; for _,e in ipairs(extra or {}) do E.assoc(l,e[1],e[2]) end; lines[#lines+1]=l end
