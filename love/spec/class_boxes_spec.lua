@@ -79,6 +79,28 @@ describe('class box public renderer commands',function()
     assert.is_true(passes('AVeryLongClassNameThatFillsTheBox')[1].size<20)
     local field=passes('field')[1]; assert.are.equal(fonts.body,field.font); assert.are.equal(16,field.size)
   end)
+  it('keeps 20px names clear of the member rule, the stereotype line and the corner badges',function()
+    local L=require('uml.engine.layout')
+    local font={CalcTextSizeA=function(_,size,_,_,text) return {x=L.text_w(text)/16*size} end}
+    local texts,rules,dots={},{},{}
+    local list={VtxBuffer={Size=0,Data={}},AddRect=function() end,
+      AddLine=function(_,a,b,color) if color==0xff777777 then rules[#rules+1]={left=a.x,right=b.x,y=a.y} end end,
+      AddCircleFilled=function(_,p,r) dots[#dots+1]={left=p.x-r,right=p.x+r,top=p.y-r,bottom=p.y+r} end,
+      AddText_FontPtr=function(_,f,size,p,color,text) local w=font:CalcTextSizeA(size,1e9,0,text).x; texts[#texts+1]={text=text,size=size,left=p.x,right=p.x+w,top=p.y,bottom=p.y+size} end}
+    local s=scene('[{:id :a :name "Plain" :fields ["field"]} {:id :b :name "Stereotyped" :stereotype :bean :ops [{:name "go" :text "go()"}]} {:id :c :name "LeveledNameIsLong" :level 3 :fields ["x"]} {:id :d :name "OnlyANameButQuiteLong"}]')
+    B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},{body=font,title=font}).draw(s,1000,1000,{zoom=1,cam_x=0,cam_y=0})
+    local function overlap(a,b) return a.left<b.right and b.left<a.right and a.top<b.bottom and b.top<a.bottom end
+    local names={}; for _,c in ipairs(G.get(s,'classes')) do names[G.get(c,'name')]=G.get(c,'rect') end
+    for _,t in ipairs(texts) do if names[t.text] then
+      local r=names[t.text]
+      assert.is_true(t.top>=G.get(r,'y') and t.bottom<=G.bottom(r),'name leaves its box: '..t.text)
+      for _,l in ipairs(rules) do assert.is_false(l.left<t.right and t.left<l.right and l.y>t.top and l.y<t.bottom,'rule crosses name '..t.text) end
+      for _,d in ipairs(dots) do assert.is_false(overlap(t,d),'name hits a quality dot: '..t.text) end
+      for _,o in ipairs(texts) do if o~=t and o.text~=t.text then assert.is_false(overlap(t,o),t.text..' overlaps '..o.text) end end
+    end end
+    local sizes={}; for _,t in ipairs(texts) do if names[t.text] then sizes[t.text]=t.size end end
+    assert.are.equal(20,sizes.Plain)
+  end)
   it('draws the back label through the imgui draw list in the body font',function()
     local drawn={}; local list={AddText_FontPtr=function(_,f,size,point,color,text) drawn[#drawn+1]={font=f,size=size,x=point.x,y=point.y,text=text} end}
     local fonts={body={},title={}}

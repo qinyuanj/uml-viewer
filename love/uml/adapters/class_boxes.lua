@@ -14,7 +14,42 @@ local function quality(commands,c,owner)
   local r=G.get(c,'rect'); local cb,mb=bands(c)
   for i,b in ipairs{cb,mb} do commands[#commands+1]={kind='quality',owner=owner,id=G.get(c,'id'),rect=r,text=i==1 and 'C' or 'M',band=b,radius=6,x=G.right(r)-24+(i-1)*14,y=G.get(r,'y')+10} end
 end
--- Adapter contract: a renderer consumes commands; no UI binding leaks into scenes.
+-- The corner band holds the level (top-left) and the C/M dots and α/I marker
+-- (top-right); text whose slot reaches into it must stop short of the badges.
+local band_bottom,dots_reserve,marker_reserve=16,32,46
+-- Vertical slots for a class's text lines. The layout keeps its golden 18px
+-- line pitch, so the larger 20px name and 16px members are packed into each
+-- run of lines between rules (and the corner band / box bottom): nominal sizes
+-- when they fit, scaled down together when they do not, with even gaps.
+function M.text_slots(c,r,marker)
+  local x,ry,w,h=G.get(r,'x'),G.get(r,'y'),G.get(r,'w'),G.get(r,'h')
+  local out,run={},{}
+  local y=ry+16; local run_top=ry+(G.get(c,'level')~=nil and 14 or 4)
+  local stereo=G.name(G.get(c,'stereotype'))
+  local function flush(run_bottom)
+    local total=0; for _,e in ipairs(run) do total=total+e.size end
+    if #run>0 then
+      local avail=run_bottom-run_top; local k=math.min(1,avail/total); local gap=(avail-total*k)/(#run+1); local top=run_top+gap
+      for _,e in ipairs(run) do
+        e.top=top; e.h=e.size*k; top=top+e.h+gap
+        e.max_w=w-2*pad+(e.top<ry+band_bottom and pad-(marker and marker_reserve or dots_reserve) or 0)
+      end
+    end
+    run={}
+  end
+  for _,line in ipairs(G.get(c,'lines') or {}) do
+    local kind=G.name(G.get(line,'kind'))
+    if kind=='rule' then
+      flush(y-5); out[#out+1]={kind='rule',x=x,y=y-4,w=w}; run_top=y-3; y=y+12
+    else
+      local italic=kind=='name' and ((stereo~=nil and stereo~='class') or G.get(c,'drill?')==true or #(G.get(c,'contents') or {})>0)
+      local e={kind='text',role=kind,italic=italic,bold=kind=='name',size=kind=='name' and F.sizes.title or F.sizes.body,x=x+pad,y=y,text=G.get(line,'text') or ''}
+      out[#out+1]=e; run[#run+1]=e; y=y+18
+    end
+  end
+  flush(ry+h-4)
+  return out
+end-- Adapter contract: a renderer consumes commands; no UI binding leaks into scenes.
 function M.commands(scene)
   local commands={}
   for _,p in ipairs(G.get(scene,'packages')) do
@@ -24,30 +59,15 @@ function M.commands(scene)
     quality(commands,p,'package')
   end
   for _,c in ipairs(G.get(scene,'classes')) do
-    local C=require('uml.domain.config')
-local L=require('uml.engine.layout')
-local S=require('uml.application.strings')
-local F=require('uml.adapters.fonts')
--- Text keeps the layout's 12px side padding; package titles also clear the C/M dots.
-local pad,package_title_reserve=12,48
     local r=G.get(c,'rect'); local cb=G.name(C.crap_band(C.crap_risk(G.get(c,'crap')))); local mb=G.name(C.mutation_band(C.mutation_ratio(c)))
     local band=(cb=='red' or mb=='red') and 'red' or (cb=='yellow' or mb=='yellow') and 'yellow' or 'green'
     commands[#commands+1]={kind='class',rect=r,shape=G.name(G.get(c,'shape')),red=band=='red',band=band,id=G.get(c,'id')}
     quality(commands,c,'class')
-    local stereo=G.name(G.get(c,'stereotype'))
-    if stereo=='abstract' or stereo=='interface' then commands[#commands+1]={kind='marker',rect=r,text=stereo=='abstract' and 'α' or 'I',x=G.right(r)-44,y=G.get(r,'y')+3,size=12,color=0xffffffff} end
+    local stereo=G.name(G.get(c,'stereotype')); local marker=stereo=='abstract' or stereo=='interface'
+    if marker then commands[#commands+1]={kind='marker',rect=r,text=stereo=='abstract' and 'α' or 'I',x=G.right(r)-44,y=G.get(r,'y')+3,size=12,color=0xffffffff} end
     if G.get(c,'level')~=nil then commands[#commands+1]={kind='level',rect=r,text=tostring(G.get(c,'level')),x=G.get(r,'x')+4,y=G.get(r,'y')+3,size=10,color=0xffeeeeee} end
-    local y=G.get(r,'y')+16
-    for _,line in ipairs(G.get(c,'lines') or {}) do
-      local kind=G.name(G.get(line,'kind'))
-      if kind=='rule' then commands[#commands+1]={kind='rule',x=G.get(r,'x'),y=y-4,w=G.get(r,'w')}; y=y+12
-      else
-        local italic=kind=='name' and ((stereo~=nil and stereo~='class') or G.get(c,'drill?')==true or #(G.get(c,'contents') or {})>0)
-        commands[#commands+1]={kind='text',role=kind,italic=italic,bold=kind=='name',size=kind=='name' and F.sizes.title or F.sizes.body,max_w=G.get(r,'w')-2*pad,x=G.get(r,'x')+pad,y=y,text=G.get(line,'text') or ''}; y=y+18
-      end
-    end
-  end
-  return commands
+    for _,line in ipairs(M.text_slots(c,r,marker)) do commands[#commands+1]=line end
+  end  return commands
 end
 -- Natural advance of text at a font size; a font that cannot measure falls back
 -- to the monospace estimate (16px Sarasa half-width = layout char_w).
@@ -96,7 +116,10 @@ function M.new(imgui,fonts)
         text(fonts.body,9,nil,c.x-3,c.y-5,0xffffffff,c.text)
       elseif c.kind=='rule' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),0xff777777,1)
       elseif c.kind=='text' then
-        text(c.role=='name' and fonts.title or fonts.body,c.size,c.max_w,c.x,c.y,c.color or 0xffeeeeee,c.text,c.italic,c.bold)
+        -- Fit the slot height and the width budget, then centre in the slot.
+        local font=c.role=='name' and fonts.title or fonts.body
+        local size=M.fit(font,math.min(c.size,c.h or c.size),c.text,c.max_w,c.bold,c.italic)
+        text(font,size,c.max_w,c.x,(c.top or c.y)+((c.h or size)-size)/2,c.color or 0xffeeeeee,c.text,c.italic,c.bold)
       elseif c.kind=='marker' or c.kind=='level' then
         text(fonts.body,c.size or 13,nil,c.x,c.y,c.color or 0xffeeeeee,c.text)
       end
