@@ -20,6 +20,7 @@ try {
     $env:UML_VIEWER_TEST_SECONDS = '16'
     $env:UML_VIEWER_TEST_DRIVER = Join-Path $repo 'scripts/benchmark_viewer.lua'
     $env:UML_VIEWER_PROJECT_ROOT = $evidence
+    git rev-parse HEAD | Set-Content "$evidence/revision.txt"
     Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json | Set-Content "$evidence/cpu.json"
     Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,TotalVisibleMemorySize | ConvertTo-Json | Set-Content "$evidence/os.json"
     foreach ($case in @(@{Name='example';Path=(Join-Path $repo 'examples/uml-viewer.edn')},@{Name='synthetic-500';Path="$evidence/synthetic-500.edn"})) {
