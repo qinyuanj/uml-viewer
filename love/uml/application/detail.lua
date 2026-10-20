@@ -110,7 +110,7 @@ function M.module_at(rows,y) return at(rows,y,'module')==true end
 local columns={{id='crap',label=S.columns.crap,key='crap-s',w=56,group='crap'},{id='cc',label=S.columns.cc,key='cc-s',w=32,group='crap'},{id='cov',label=S.columns.cov,key='cov-s',w=44,group='crap'},{id='killed',label=S.columns.killed,key='killed-s',w=52,group='mutation'},{id='survived',label=S.columns.survived,key='survived-s',w=60,group='mutation'},{id='uncovered',label=S.columns.uncovered,key='uncovered-s',w=78,group='mutation'}}
 function M.column_layout(width)
   local out,x={},math.max(560,width or 624)
-  for i=#columns,1,-1 do local c={}; for k,v in pairs(columns[i]) do c[k]=v end; c.right=x; c.left=x-c.w; out[i]=c; x=c.left-8 end
+  for i=#columns,1,-1 do local c={}; for k,v in pairs(columns[i]) do c[k]=v end; c.right=x; c.left=x-c.w; out[i]=c; x=c.left-10 end
   return out
 end
 function M.group_layout(width)
