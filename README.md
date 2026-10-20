@@ -37,8 +37,9 @@ A [LOVE 11.5](https://love2d.org/) app using
 draws UML from an EDN IR. A **policy** plus a language-specific scanner
 writes the topology; this tool displays it, routes the arrows, colors CRAP,
 and lets you click. The JVM implementation and Clojure scanning were removed
-in the LOVE cutover; this release supports native Windows only, and macOS is
-unsupported this round.
+in the LOVE cutover. Supported platforms are **WSL2 + Ubuntu 24.04 + WSLg**
+and **macOS Apple Silicon**; native Windows and Intel Mac are unsupported
+(ADR 0007).
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
 (CC, coverage, CRAP, killed/survived/uncovered) come from `.metrics/`
@@ -54,17 +55,18 @@ terminal.
 
 ## Run
 
-Needs LOVE 11.5, PowerShell 7, git, Herdr >= 0.9.3, and Python 3.11+.
-The installer provisions pinned cimgui-love 1.90-1 Windows x64 bindings and
-DLL and the pinned Sarasa Mono SC Regular font automatically. There is no
-Java or Clojure dependency.
+Needs LOVE 11.5, Lua 5.1/5.4 with `lfs` and `luacov`, git, Herdr >= 0.9.3,
+and Python 3.11+. The installer provisions the pinned cimgui-love 1.90-1
+bindings for the host architecture. There is no Java, Clojure or PowerShell
+dependency.
 
 From **this repo** (the viewer and IR generator are the `love/` tree):
 
-```powershell
-& 'C:\Program Files\LOVE\lovec.exe' .\love ir .\examples\uml-viewer.policy.edn
-& 'C:\Program Files\LOVE\love.exe' .\love .\examples\uml-viewer.edn
-scripts\test_lua.ps1                 # dual-interpreter busted suite
+```sh
+love ./love ir ./examples/uml-viewer.policy.edn
+love ./love ./examples/uml-viewer.edn
+lua5.4 scripts/run_busted.lua          # pure logic, Lua 5.4
+luajit scripts/run_busted.lua          # pure logic, LuaJIT
 ```
 
 From **any project** you want to view (no local uml-viewer checkout
@@ -87,9 +89,10 @@ chmod +x get-uml-viewer
 to the project's repo), writes `./uml`, and starts the viewer. `--install-only`
 skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
 source (default `qinyuanj/uml-viewer`, branch `main`). Installation and analysis
-use **PowerShell 7** (`pwsh`), including on Unix. Install it yourself from
-https://aka.ms/powershell-install; Windows PowerShell 5.1 is unsupported.
-git, LOVE, Herdr, and Python 3.11+ are also user-installed prerequisites.
+use the native POSIX entry (`scripts/get-uml-viewer`), which runs Python
+directly and performs every step with literal argv; no PowerShell is
+required. git, LOVE, Lua, Herdr, and Python 3.11+ are user-installed
+prerequisites.
 Install LOVE from https://love2d.org/. The installer downloads and verifies
 cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
 project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
@@ -106,35 +109,33 @@ https://github.com/herdrdev/herdr/releases. The installer preserves existing
 policies and proposals and does not create a policy or generate a diagram
 during `--install-only`.
 
-For native Windows, download `scripts/get-uml-viewer.ps1` from the same ref,
-then run from the project:
+Download `scripts/get-uml-viewer` from the same ref, then run from the
+project:
 
-```powershell
-pwsh -NoProfile -File .\get-uml-viewer.ps1 --install-only
-.\uml.ps1 ir
-.\uml.ps1 crap
-.\uml.ps1 mutate 'src/file with spaces.lua'
+```sh
+sh ./get-uml-viewer --install-only
+./uml ir
+./uml crap
+./uml mutate 'src/file with spaces.lua'
 ```
 
-The installer writes `uml` and `uml.ps1`; both forward to the installed
-PowerShell runtime, and Windows uses `.\uml.ps1` (or `pwsh -File .\uml.ps1 ...`)
-directly. No `.cmd` shim is installed: a batch wrapper hands arguments to
-`cmd.exe`, which re-quotes them and cannot carry literal shell characters.
+The installer writes a POSIX `uml` entry that forwards to the installed
+Python command module. Arguments are passed as a literal argv: no shell
+re-parses them, so spaces, Unicode and shell metacharacters reach the tool
+unchanged.
 `UML_VIEWER_TOOL_ROOT` overrides the tool checkout the entry runs: point it at
 a working tree (for example this repository) to launch its `love/` code instead
 of the pinned `.uml-viewer/uml-viewer/` clone. The path must contain
 `love/main.lua`; anything else fails and names the variable. When the selected
 tool root is a different git checkout at a different commit, startup prints a
 one-line stderr warning with both short SHAs and never blocks the launch.
-`UML_LOVE_EXECUTABLE` should point at the **console** build `lovec.exe`: the
-Herdr backend preflight reads one line from stdout, and a GUI-subsystem
-`love.exe` emits none. The preflight failure diagnostic says so explicitly.
-Viewer startup also uses PowerShell 7: a detached launcher starts the LOVE
-process with individual arguments and writes its output to the project log.
-Fresh startup uses **Herdr as the sole companion backend** on native Windows.
-This release does **not** support macOS; historical macOS acceptance evidence
-remains historical only. `--backend herdr` remains accepted; `--backend tmux`
-and `--backend psmux` are rejected before creating resources. Restart, wake and
+`UML_LOVE_EXECUTABLE` selects the LOVE binary; the Herdr backend preflight
+reads one line from its stdout. The viewer launcher starts the LOVE process
+with individual arguments and writes its output to `.uml-viewer/viewer.log`.
+Fresh startup uses **Herdr as the sole companion backend** on WSL/Linux and
+macOS Apple Silicon. Historical Windows and macOS evidence remains historical.
+`--backend herdr` remains accepted; `--backend tmux` and `--backend psmux` are
+rejected before creating resources. Restart, wake and
 close require explicit Herdr ownership and verify its recorded identities.
 Legacy or unmarked ownership is retained and refused; see
 [legacy migration](docs/herdr-backend-contract.md#9-旧后端退役与迁移).
@@ -170,27 +171,14 @@ A standalone downloaded
 Unix installer fetches its PS1 sibling from `UML_VIEWER_REF`; for custom hosts,
 put both files together or set `UML_VIEWER_INSTALLER_URL` explicitly.
 
-Native Windows requires a native `love.exe` (or a PowerShell `.ps1` entry)
-and the cimgui-love dynamic libraries. The wrapper rejects batch
-`.cmd`/`.bat` wrappers because they cannot preserve arguments. There is no
-JVM or Clojure CLI requirement; `viewer-jvm.json` is no longer recognized.
+LOVE must be a native executable for the host architecture; the installer
+checks the cimgui-love dynamic library's architecture and runtime
+dependencies before use. There is no JVM or Clojure CLI requirement;
+`viewer-jvm.json` is no longer recognized.
 
-`CLAUDE_BIN` continues to select the companion program. On Windows use the
-[native Claude installation](https://code.claude.com/docs/en/setup) (`claude.exe`)
-or a `.ps1` adapter. Claude `.cmd`/`.bat` wrappers are rejected because they cannot
-preserve arbitrary prompts and argv. If retaining the npm package, point
-`CLAUDE_BIN` to a PS1 adapter like the following, replacing the two paths with
-your actual `node.exe` and the official installed package's `cli.js` paths:
-
-```powershell
-$PSNativeCommandArgumentPassing = 'Standard'
-& 'C:\Program Files\nodejs\node.exe' 'C:\Users\you\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js' @args
-exit $LASTEXITCODE
-```
-
-This invokes Node with individual arguments; it does not forward through the npm
-batch wrapper. Set `$env:CLAUDE_BIN = 'C:\path\Claude adapter.ps1'` before launching.
-The adapter must preserve argv and the child exit status.
+`CLAUDE_BIN` selects the companion program; it defaults to `claude` on PATH.
+The runner execs it directly so its recorded identity is the agent's own
+process, and argv is passed literally, never through a shell.
 
 Every project gets
 [crapper](https://github.com/qinyuanj/crapper),
@@ -270,10 +258,10 @@ are diagnosed on stderr. Mutation retains differential behavior and snapshots.
 
 Without persistent configuration, supply scope flags per invocation:
 
-```powershell
-.\uml.ps1 crap --source-root 'business tree' --source-root common --exclude 'business tree/generated'
-.\uml.ps1 mutate 'business tree/file with spaces.lua' --busted-task fast --max-workers 3
-.\uml.ps1 dry --threshold 0.9
+```sh
+./uml crap --source-root 'business tree' --source-root common --exclude 'business tree/generated'
+./uml mutate 'business tree/file with spaces.lua' --busted-task fast --max-workers 3
+./uml dry --threshold 0.9
 ```
 
 External `crap` adds `--full-tree`: crapper publishes every class under the
@@ -317,14 +305,17 @@ launching dryer. Nothing in the viewer reads `dry.edn` yet.
 Run `python -I scripts/test_standard_quality.py` for native public-entry checks.
 The optional read-only sibling crapper check uses its installed dependencies to
 verify actual roots, exclusions, complete-tree publication and preservation on
-invalid partial refresh. These checks ran on Windows; macOS remains unverified.
-They do not establish real Lua coverage/Busted or companion mailbox acceptance,
-which remains part of consumer integration.
+invalid partial refresh. They do not establish real Lua coverage/Busted or
+companion mailbox acceptance, which remains part of consumer integration.
 
-To run the isolated entry acceptance suite (Python 3 + PowerShell 7 + git):
-`python -I scripts/test_entries.py`.
-Set `UML_ENTRY_TEST_TMP` to choose a scratch root. This suite never launches the
-real viewer.
+Public-entry acceptance on POSIX (Python 3 + git + LOVE):
+
+- `python3 -I scripts/test_posix_entries.py` — installer, IR, quality dispatch.
+- `python3 -I scripts/test_posix_restart_entries.py` — restart refusal rules.
+- `python3 -I scripts/test_posix_viewer.py` — real window, reload, frame capture.
+- `python3 -I scripts/test_posix_e2e.py` — launch, companion ready, FIFO, close.
+
+These run in isolated projects and never touch a working checkout.
 
 `./uml ir` runs the LOVE IR generator on `examples/<dir>.policy.edn` (else the
 first `examples/*.policy.edn`, else `policy.edn`). `./uml crap` and
@@ -387,12 +378,13 @@ immediately and does not wait. A missing or unreadable file prints
 crapper and mutator. The Lua specs scan it and check the overlay joins
 those snapshots.
 
-```powershell
-scripts\test_lua.ps1                                   # LuaJIT + Lua 5.4 busted
-& 'C:\Program Files\LOVE\lovec.exe' .\love ir .\examples\uml-viewer.policy.edn
-.\uml.ps1 crap                                         # .metrics/crap.edn
-.\uml.ps1 mutate love/uml/engine/layout.lua            # differential mutation
-.\uml.ps1 dry                                          # .metrics/dry.edn
+```sh
+lua5.4 scripts/run_busted.lua                          # pure logic
+luajit scripts/run_busted.lua                          # pure logic
+love ./love ir ./examples/uml-viewer.policy.edn
+./uml crap                                             # .metrics/crap.edn
+./uml mutate love/uml/engine/layout.lua                # differential mutation
+./uml dry                                              # .metrics/dry.edn
 ```
 
 This repository's `uml-quality.json` declares
@@ -410,14 +402,16 @@ JVM regeneration tooling was deleted.
 
 ### Linux / WSL2
 
-The integrated companion workflow now rejects Linux/WSL before creating
-resources. The former tmux/WSLg and Windows Terminal bridge have been retired.
-Run `./uml` and Herdr from native Windows instead (macOS is unsupported this
-round); Linux/WSL has no
-validated Herdr companion path in this release. Source scanning and standalone
-`ir`/`crap`/`mutate` tools are separate from companion launch, and their own
-platform requirements still apply. Existing legacy resources and queues are
-retained; follow the migration instructions before starting fresh.
+Linux is the primary delivery path, exercised through WSL2 + Ubuntu 24.04 +
+WSLg; no separate distribution is promised. `./uml`, `./uml ir`, the three
+quality tools and the Herdr companion all run natively, with no PowerShell or
+Windows executable involved. WSLg presents the window; Chinese rendering,
+reload and the companion lifecycle were verified there (see
+`acceptance-evidence/106-wsl/`). Chinese IME composition needs a Linux input
+method in the WSL session; it is not provided by the Windows IME.
+
+Existing legacy resources and queues are retained; follow the migration
+instructions before starting fresh.
 
 ## Navigation
 

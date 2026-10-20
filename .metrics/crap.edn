@@ -7,13 +7,14 @@
   {:name "M.run", :namespace "love.uml.main.ir_generator", :complexity 16, :coverage 0.0, :crap 272.0}
   {:name "M.run", :namespace "love.uml.adapters.windows_process", :complexity 14, :coverage 0.0, :crap 210.0}
   {:name "start_script", :namespace "love.uml.adapters.windows_process", :complexity 14, :coverage 0.0, :crap 210.0}
-  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 166, :coverage 89.3175, :crap 199.5919}
+  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 170, :coverage 88.9855, :crap 208.6182}
   {:name "M.controller_loop", :namespace "love.uml.adapters.recovery", :complexity 14, :coverage 4.1667, :crap 186.5065}
   {:name "M.owner_native", :namespace "love.uml.adapters.windows_process", :complexity 13, :coverage 0.0, :crap 182.0}
   {:name "M.cancel", :namespace "love.uml.adapters.recovery", :complexity 13, :coverage 5.2632, :crap 156.6954}
   {:name "M.owner", :namespace "love.uml.adapters.windows_process", :complexity 12, :coverage 0.0, :crap 156.0}
   {:name "M.run", :namespace "love.uml.adapters.posix_process", :complexity 11, :coverage 0.0, :crap 132.0}
   {:name "M.spawn_detached", :namespace "love.uml.adapters.posix_process", :complexity 11, :coverage 0.0, :crap 132.0}
+  {:name "default_diagram", :namespace "love.uml.adapters.viewer", :complexity 11, :coverage 0.0, :crap 132.0}
   {:name "M.start_attached", :namespace "love.uml.adapters.windows_process", :complexity 11, :coverage 0.0, :crap 132.0}
   {:name "M.start", :namespace "love.uml.adapters.recovery", :complexity 10, :coverage 4.7619, :crap 96.3838}
   {:name "M.new", :namespace "love.uml.adapters.class_boxes", :complexity 90, :coverage 96.4286, :crap 90.369}

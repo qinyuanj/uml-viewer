@@ -65,13 +65,14 @@ The diagram is already on screen.
   project's verified resources. Verified abnormal exits retry at most three
   times (1, 2, 4 seconds) through the durable controller; normal or unknown
   exits stop recovery. Other Claude sessions stay up.
-- Herdr is the sole companion backend. This release supports **native
-  Windows only**; macOS is unsupported this round. Linux/WSL companion
-  launch is unsupported. Legacy tmux/psmux or unmarked ownership
-  is retained and refused; before migration read
-  `docs/herdr-backend-contract.md` §9.
-- Installer prerequisites are LOVE 11.5, PowerShell 7, git,
-  Herdr >= 0.9.3, and Python 3.11+. `get-uml-viewer` provisions pinned
+- Herdr is the sole companion backend on every supported platform.
+  Delivery targets are **WSL2 + Ubuntu 24.04 + WSLg** and **macOS Apple
+  Silicon**; Windows native and Intel Mac are unsupported (ADR 0007).
+  Legacy tmux/psmux or unmarked ownership is retained and refused; before
+  migration read `docs/herdr-backend-contract.md` §9.
+- Installer prerequisites are LOVE 11.5, Lua (5.1/5.4) with lfs and
+  luacov, git, Herdr >= 0.9.3, and Python 3.11+. No PowerShell is
+  required. `get-uml-viewer` provisions pinned
   cimgui-love 1.90-1 bindings and DLL automatically into `.uml-viewer/`.
   It always fetches all three quality tools — crapper, mutator and dryer —
   and provisions their project-local `.uml-viewer/<tool>/.venv` environments.

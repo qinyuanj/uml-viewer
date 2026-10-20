@@ -6,7 +6,12 @@
 
 同时放弃 Clojure 语言支持，不提供过渡 tag。保留 Clojure 就要保留 JVM：Clojure 扫描依赖 `clojure.core/read`，crap4clj / clj-mutate 要运行被测代码，留着它就达不到去掉 JVM 的目的。手写一个 Lua 版 Clojure reader 只能省掉扫描这一步，质量工具仍然要用 JVM。
 
-mail、IR、policy、metrics 的 EDN 协议，以及 companion / Herdr 契约保持不变；PowerShell 7 wrapper 保留，只把启动命令换成 `love`。新旧实现并存到功能对等后再删除 JVM 实现，切换日本仓库改为 `:lang :lua`，用 crapper / mutator 自举。
+mail、IR、policy、metrics 的 EDN 协议，以及 companion / Herdr 契约保持不变；PowerShell 7 wrapper 保留，只把启动命令换成 `love`。
+
+**修订（2026-10-21，spec #106）**：上句"PowerShell 7 wrapper 保留"由 ADR 0007 取代——
+交付平台改为 WSL2 + WSLg 与 macOS Apple Silicon，公共入口改为 POSIX shell + Python，
+不再维护 Windows 原生实现或 PowerShell 入口。本 ADR 其余决定（放弃 JVM、保留
+LOVE/cimgui-love、LuaJIT 与 Lua 5.4 双解释器验证纯逻辑）继续有效。新旧实现并存到功能对等后再删除 JVM 实现，切换日本仓库改为 `:lang :lua`，用 crapper / mutator 自举。
 
 ## Considered Options
 

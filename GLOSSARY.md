@@ -5,7 +5,8 @@
 ## Language
 
 **Herdr**:
-Windows 和 macOS 上唯一的 companion 启动后端。Linux/WSL companion 启动不受支持。
+所有交付平台上唯一的 companion 启动后端：WSL2/WSLg 与 macOS Apple Silicon。
+不支持 Windows 原生运行。
 
 **selected Herdr**:
 本次启动时 PATH 上所有兼容 Herdr 中版本最高的那一个；同一次启动内所有 Herdr 调用都用它。

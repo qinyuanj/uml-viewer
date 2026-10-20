@@ -1,14 +1,18 @@
 # Herdr SessionBackend 契约 — spec #13 / issue #14 产出
 
-本文档记录 Herdr 的能力证据和生命周期契约。**#72 LOVE 切换后，本轮仅支持
-原生 Windows；macOS 不受支持。** 文中 Java/JVM 与 macOS 部分是切换前的实现和
-验收证据；当前实现是 `love/uml/adapters/` 的 LOVE runner/controller，进程创建、
-等待和 OS 单例 lock 通过平台 adapter 提供，ownership、预算、FIFO 与质量门控契约
-保持不变。当前身份文件与重启规则见 §9.1。#23 退役后 Herdr 是唯一 companion
-后端；`--backend herdr` 保留为兼容选项。
-Windows 完整生命周期仅部分原生验收；macOS 端到端验收由 spec #32 完成
-（Herdr 0.9.4，见 §8）。能力实验与端到端验收分开记录；未验证项不按官网
-声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
+本文档记录 Herdr 的能力证据和生命周期契约。**平台以 ADR 0007 为准：交付目标为
+WSL2 + Ubuntu 24.04 + WSLg 与 macOS Apple Silicon；Windows 原生与 Intel Mac 不受支持。**
+文中 Java/JVM 与旧 Windows/macOS 验收记录是历史证据，不代表当前实现。当前实现是
+`love/uml/adapters/` 的 LOVE runner/controller，进程创建、等待、身份与 OS 单例 lock
+由平台 adapter 提供（Windows 与 POSIX 各一套，见 ADR 0007 的能力表），ownership、
+预算、FIFO 与质量门控契约保持不变。当前身份文件与重启规则见 §9.1。#23 退役后
+Herdr 是唯一 companion 后端；`--backend herdr` 保留为兼容选项。
+
+WSL 原生证据：Herdr 0.9.5 / protocol 22 下的完整生命周期（preflight、隔离 server、
+workspace/pane、runner、恢复注册、验证清理）与公共入口端到端流程；
+见 `acceptance-evidence/106-wsl/`。macOS 端到端验收仍是 spec #32 的 Herdr 0.9.4
+历史记录（见 §8），Apple Silicon 当前实现**待实机验收**。能力实验与端到端验收
+分开记录；未验证项不按官网声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
 
 证据来源：
 - Windows checkpoint：#14 评论（2026-10-10，Herdr 0.9.3 / protocol 22）
