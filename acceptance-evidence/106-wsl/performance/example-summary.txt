@@ -1,0 +1,6 @@
+phase=idle frames=530 fps=122.340 mean_ms=8.174 median_ms=7.833 p95_ms=11.220 card_builds=0 card_builds_per_frame=0.000 builds=0 visible_frames=0
+phase=interaction frames=195 fps=44.983 mean_ms=22.230 median_ms=7.645 p95_ms=124.930 card_builds=0 card_builds_per_frame=0.000 builds=0 visible_frames=0
+phase=detail frames=161 fps=37.256 mean_ms=26.841 median_ms=22.813 p95_ms=35.880 card_builds=1 card_builds_per_frame=0.006 builds=2 visible_frames=156
+phase=detail_card frames=155 fps=41.017 mean_ms=24.380 median_ms=22.813 p95_ms=35.271 card_builds=0 card_builds_per_frame=0.000 builds=0 visible_frames=155
+detail opened=true id=:uml.compat ns=love.uml.compat click=box visible_frames=156 first_card_frame_ms=261.093
+detail_calls=2 calls_mean_ms=118.335 card_builds=1 card_builds_mean_ms=110.915 inspector_builds=1 inspector_builds_mean_ms=125.754

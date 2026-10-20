@@ -51,6 +51,24 @@ version-1 记录（operation、项目根、实际退出码一致，`validResult:
 - 工具自身 pytest：crapper 251 通过 / 11 跳过 / 1 失败（需 Babashka `bb`，
   本机未安装，属环境缺口）；mutator 209 / 40 跳过；dryer 84 通过。
 
+## 性能（对照 #87 基线，同一台 Ryzen 5 5500）
+
+驱动 `scripts/benchmark_viewer.lua`，与 #87 同一相位划分；WSLg 下直接以
+`love love viewer <diagram>` 运行（例子 16 s，合成 500 类 90 s），Sarasa 字体。
+原始输出见 `performance/`。
+
+| 场景 / 相位 | #87 Windows（fps / mean ms） | #106 WSLg（fps / mean ms） |
+|---|---|---|
+| 例子 idle | 59.4 / 16.8（vsync 上限） | 122.3 / 8.2 |
+| 例子 interaction | 43.8 / 22.8 | 45.0 / 22.2 |
+| 合成 500 idle | 1.58 / 632 | 9.77 / 102 |
+| 合成 500 interaction | 1.61 / 619 | 2.02 / 495（p95 3.67 s，单帧尖峰） |
+
+无回退；合成场景交互 p95 出现秒级单帧尖峰，记录在案，不设阈值。
+
+字体：e2e 项目未经安装器，日志里的 Noto 回退是预期行为；Sarasa 供给由
+`fonts` driver 的 provisioned / override / fallback 三个场景覆盖并通过。
+
 ## 人工体验（WSLg 实机观察）
 
 已确认：中文界面与中文类名/提案名渲染、类框与依赖边、质量红色标记、
