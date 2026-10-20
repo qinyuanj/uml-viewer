@@ -18,6 +18,8 @@ end
 function M.new(imgui,options)
   options=options or {}
   local fonts=options.fonts or {}
+  -- options.ui (number or getter) is the display DPI factor for fixed px sizes.
+  local function ui() local u=options.ui; if type(u)=='function' then u=u() end; return u or 1 end
   local service=options.source or Source
   local files={root=options.root,read=options.read or read,is_file=options.is_file or is_file}
   local current,pending,viewport,language,anchor,caret
@@ -52,7 +54,7 @@ function M.new(imgui,options)
     local ffi=require('ffi')
     local visible=ffi.new('bool[1]',true)
     local font=fonts.code or fonts.body
-    imgui.SetNextWindowSize(imgui.ImVec2_Float(900,640),imgui.ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowSize(imgui.ImVec2_Float(900*ui(),640*ui()),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowBgAlpha(1)
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_WindowBg,c4(T.colors.source_bg))
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_ChildBg,c4(T.colors.source_bg))
@@ -66,7 +68,7 @@ function M.new(imgui,options)
       imgui.BeginChild_Str('source-lines',imgui.ImVec2_Float(0,0),0,imgui.ImGuiWindowFlags_HorizontalScrollbar)
       if font then imgui.PushFont(font) end
       viewport={scroll_y=imgui.GetScrollY(),target_visible=false}
-      local gutter_w=44
+      local scale=ui(); local gutter_w=44*scale; local inset=6*scale
       imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_ItemSpacing,imgui.ImVec2_Float(0,0))
       local line_origins={}
       for _,row in ipairs(current.rows) do
@@ -83,8 +85,8 @@ function M.new(imgui,options)
         list:AddRectFilled(imgui.ImVec2_Float(p.x,p.y),imgui.ImVec2_Float(p.x+gutter_w,p.y+line_h),T.pack(T.colors.source_gutter_bg),0,0)
         local num=tostring(row.number)
         local num_w=imgui.CalcTextSize(num).x
-        list:AddText_FontPtr(font or imgui.GetFont(),imgui.GetFontSize(),imgui.ImVec2_Float(p.x+gutter_w-6-num_w,p.y),T.pack(T.colors.source_gutter),num,nil,0,nil)
-        local x=p.x+gutter_w+6
+        list:AddText_FontPtr(font or imgui.GetFont(),imgui.GetFontSize(),imgui.ImVec2_Float(p.x+gutter_w-inset-num_w,p.y),T.pack(T.colors.source_gutter),num,nil,0,nil)
+        local x=p.x+gutter_w+inset
         line_origins[#line_origins+1]={x=x,y=p.y,h=line_h,text=code,to_source=display.to_source}
         if anchor and caret then
           local a,b=View.ordered(anchor,caret)
@@ -101,7 +103,7 @@ function M.new(imgui,options)
           list:AddText_FontPtr(font or imgui.GetFont(),imgui.GetFontSize(),imgui.ImVec2_Float(x,p.y),T.pack(color),run.text,nil,0,nil)
           x=x+imgui.CalcTextSize(run.text).x
         end
-        imgui.InvisibleButton('##source-line-'..row.number,imgui.ImVec2_Float(math.max(imgui.GetContentRegionAvail().x,gutter_w+6+imgui.CalcTextSize(code).x,1),line_h))
+        imgui.InvisibleButton('##source-line-'..row.number,imgui.ImVec2_Float(math.max(imgui.GetContentRegionAvail().x,gutter_w+inset+imgui.CalcTextSize(code).x,1),line_h))
         if row.highlight then viewport.target_visible=imgui.IsItemVisible() end
         if pending and row.highlight then imgui.SetScrollHereY(0.25) end
       end

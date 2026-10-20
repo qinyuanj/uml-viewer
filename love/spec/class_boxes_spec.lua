@@ -119,6 +119,28 @@ describe('class box public renderer commands',function()
     assert.are.equal('< 返回',drawn[1].text); assert.are.equal(fonts.body,drawn[1].font); assert.are.equal(18,drawn[1].size)
     assert.are.same({12,12},{drawn[1].x,drawn[1].y})
   end)
+  it('scales box geometry and text by zoom times DPI but strokes by DPI alone',function()
+    local T=require('uml.domain.theme')
+    local rects,texts={},{}
+    local list={VtxBuffer={Size=0,Data={}},AddRectFilled=function() end,AddCircleFilled=function() end,AddCircle=function() end,AddLine=function() end,
+      AddRect=function(_,a,b,color,radius,flags,w) rects[#rects+1]={a=a,b=b,w=w} end,
+      AddText_FontPtr=function(_,font,size,point,color,text) texts[text]=size end}
+    local s=scene('[{:id :a :name "A" :crap {:mu 2} :killed 9 :survived 1}]')
+    local box=G.get(G.get(s,'classes')[1],'rect')
+    for _,case in ipairs{{ui=1,zoom=1},{ui=1.5,zoom=1},{ui=1.5,zoom=2},{ui=1.25,zoom=.5}} do
+      rects,texts={},{}
+      B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},{}).draw(s,1000,1000,{zoom=case.zoom,cam_x=0,cam_y=0,ui=case.ui})
+      local k=case.zoom*case.ui; local class=rects[#rects]
+      assert.is_true(math.abs(class.a.x-G.get(box,'x')*k)<1e-9 and math.abs(class.b.y-G.bottom(box)*k)<1e-9)
+      assert.is_true(math.abs(class.w-T.widths.class*case.ui)<1e-9)
+      assert.is_true(math.abs(texts.C-T.fonts.badge*k)<1e-9)
+    end
+  end)
+  it('draws the back label at DPI-scaled position and size',function()
+    local drawn={}; local list={AddText_FontPtr=function(_,f,size,point,color,text) drawn[#drawn+1]={size=size,x=point.x,y=point.y} end}
+    B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},{body={}}).back(1.5)
+    assert.are.same({27,18,18},{drawn[1].size,drawn[1].x,drawn[1].y})
+  end)
   it('paints labeled quality circles with their independent colors through cimgui',function()
     local painted,texts={},{}
     local list={AddRect=function() end,AddRectFilled=function() end,AddLine=function() end,
