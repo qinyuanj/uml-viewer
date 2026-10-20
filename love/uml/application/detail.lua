@@ -33,9 +33,15 @@ function M.for_state(state,id)
     if not seen[key] then seen[key]=true; classes[#classes+1]=c end
     for _,child in ipairs(g(c,'contents') or {}) do add(child) end
   end
-  for _,c in ipairs(g(state.scene,'classes') or {}) do add(c) end
+  -- Authored leaf data wins over the abbreviated contents rows of collapsed
+  -- namespace boxes. Then add root/current boxes for synthetic groups and ports.
   for _,c in ipairs(g(doc,'classes') or {}) do add(c) end
   for _,p in ipairs(g(doc,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+  if g(doc,'hierarchical') then
+    local root=require('uml.domain.hierarchy').view_at(doc,E.vector())
+    for _,p in ipairs(g(root,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+  end
+  for _,c in ipairs(g(state.scene,'classes') or {}) do add(c) end
   return M.model(G.map{classes=classes,edges=edges,packages=g(state.scene,'packages') or E.vector(),diagram=g(state.scene,'diagram')},id)
 end
 function M.member_ident(model,member)

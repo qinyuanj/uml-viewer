@@ -132,6 +132,7 @@ function M.run(args,services)
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,notify=notify_agent,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
     if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source,fonts=fonts,ui=function() return display().ui end}) end
     inspector=Inspector.new(imgui,{
+      locate=function(id) state=Events.locate(state,id,Display.dims(display())); publish() end,
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
       new_proposal=function() state=InspectorModel.press(state,G.map{kind=E.keyword('new-proposal')},{boundary=PolicyFile}); publish() end,
       declutter=function() state=InspectorModel.press(state,G.map{kind=E.keyword('declutter')}); publish() end,
@@ -144,7 +145,7 @@ function M.run(args,services)
       open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
     detail_window=DetailWindow.new(imgui,{
       close=function() state=Events.close_detail(state) end,
-      pick=function(id) state=Events.open_detail(state,G.map{kind=E.keyword('class'),id=id}) end,
+      pick=function(id) state=Events.locate(state,id,Display.dims(display())) end,
       open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
     -- A refused or invalid startup never overwrites an existing identity.
     if not companion then ProcessIdentity.record(project_root) end
@@ -260,7 +261,8 @@ function M.run(args,services)
   local function view_xy(x,y) return Display.to_view(display(),x,y) end
   function love.keypressed(k)
     imgui.love.KeyPressed(k)
-    if not imgui.love.GetWantCaptureKeyboard() then
+    if k=='f' and love.keyboard.isDown('lctrl','rctrl') then inspector.focus_search(); return end
+    if not imgui.love.GetWantCaptureKeyboard() and not inspector.search_active() then
       if k=='f3' then show_performance=not show_performance end
       if k=='r' then force_refresh=true end
       state=Events.on_key(state,k,dims())

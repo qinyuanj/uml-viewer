@@ -15,6 +15,8 @@ local function pack(c) return T.pack(c) end
 function M.new(imgui,callbacks,fonts)
   fonts=fonts or {}
   callbacks=callbacks or {}; local buffer=ffi.new('char[1024]'); local focus=false
+  local search_buffer=ffi.new('char[4096]'); local search_focus=false; local search_active=false
+  local search_id,search_document
   local rename_id,menu_id
   local api={}
   local bounds={}
@@ -22,6 +24,10 @@ function M.new(imgui,callbacks,fonts)
   function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
+  function api.focus_search() search_focus=true end
+  function api.search_active() return search_active or search_focus end
+  function api.search_query() return ffi.string(search_buffer) end
+  function api.search_selection() return search_id end
   function api.empty_rendered() return bounds['empty-help']~=nil end
   function api.menu_open() return menu_open end
   local function set_name(name)
@@ -126,6 +132,32 @@ function M.new(imgui,callbacks,fonts)
       if fonts.title then imgui.PushFont(fonts.title) end
       inked(S.inspector,T.colors.gold)
       if fonts.title then imgui.PopFont() end
+      if search_focus then imgui.SetKeyboardFocusHere(); search_focus=false end
+      imgui.SetNextItemWidth(-1)
+      local enter=imgui.InputText(S.search..'##class-search',search_buffer,4096,imgui.ImGuiInputTextFlags_EnterReturnsTrue)
+      search_active=imgui.IsItemActive(); remember('search')
+      local results=I.search(state,api.search_query())
+      if search_document~=state.document then search_id=nil; search_document=state.document end
+      local index
+      for i,r in ipairs(results) do if E.equal(r.id,search_id) then index=i end end
+      if not index then search_id=nil end
+      if search_active and #results>0 then
+        if imgui.IsKeyPressed(imgui.ImGuiKey_DownArrow,false) then index=math.min(#results,(index or 0)+1); search_id=results[index].id end
+        if imgui.IsKeyPressed(imgui.ImGuiKey_UpArrow,false) then index=math.max(1,(index or 2)-1); search_id=results[index].id end
+      end
+      local activate=(enter or (not rename_id and imgui.IsWindowFocused(imgui.ImGuiFocusedFlags_RootAndChildWindows) and imgui.IsKeyPressed(imgui.ImGuiKey_Enter,false))) and search_id
+      if #results>0 then
+        if imgui.BeginChild_Str('search-results',imgui.ImVec2_Float(0,math.min(150,#results*44)*ui),imgui.ImGuiChildFlags_None,0) then
+          for i,r in ipairs(results) do
+            if imgui.Selectable_Bool(r.label..'##search-result-'..i,E.equal(search_id,r.id)) then search_id=r.id end
+            remember('search-result:'..G.name(r.id))
+          end
+        end
+        imgui.EndChild()
+        if search_id and imgui.Button(S.search_open..'##search-open') then activate=search_id end
+        remember('search-open')
+      elseif api.search_query()~='' then inked(S.search_empty,T.colors.muted) end
+      if activate and callbacks.locate then callbacks.locate(activate) end
       for n,c in ipairs(I.commands(state)) do
         if c.kind=='proposal' and (n==2 or #I.commands(state)==1) and n==2 then inked(S.proposals_label,T.colors.muted) end
         if imgui.Selectable_Bool(c.label..'##diagram-'..n,c.active) and callbacks.choose then callbacks.choose(c.id) end
@@ -166,7 +198,7 @@ function M.new(imgui,callbacks,fonts)
       local id=G.get(state.selected,'id')
       if imgui.BeginChild_Str('summary-card',imgui.ImVec2_Float(0,-40*ui),imgui.ImGuiChildFlags_None,0) then
         local kind=G.name(G.get(state.selected,'kind'))
-        local model=id and Detail.model(state.scene,id)
+        local model=id and Detail.for_state(state,id)
         if model then class_summary(model)
         elseif kind=='package' and id then package_summary(state,id)
         else

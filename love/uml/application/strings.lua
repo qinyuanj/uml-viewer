@@ -6,6 +6,9 @@
 local M={}
 M.real_diagram='源码图'
 M.inspector='检查器'
+M.search='搜索类名或命名空间'
+M.search_open='打开所选结果 (Enter)'
+M.search_empty='没有匹配的类'
 M.tree_and_proposals='命名空间树 / 提案'
 M.new_proposal='新建提案'
 M.declutter='精简视图'

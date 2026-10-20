@@ -53,10 +53,7 @@ local function has_id(items,id)
 end
 local function scene_classes(scene) return g(scene,'classes') or V() end
 local function card_target(s,id)
-  return has_id(scene_classes(s.scene),id) or has_id(g(s.document,'classes'),id)
-    or (g(s.document,'hierarchical') and (function()
-      for _,p in ipairs(g(H.view_at(s.document,V()),'packages') or {}) do if has_id(g(p,'classes'),id) then return true end end
-    end)())
+  return require('uml.application.detail').for_state(s,id)~=nil
 end
 local function selected_target(s,sel)
   local kind=G.name(g(sel,'kind')); local id=g(sel,'id')

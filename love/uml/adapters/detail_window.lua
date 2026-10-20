@@ -56,7 +56,7 @@ function M.new(imgui,callbacks,fonts)
       -- Measure inside the child, after its padding and scrollbar allocation.
       -- The 560-unit floor keeps narrower manually resized windows scrollable.
       if imgui.BeginChild_Str('detail-card',vec(0,0),imgui.ImGuiChildFlags_None or 0,(imgui.ImGuiWindowFlags_HorizontalScrollbar or 0)+(imgui.ImGuiWindowFlags_NoScrollWithMouse or 0)) then
-        local width=math.max(560*ui,imgui.GetContentRegionAvail().x-16*ui)
+        local width=math.max(560*ui,imgui.GetContentRegionAvail().x)
         local plan_w=width/ui
         detail_hovered=imgui.IsWindowHovered()==true
         detail_view_h=imgui.GetWindowHeight()/ui
