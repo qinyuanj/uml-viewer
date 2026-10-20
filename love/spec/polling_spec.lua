@@ -14,6 +14,14 @@ describe('mailbox polling cache',function()
     stamp=2; text=''; assert.is_nil(box.take()); assert.are.equal(2,parses)
     stamp=nil; text=nil; assert.is_nil(box.take()); assert.are.equal(4,reads)
   end)
+  it('does not reparse unchanged commands already behind the restored cursor',function()
+    local parses=0
+    local box=Mailbox.open('injected',{mtime=function() return 1 end,
+      read=function() return '{:next-id 2 :queue [{:id 1 :op :context}]}' end,
+      parse=function(text) parses=parses+1; return E.parse(text) end})
+    assert.is_nil(box.take(1)); assert.is_nil(box.take(1)); assert.are.equal(1,parses)
+    assert.are.equal(1,G.get(box.take(0),'id'))
+  end)
   it('does no filesystem work on frames before the deadline',function()
     local now,reads=0,0
     local poll=Poll.new(function() return now end)

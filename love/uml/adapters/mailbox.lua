@@ -1,7 +1,6 @@
 -- File IO only. Atomic replace is a durability boundary, not a concurrent-writer lock.
 local E=require('uml.edn')
 local Protocol=require('uml.domain.mailbox')
-local G=require('uml.domain.geom')
 local Atomic=require('uml.adapters.atomic_file')
 local M={}
 local function mtime(path)
@@ -34,8 +33,8 @@ function M.open(path,host)
   function api.read() return read() end
   function api.take(seen)
     local current=stamp_of(path)
-    if known and current==stamp and #G.get(cached,'queue')==0 then return nil end
-    -- Only an unchanged empty queue may skip reading. Nonempty queues are
+    if known and current==stamp and #Protocol.pending(cached,seen)==0 then return nil end
+    -- Only an unchanged queue with no pending commands may skip reading. Others are
     -- reread for every destructive pop, including commands appended mid-drain.
     local box=read(); cached=box; stamp=current; known=true
     local cmd,remainder=Protocol.take(box,seen)
