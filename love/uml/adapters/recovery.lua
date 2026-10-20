@@ -9,11 +9,13 @@ local R=require('uml.domain.recovery')
 local M={}
 
 -- Existence is checked without opening: an absent journal must not spend the
--- sharing-violation budget, while a present-but-locked file must retry.
--- LuaFileSystem's C module cannot be loaded inside LOVE (it crashes the
--- process rather than raising), so existence there uses kernel32.
+-- lock budget, while a present-but-locked file must retry. The POSIX path uses
+-- lfs attributes; on Windows, LuaFileSystem's C module cannot be loaded inside
+-- LOVE (it crashes the process rather than raising), so existence there uses
+-- kernel32.
+local windows=package.config:sub(1,1)=='\\'
 local lfs_ok,lfs=false,nil
-if type(love)~='table' then lfs_ok,lfs=pcall(require,'lfs') end
+if not windows then lfs_ok,lfs=pcall(require,'lfs') end
 local ffi_api
 local function ffi_file_api()
   if ffi_api~=nil then return ffi_api or nil end
@@ -27,6 +29,13 @@ local function ffi_file_api()
 end
 local function exists(path)
   if lfs_ok then return lfs.attributes(path,'mode')~=nil end
+  if not windows then
+    local ffi=ffi_file_api()
+    if ffi then
+      -- POSIX existence needs no FFI: an open probe is enough for the retry gate.
+      local f=io.open(path,'rb'); if f then f:close(); return true end; return false
+    end
+  end
   local ffi=ffi_file_api()
   if ffi then
     local count=ffi.C.MultiByteToWideChar(65001,0,path,-1,nil,0)
@@ -293,9 +302,6 @@ end
 function M.run_child(identity,options)
   options=options or {}
   local argv=identity.command
-  if Process.windows() and not tostring(argv[1] or ''):lower():match('%.exe$') then
-    error('Recovery needs direct claude.exe or node.exe + official cli.js; wrappers cannot prove child identity',0)
-  end
   local lock=options.try_lock or function(path) return OS.try_acquire(path) end
   local generation_lock=lock(identity.runner_state..'.lock')
   if not generation_lock then error('Runner generation already executing',0) end

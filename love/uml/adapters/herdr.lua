@@ -123,8 +123,11 @@ function M.new(identity,options)
   end
 
   function B.launch_server(session,cwd)
+    -- Server diagnostics belong beside the project's other lifecycle journals;
+    -- without them a failed start is an unexplained timeout.
     local spawn=B.options.spawn_server or function(executable,argv,directory)
-      return Process.spawn_detached(executable,argv,directory)
+      local log=directory:gsub('\\','/')..'/.uml-viewer/herdr-server.log'
+      return Process.spawn_detached(executable,argv,directory,log,log..'.err')
     end
     local owner=spawn(B.herdr(),{'--session',session,'server'},cwd)
     if not owner then B.fail('Detached Herdr server exited') end

@@ -99,7 +99,9 @@ function M.environment(remove)
 end
 
 -- /proc/<pid>/stat: field 2 is the command and may contain spaces and parens,
--- so parse from the last ')' and count the fields after it.
+-- so parse from the last ')' and count the fields after it. A zombie is not a
+-- running process: an exited child keeps its /proc entry until its parent
+-- reaps it, and a detached controller has no waiter by design.
 local function stat_start(pid)
   local text=read_file('/proc/'..tostring(pid)..'/stat')
   if not text then return nil end
@@ -108,6 +110,7 @@ local function stat_start(pid)
   local fields={}
   for value in rest:gmatch('%S+') do fields[#fields+1]=value end
   -- fields[1] is field 3 (state); starttime is field 22, so index 20 here.
+  if fields[1]=='Z' or fields[1]=='X' then return nil end
   return fields[20]
 end
 
@@ -204,7 +207,7 @@ function M.spawn_detached(executable,argv,cwd,log_path,error_log)
   local pid=ffi.new('pid_t[1]')
   local full={executable}
   for _,value in ipairs(argv or {}) do full[#full+1]=value end
-  local spawned=ffi.C.posix_spawn(pid,executable,actions,attr,carray(full),nil)
+  local spawned=ffi.C.posix_spawn(pid,executable,actions,attr,carray(full),M.environment(nil))
   ffi.C.posix_spawn_file_actions_destroy(actions)
   if spawned~=0 then error('Detached process could not be launched (posix_spawn error '..spawned..')',0) end
   local observed=M.identity(pid[0])
@@ -219,7 +222,7 @@ function M.spawn_native(executable,argv,cwd)
   local pid=ffi.new('pid_t[1]')
   local full={executable}
   for _,value in ipairs(argv or {}) do full[#full+1]=value end
-  local spawned=ffi.C.posix_spawn(pid,executable,actions,nil,carray(full),nil)
+  local spawned=ffi.C.posix_spawn(pid,executable,actions,nil,carray(full),M.environment(nil))
   ffi.C.posix_spawn_file_actions_destroy(actions)
   if spawned~=0 then error('Native launch failed (posix_spawn error '..spawned..')',0) end
   local observed=M.identity(pid[0])
