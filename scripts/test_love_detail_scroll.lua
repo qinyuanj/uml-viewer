@@ -16,7 +16,7 @@ local function screenshot(name)
 end
 local proposal_count
 return function(frame,state,ui)
-  if frame==1 then love.window.requestAttention(true); love.mouse.setPosition(20,20) end
+  if frame==1 then ui.imgui.GetIO():AddMousePosEvent(20,20) end
   if not (ui and ui.inspector) then failed=failed or 'viewer did not expose the inspector adapter'; love.event.quit(1); return end
   local ins=ui.detail_window
   local function bounds(key) return ins.bounds()[key] or ui.inspector.bounds()[key] end
