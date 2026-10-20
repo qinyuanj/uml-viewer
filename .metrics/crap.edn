@@ -7,9 +7,9 @@
   {:name "M.run", :namespace "love.uml.main.ir_generator", :complexity 16, :coverage 0.0, :crap 272.0}
   {:name "M.controller_loop", :namespace "love.uml.adapters.recovery", :complexity 14, :coverage 4.1667, :crap 186.5065}
   {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 166, :coverage 93.9873, :crap 171.99}
+  {:name "M.run", :namespace "love.uml.adapters.posix_process", :complexity 13, :coverage 3.125, :crap 166.6462}
   {:name "M.cancel", :namespace "love.uml.adapters.recovery", :complexity 13, :coverage 5.2632, :crap 156.6954}
   {:name "default_diagram", :namespace "love.uml.adapters.viewer", :complexity 11, :coverage 0.0, :crap 132.0}
-  {:name "M.run", :namespace "love.uml.adapters.posix_process", :complexity 11, :coverage 3.2258, :crap 120.664}
   {:name "M.spawn_detached", :namespace "love.uml.adapters.posix_process", :complexity 11, :coverage 4.5455, :crap 116.2385}
   {:name "M.start", :namespace "love.uml.adapters.recovery", :complexity 10, :coverage 4.7619, :crap 96.3838}
   {:name "M.new", :namespace "love.uml.adapters.class_boxes", :complexity 90, :coverage 96.4286, :crap 90.369}
