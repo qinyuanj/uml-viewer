@@ -17,6 +17,8 @@ return function(frame,state,a)
     metadata={love=major..'.'..minor..'.'..revision,luajit=jit and jit.version or _VERSION,
       window_w=w,window_h=h,highdpi=flags.highdpi,vsync=flags.vsync,
       dpi=love.window.getDPIScale(),ui=a.display().ui,zoom=state.zoom or 1,
+      source_classes=#(G.get(state.document,'classes') or {}),source_edges=#(G.get(state.document,'edges') or {}),
+      visible_classes=#(G.get(state.scene,'classes') or {}),visible_edges=#(G.get(state.scene,'edges') or {}),
       renderer=renderer,renderer_version=version,vendor=vendor,device=device}
     love.keypressed('f3')
   end
