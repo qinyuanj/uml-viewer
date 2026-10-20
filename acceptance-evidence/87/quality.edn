@@ -1,0 +1,13 @@
+{:ticket 87 :source-revision "2766bfca47eca0d0e41ec9b7b516536cefeccd42"
+ :runner-revision "02a3dae7c126fd5d25b922bb76d0147ff5b7cc22"
+ :method "Public uml.ps1 crap; then mutate once per changed source, awaited serially, --max-workers 1 (effective override verified). Remove prior quality-result before each request; require fresh version1 operation/root/actual-exit matching validResult true. No retries or forced full runs."
+ :results [{:operation :crap :exit 0 :valid true}
+           {:operation :mutate :target "love/uml/domain/polling.lua" :exit 0 :valid true :killed 7 :survived 0 :uncovered 0}
+           {:operation :mutate :target "love/uml/adapters/mailbox.lua" :exit 3 :valid true :killed 13 :survived 6 :uncovered 0}
+           {:operation :mutate :target "love/uml/application/strings.lua" :exit 0 :valid true :killed 7 :survived 0 :uncovered 0}
+           {:operation :mutate :target "love/uml/adapters/viewer.lua" :exit 0 :valid true :killed 0 :survived 0 :uncovered 172}]
+ :limitations "Mailbox timestamp/fallback and cache branches retain six surviving mutants; viewer native callback functions retain172 uncovered sites. Native behavior checks do not imply mutation coverage. Snapshots retained without retries."
+ :ir {:exit 0 :output "C:/Users/Lzx_8/AppData/Local/Temp/uml-87-quality-2766bfc/generated-ir.edn" :display-sent false :official-example-modified false}
+ :tests {:post-merge-direct {:successes 643 :failures 0 :errors 0} :final-refreshed-metrics {:successes 647 :failures 0 :errors 0} :quality-coverage-runner {:successes 646 :failures 0 :errors 0}}
+ :native {:metrics "uml-65-metrics-50d49dce07a444fa900774c357f62a3f" :mail "uml-67-evidence-d5af491f4ef64ad3b70a612a30a431c4" :graph-reload "uml-62-render-4fe07e044c4e43b5b8a2f60aeb7362f9" :f3-toggle "uml-87-toggle-5200b6a8327e4c719188aef89f2e5728" :r-force "uml-87-refresh-ef5d7b8fe3f7491d85bec0490ef4b66b" :exit 0 :root "C:/Users/Lzx_8/AppData/Local/Temp"}
+ :raw-artifacts "C:/Users/Lzx_8/AppData/Local/Temp/uml-87-quality-2766bfc"}
