@@ -7,7 +7,7 @@ local M={}
 local K,V=E.keyword,E.vector
 local function get(m,k) if E.kind(m)=='map' then local v=E.get(m,K(k)); if v~=E.nil_value then return v end end end
 local function seq(x) return E.kind(x)=='vector' and x or {} end
-local function map(t) local r=E.map(); for k,v in pairs(t) do E.assoc(r,K(k),v) end; return r end
+local function map(t) return E.from_table(t) end
 local function copy(m) local r=E.map(); for _,e in ipairs(m or {}) do r[#r+1]={e[1],e[2]} end; return r end
 local function put(m,k,v) if v~=nil then E.assoc(m,K(k),v) end; return m end
 local function drop(m,keys) local r=E.map(); for _,e in ipairs(m or {}) do if not keys[e[1].name] then r[#r+1]={e[1],e[2]} end end; return r end

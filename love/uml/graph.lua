@@ -14,7 +14,7 @@ function M.scan_project(lang,root,opts)
 end
 local function get(m,k) if E.kind(m)=='map' then local v=E.get(m,E.keyword(k)); if v~=E.nil_value then return v end end end
 local function seq(x) return E.kind(x)=='vector' and x or {} end
-local function record(t) local r=E.map(); for k,v in pairs(t) do E.assoc(r,E.keyword(k),v) end; return r end
+local function record(t) return E.from_table(t) end
 function M.merge_scans(scans)
   local classes,edges=E.vector(),E.vector(); local by_id,owners={},{}
   for _,scan in ipairs(scans) do

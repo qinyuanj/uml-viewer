@@ -3,7 +3,7 @@ local E=require('uml.edn')
 local G=require('uml.graph')
 local M={}
 local K,V=E.keyword,E.vector
-local function record(t) local m=E.map(); for k,v in pairs(t) do E.assoc(m,K(k),v) end; return m end
+local function record(t) return E.from_table(t) end
 local function get(m,k,d) local v=E.get(m,K(k)); if v==nil or v==E.nil_value or v==false then return d end; return v end
 local function unique(xs,x) for _,v in ipairs(xs) do if E.equal(v,x) then return end end; xs[#xs+1]=x end
 local function ident(c) return c~='' and c:match('[%w_]')~=nil end

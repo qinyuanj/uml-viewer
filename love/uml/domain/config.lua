@@ -25,7 +25,7 @@ function M.mutation_ratio(m)
   local k,s,g=get(m,'killed'),get(m,'survived'),get(m,'mut-gap')
   if k~=nil or s~=nil or (g and g>0) then local n=(k or 0)+(s or 0)+(g or 0); if n>0 then return (k or 0)/n end end
 end
-local function map(t) local m=E.map(); for k,v in pairs(t) do E.assoc(m,E.keyword(k),v) end; return m end
+local function map(t) return E.from_table(t) end
 local function score(x) if type(x)=='number' then return x end; return get(x,'mu') end
 local function group(xs)
   local sum,mx=0,-math.huge

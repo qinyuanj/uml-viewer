@@ -37,6 +37,14 @@ class PosixEntries(unittest.TestCase):
             self.assertIn('保留', text)
             self.assertEqual(self.policy, (self.root / 'policy.edn').read_text())
 
+    def test_ir_output_is_byte_identical_across_runs(self):
+        outputs = set()
+        for _ in range(8):
+            result = self.entry('ir', 'policy.edn', 'stable.edn')
+            self.assertEqual(0, result.returncode, result.stderr)
+            outputs.add((self.root / 'stable.edn').read_bytes())
+        self.assertEqual(1, len(outputs), 'IR bytes changed between identical runs')
+
     def test_four_real_scanners(self):
         samples = {
             'lua': ('sample.lua', 'local M={}\nfunction M.hello() return true end\nreturn M\n'),

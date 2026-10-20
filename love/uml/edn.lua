@@ -47,6 +47,17 @@ function M.assoc(map, key, value)
   map[#map+1]={key,value}
   return map
 end
+-- Lua table -> EDN map with string keys as keywords, in sorted key order.
+-- pairs() order is not stable between processes, so maps that reach generated
+-- EDN must never be built by assoc-ing whatever pairs() yields.
+function M.from_table(t)
+  local keys={}
+  for k in pairs(t) do keys[#keys+1]=k end
+  table.sort(keys,function(a,b) return tostring(a)<tostring(b) end)
+  local m=M.map()
+  for _,k in ipairs(keys) do m[#m+1]={M.keyword(k),t[k]} end
+  return m
+end
 local function utf8(code)
   if code < 128 then return string.char(code) end
   if code < 2048 then return string.char(192+math.floor(code/64),128+code%64) end

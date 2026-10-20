@@ -2,7 +2,7 @@
 local E=require('uml.edn')
 local M={}
 function M.get(m,k) if E.kind(m)=='map' then local v=E.get(m,E.keyword(k)); if v~=E.nil_value then return v end end end
-function M.map(t) local m=E.map(); for k,v in pairs(t) do E.assoc(m,E.keyword(k),v) end; return m end
+function M.map(t) return E.from_table(t) end
 function M.copy(m) local r=E.map(); for _,v in ipairs(m or {}) do r[#r+1]={v[1],v[2]} end; return r end
 function M.put(m,k,v) if v~=nil then E.assoc(m,E.keyword(k),v) end; return m end
 function M.name(x) if type(x)=='string' then return x end; return x and x.name:match('[^/]+$') end
