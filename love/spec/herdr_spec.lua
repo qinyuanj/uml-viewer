@@ -6,7 +6,7 @@ local lfs=require('lfs')
 local owned={backend='herdr',owner_role='companion',session='uml-viewer-A',
   socket='C:/herdr/sessions/A/herdr.sock',workspace='w1',pane='w1:p1',
   terminal_id='term_A',shell_pid=42,owner_start='shell-start',
-  server_pid='41',server_start='server-start',cwd='C:/project',command={'claude.exe'}}
+  server_pid='41',server_start='server-start',cwd='/nonexistent-uml-viewer-fixture/project',command={'claude.exe'}}
 local function response(value) return {exit=0,out=JSON.encode(value),err=''} end
 local function fake_cli(calls,state)
   return function(argv)
