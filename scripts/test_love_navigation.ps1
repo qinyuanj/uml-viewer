@@ -33,7 +33,7 @@ try {
     [IO.File]::WriteAllText("$evidence/stdout.txt", $out)
     [IO.File]::WriteAllText("$evidence/stderr.txt", $err)
     if ($p.ExitCode -ne 0) { throw "Navigation failed ($($p.ExitCode)): $err $out Evidence: $evidence" }
-    foreach ($file in @('navigation-pass.txt','navigation-entered.edn','navigation-panned.edn','navigation-zoomed.edn','navigation-back.edn','navigation-selected.edn','navigation-wheel.edn','render.png')) {
+    foreach ($file in @('navigation-pass.txt','navigation-entered.edn','navigation-zoomed.edn','navigation-panned.edn','navigation-fitted.edn','navigation-back.edn','navigation-selected.edn','navigation-wheel.edn','render.png')) {
         if (-not (Test-Path "$evidence/$file")) { throw "Missing $file. $err $out Evidence: $evidence" }
     }
     "PASS actual LOVE/cimgui navigation callbacks and rendered camera. Evidence: $evidence"

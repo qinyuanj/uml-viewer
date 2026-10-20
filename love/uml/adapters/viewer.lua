@@ -118,7 +118,8 @@ function M.run(args,services)
     else
       state=load_document(path)
       state.project_root=project_root
-      if restart then state=Session.restore(state,snapshot) end
+      -- A fresh load fits the canvas; a restart restores its saved view instead.
+      if restart then state=Session.restore(state,snapshot) else state.fit_pending=true end
     end
     local to_agent=Mailbox.open(project_root..'/.uml-viewer/to-agent.edn')
     local function notify_agent(cmd)
@@ -197,6 +198,8 @@ function M.run(args,services)
       end
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
+    -- Navigation and new loads request a fit; apply it with the live canvas size.
+    if state.fit_pending then state=Events.settle(state,Display.dims(display())) end
     if probe then
       local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts,display=display,chrome=chrome})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
@@ -210,25 +213,22 @@ function M.run(args,services)
     local d=display()
     local height=d.window_h
     local zoom=Events.zoom_of(state)
-    -- world -> window px: zoom times ui, applied once (domain.display).
     local scale=Display.canvas_scale(d,zoom)
     local canvas_w=d.canvas_px
-    -- Edges are highlighted when they touch the selected class; the predicate
-    -- stays a pure function of the scene edge.
-    local sel_id=state.selected and G.get(state.selected,'id')
-    local selected_edge=sel_id and function(e) return E.equal(sel_id,G.get(e,'from')) or E.equal(sel_id,G.get(e,'to')) end or nil
+    -- Both renderers consume selected/hover hits in the same display space.
+    local view={selected=state.selected,hover=state.hover}
     local list=imgui.GetBackgroundDrawList_Nil()
-    -- Clip canvas painting to the usable area left of the fixed sidebar.
     list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
-    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,selected_edge,d.ui)
-    renderer.draw(state.scene,d.window_w,height,{zoom=zoom,ui=d.ui,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover,selected_edges=selected_edge})
+    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,view,d.ui)
+    renderer.draw(state.scene,d.window_w,height,{zoom=zoom,ui=d.ui,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover})
     list:PopClipRect()
     inspector.draw(state,d)
     if detail_window then detail_window.draw(state,d) end
     Menu.draw(imgui,state,state.selected,function(op,extra) mail.request(op,extra) end)
     if source_window then source_window.draw() end
-    if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back(d.ui) end
-    -- The sidebar's left edge shows the resize cursor while grabbable.
+    list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
+    renderer.chrome(state,d.view_w,d.view_h,d.ui)
+    list:PopClipRect()
     if dragging_edge or Display.on_inspector_edge(d,love.mouse.getX()) then
       imgui.SetMouseCursor(imgui.ImGuiMouseCursor_ResizeEW)
     end
@@ -242,12 +242,11 @@ function M.run(args,services)
     end
   end
   function love.textinput(t) imgui.love.TextInput(t) end
-  -- Events receive view units: extents from Display.dims, pointers via to_view.
+  -- Events and their retained pointer use DPI-independent view units.
   local function dims()
     local d=Display.dims(display())
-    d.control=love.keyboard.isDown('lctrl','rctrl'); return d
+    d.control=love.keyboard.isDown('lctrl','rctrl'); d.shift=love.keyboard.isDown('lshift','rshift'); return d
   end
-  -- Canvas pointer input stops at the sidebar's left edge.
   local function on_canvas(x) return Display.in_canvas(display(),x) end
   local function view_xy(x,y) return Display.to_view(display(),x,y) end
   function love.keypressed(k)
@@ -257,7 +256,10 @@ function M.run(args,services)
   function love.mousemoved(x,y)
     imgui.love.MouseMoved(x,y)
     if dragging_edge then inspector_w=Display.drag_inspector(display(),x); return end
-    if not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,view_xy(x,y)) end
+    -- Active canvas drags retain ownership through sidebar/window crossings.
+    if state.drag then state=Events.on_drag(state,view_xy(x,y))
+    elseif not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,view_xy(x,y))
+    else state=Events.on_leave(state) end
   end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
@@ -272,22 +274,20 @@ function M.run(args,services)
       if Events.element_menu(state.selected) then imgui.OpenPopup_Str('uml-element-mail') end
     elseif button==1 then
       -- Both transitions honour the back hotspot first.
-      if (presses or 1)>=2 then state=Events.on_double_press(state,vx,vy) else state=Events.on_press(state,vx,vy) end
+      if (presses or 1)>=2 then state=Events.on_double_press(state,vx,vy) else state=Events.on_left_press(state,vx,vy) end
     end
   end
   function love.mousereleased(x,y,button)
     imgui.love.MouseReleased(button)
     if button==1 and dragging_edge then inspector_w=Display.drag_inspector(display(),x); dragging_edge=false end
+    if button==1 and state.drag then state=Events.on_release(state,view_xy(x,y)) end
   end
   function love.wheelmoved(x,y)
     if detail_window and detail_window.detail_hovered() then
       state=detail_window.wheel(state,-y)
     else
       imgui.love.WheelMoved(x,y)
-      if not imgui.love.GetWantCaptureMouse() then
-        local d=dims(); d.horizontal=x~=0 or love.keyboard.isDown('lshift','rshift')
-        state=Events.on_scroll(state,x~=0 and -x or -y,d)
-      end
+      if not imgui.love.GetWantCaptureMouse() then state=Events.on_wheel(state,x,y,dims()) end
     end
   end
   function love.keyreleased(k) imgui.love.KeyReleased(k) end
