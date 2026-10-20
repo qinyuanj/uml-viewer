@@ -168,15 +168,14 @@ function M.run(args,services)
     local width,height=love.graphics.getWidth(),love.graphics.getHeight()
     local scale=Events.zoom_of(state)
     local canvas_w=InspectorModel.canvas_w(width)
-    -- Edges are highlighted when they touch the selected class; the predicate
-    -- stays a pure function of the scene edge.
-    local sel_id=state.selected and G.get(state.selected,'id')
-    local selected_edge=sel_id and function(e) return E.equal(sel_id,G.get(e,'from')) or E.equal(sel_id,G.get(e,'to')) end or nil
+    -- Both renderers consume the actual selected/hover hits: class, child row,
+    -- port or edge. Shared rules keep the focus and dimming consistent.
+    local view={selected=state.selected,hover=state.hover}
     local list=imgui.GetBackgroundDrawList_Nil()
     -- Clip canvas painting to the usable area left of the fixed sidebar.
     list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
-    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,selected_edge)
-    renderer.draw(state.scene,width,height,{zoom=scale,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover,selected_edges=selected_edge})
+    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,view)
+    renderer.draw(state.scene,width,height,{zoom=scale,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover})
     list:PopClipRect()
     inspector.draw(state)
     if detail_window then detail_window.draw(state) end

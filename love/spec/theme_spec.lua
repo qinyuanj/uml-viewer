@@ -87,7 +87,7 @@ describe('theme line widths',function()
       assert.are.equal(2,#rects,'missing package and class borders are dashed, not solid')
       local dashed,frame=0,0
       for _,l in ipairs(lines) do
-        if l.color==T.pack(T.stroke(1)) and l.width==T.widths.class then dashed=dashed+1 end
+        if l.color==T.fade(T.pack(T.stroke(1))) and l.width==T.widths.class then dashed=dashed+1 end
         if l.width==T.widths.package then frame=frame+1 end
       end
       assert.is_true(dashed>4,'no-data class border is dashed at zoom '..zoom)

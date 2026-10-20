@@ -66,7 +66,9 @@ end-- Adapter contract: a renderer consumes commands; no UI binding leaks into s
 -- Colors are theme RGB triples; `band`/`red` keep the config traffic light.
 function M.commands(scene,view)
   view=view or {}
-  local sel_id=G.get(view.selected,'id'); local hover_id=G.get(view.hover,'id')
+  local sel_id=G.get(view.selected,'id')
+  local h=require('uml.application.highlight').new(scene,view)
+  local hover_id=h.hover
   local commands={}
   for _,p in ipairs(G.get(scene,'packages')) do
     local cb,mb=bands(p); local band=(cb=='red' or mb=='red') and 'red' or (cb=='yellow' or mb=='yellow') and 'yellow' or 'green'
@@ -87,9 +89,11 @@ function M.commands(scene,view)
     local band=(cb=='red' or mb=='red') and 'red' or (cb=='yellow' or mb=='yellow') and 'yellow' or 'green'
     local id=G.get(c,'id'); local unmeasured=missing(c)
     local g=unmeasured and C.grade_worst or grade(c)
+    local first=#commands+1
     commands[#commands+1]={kind='class',rect=r,shape=G.name(G.get(c,'shape')),red=band=='red',band=band,id=id,
       missing=unmeasured,grade=g,fill=T.fill(g),stroke=T.stroke(g),
-      selected=sel_id~=nil and E.equal(id,sel_id),hovered=hover_id~=nil and E.equal(id,hover_id)}
+      selected=sel_id~=nil and E.equal(id,sel_id),hovered=hover_id~=nil and E.equal(id,hover_id),
+      related=h.related(id) or nil}
     quality(commands,c,'class')
     local stereo=G.name(G.get(c,'stereotype')); local marker=stereo=='abstract' or stereo=='interface'
     if marker then commands[#commands+1]={kind='marker',rect=r,text=stereo=='abstract' and 'α' or 'I',x=G.right(r)-44,y=G.get(r,'y')+3,size=12,color=T.pack(T.colors.white)} end
@@ -101,6 +105,10 @@ function M.commands(scene,view)
     end end
     for _,line in ipairs(slots) do if line.kind=='rule' then line.color=T.stroke(g) end; commands[#commands+1]=line end
     if unmeasured then commands[#commands+1]={kind='no-data',rect=r,text=S.no_data,right=G.right(r)-pad,y=G.bottom(r)-M.no_data_strip-2,size=F.sizes.level,color=T.band_color('red')} end
+    -- Every command of this class carries its owner and, under a selection
+    -- that does not reach it, the dim flag.
+    local dimmed=h.dimmed(id) or nil
+    for i=first,#commands do commands[i].owner_id=id; commands[i].dimmed=dimmed end
   end  return commands
 end
 local role_ink={crap='gold',stereo='muted'}
@@ -155,43 +163,46 @@ function M.new(imgui,fonts)
       dash_line(x+w,y+h,x,y+h); dash_line(x,y+h,x,y)
     end
     for _,c in ipairs(M.commands(scene,view)) do
+      local function ink(rgb,alpha) local color=T.pack(rgb,alpha); return c.dimmed and T.fade(color) or color end
+      local function packed(color) return c.dimmed and T.fade(color) or color end
       if c.kind=='package' or c.kind=='class' then
         local r=c.rect; local x,y,w,h=G.get(r,'x'),G.get(r,'y'),G.get(r,'w'),G.get(r,'h')
         local package=c.kind=='package'
         local radius=(package and T.radius.package or T.radius.class)*scale
-        local stroke=T.pack(c.stroke,package and T.alpha.package_stroke or 255)
+        local stroke=ink(c.stroke,package and T.alpha.package_stroke or 255)
         local line_w=package and W.package or W.class
-        if c.selected then stroke=T.pack(T.colors.gold); line_w=W.selected
-        elseif c.hovered then stroke=T.pack(T.colors.ink) end
+        if c.selected then stroke=ink(T.colors.gold); line_w=W.selected
+        elseif c.hovered then stroke=ink(T.colors.white)
+        elseif c.related then stroke=ink(T.colors.related) end
         if c.shape=='oval' then
-          list:AddEllipseFilled(point(x+w/2,y+h/2),w/2*scale,h/2*scale,T.pack(T.fill(nil)),0,0)
-          list:AddEllipse(point(x+w/2,y+h/2),w/2*scale,h/2*scale,c.selected and stroke or c.hovered and stroke or T.pack(T.stroke(nil)),0,0,line_w)
+          list:AddEllipseFilled(point(x+w/2,y+h/2),w/2*scale,h/2*scale,ink(T.fill(nil)),0,0)
+          list:AddEllipse(point(x+w/2,y+h/2),w/2*scale,h/2*scale,(c.selected or c.hovered or c.related) and stroke or ink(T.stroke(nil)),0,0,line_w)
         else
           -- Continuous quality fill (namespace frames are washed, classes opaque).
-          list:AddRectFilled(point(x,y),point(x+w,y+h),T.pack(c.fill,package and T.alpha.package_fill or 255),radius,0)
+          list:AddRectFilled(point(x,y),point(x+w,y+h),ink(c.fill,package and T.alpha.package_fill or 255),radius,0)
           if c.missing then dashed_rect(r,stroke,line_w)
           else list:AddRect(point(x,y),point(x+w,y+h),stroke,radius,0,line_w) end
         end
-        if package then text(fonts.title,c.size,c.max_w,x+pad,y+8,T.pack(T.colors.gold),c.text or '',true) end
+        if package then text(fonts.title,c.size,c.max_w,x+pad,y+8,ink(T.colors.gold),c.text or '',true) end
       elseif c.kind=='quality' then
-        list:AddCircleFilled(point(c.x,c.y),c.radius*scale,T.pack(T.fill(c.grade)),0)
-        if list.AddCircle then list:AddCircle(point(c.x,c.y),c.radius*scale,T.pack(T.stroke(c.grade)),0,W.dot) end
+        list:AddCircleFilled(point(c.x,c.y),c.radius*scale,ink(T.fill(c.grade)),0)
+        if list.AddCircle then list:AddCircle(point(c.x,c.y),c.radius*scale,ink(T.stroke(c.grade)),0,W.dot) end
         local font=fonts.badge or fonts.body
-        text(font,F.sizes.badge,nil,c.x-measure(font,F.sizes.badge,c.text)/2,c.y-F.sizes.badge/2,T.pack(T.colors.white),c.text)
-      elseif c.kind=='band' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),T.pack(c.color),W.band)
-      elseif c.kind=='rule' then list:AddLine(point(c.x+6,c.y),point(c.x+c.w-6,c.y),T.pack(c.color or T.stroke(nil)),W.rule)
+        text(font,F.sizes.badge,nil,c.x-measure(font,F.sizes.badge,c.text)/2,c.y-F.sizes.badge/2,ink(T.colors.white),c.text)
+      elseif c.kind=='band' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),ink(c.color),W.band)
+      elseif c.kind=='rule' then list:AddLine(point(c.x+6,c.y),point(c.x+c.w-6,c.y),ink(c.color or T.stroke(nil)),W.rule)
       elseif c.kind=='text' then
         -- Fit the slot height and width budget, then centre every line inside
         -- its slot (original centred text); slots already exclude the badges.
         local font=c.role=='name' and fonts.title or fonts.body
         local size=M.fit(font,math.min(c.size,c.h or c.size),c.text,c.max_w,c.bold,c.italic)
         local cx=c.max_w and (c.x+c.max_w/2) or nil
-        text(font,size,c.max_w,cx or c.x,(c.top or c.y)+((c.h or size)-size)/2,T.pack(M.text_color(c.role)),c.text,c.italic,c.bold,cx~=nil)
+        text(font,size,c.max_w,cx or c.x,(c.top or c.y)+((c.h or size)-size)/2,ink(M.text_color(c.role)),c.text,c.italic,c.bold,cx~=nil)
       elseif c.kind=='no-data' then
         local font=fonts.level or fonts.body
-        text(font,c.size,nil,c.right-measure(font,c.size,c.text),c.y,c.color,c.text)
+        text(font,c.size,nil,c.right-measure(font,c.size,c.text),c.y,packed(c.color),c.text)
       elseif c.kind=='marker' or c.kind=='level' then
-        text((c.kind=='marker' and fonts.marker or fonts.level) or fonts.body,c.size or 13,nil,c.x,c.y,c.color or 0xffeeeeee,c.text)
+        text((c.kind=='marker' and fonts.marker or fonts.level) or fonts.body,c.size or 13,nil,c.x,c.y,packed(c.color or 0xffeeeeee),c.text)
       end
     end
   end
