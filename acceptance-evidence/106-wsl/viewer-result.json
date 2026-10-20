@@ -1,0 +1,23 @@
+{
+  "project": "/tmp/uml viewer 项目 059ydc07",
+  "evidence": "/tmp/ev109",
+  "checks": [
+    [
+      "first scene published",
+      "scene-1.edn"
+    ],
+    [
+      "reload scene published",
+      "scene-2.edn"
+    ],
+    [
+      "rendered frame",
+      "/tmp/ev109/render.png 82525 bytes sha256=b570d4becb29f046"
+    ],
+    [
+      "viewer exit",
+      "0"
+    ]
+  ],
+  "ok": true
+}

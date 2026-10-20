@@ -109,6 +109,7 @@ def main():
         wait_for(lambda: session not in sessions(project, env), 30, message='herdr session removal')
         checks.append(('herdr session removed', session))
         result['ok'] = True
+        shutil.copy2(project / '.uml-viewer/viewer.log', evidence / 'viewer.log')
     except AssertionError as error:
         result['ok'] = False
         result['failure'] = str(error)
