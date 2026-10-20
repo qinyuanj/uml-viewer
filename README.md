@@ -89,7 +89,8 @@ Install LOVE from https://love2d.org/. The installer downloads and verifies
 cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
 project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
 it with an existing matching binding and DLL. Set `UML_LOVE_EXECUTABLE` when
-`love` is not on PATH.
+`love` is not on PATH; use `lovec.exe` (the console build) because the entry
+reads the preflight line from stdout.
 The installer also downloads Sarasa Gothic v1.0.42, verifies the archive and
 `SarasaMonoSC-Regular.ttf` SHA256, and places the font in
 `.uml-viewer/fonts/`; any failure exits non-zero. The viewer's font lookup is
@@ -114,6 +115,15 @@ The installer writes `uml` and `uml.ps1`; both forward to the installed
 PowerShell runtime, and Windows uses `.\uml.ps1` (or `pwsh -File .\uml.ps1 ...`)
 directly. No `.cmd` shim is installed: a batch wrapper hands arguments to
 `cmd.exe`, which re-quotes them and cannot carry literal shell characters.
+`UML_VIEWER_TOOL_ROOT` overrides the tool checkout the entry runs: point it at
+a working tree (for example this repository) to launch its `love/` code instead
+of the pinned `.uml-viewer/uml-viewer/` clone. The path must contain
+`love/main.lua`; anything else fails and names the variable. When the selected
+tool root is a different git checkout at a different commit, startup prints a
+one-line stderr warning with both short SHAs and never blocks the launch.
+`UML_LOVE_EXECUTABLE` should point at the **console** build `lovec.exe`: the
+Herdr backend preflight reads one line from stdout, and a GUI-subsystem
+`love.exe` emits none. The preflight failure diagnostic says so explicitly.
 Viewer startup also uses PowerShell 7: a detached launcher starts the LOVE
 process with individual arguments and writes its output to the project log.
 Fresh startup uses **Herdr as the sole companion backend** on native Windows.
