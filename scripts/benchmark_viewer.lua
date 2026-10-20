@@ -3,6 +3,7 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local samples={idle={},interaction={}}
 local started,finished,last,metadata
+local interaction_frame=0
 local ranges={idle={},interaction={}}
 return function(frame,state,a)
   local now=love.timer.getTime()
@@ -29,17 +30,16 @@ return function(frame,state,a)
   end
   if phase=='interaction' then
     -- Repeat a representative navigation cycle through actual LOVE callbacks.
-    local step=frame%120
-    if step==0 then love.keypressed('f3'); love.keypressed('f3') end
-    if step<30 then love.wheelmoved(0,1)
-    elseif step<60 then love.wheelmoved(0,-1)
-    elseif step==60 or step==75 then
+    local step=interaction_frame%8; interaction_frame=interaction_frame+1
+    if step==0 then love.wheelmoved(0,1)
+    elseif step==1 then love.wheelmoved(0,-1)
+    elseif step==2 or step==3 then
       local is_down=love.keyboard.isDown
       love.keyboard.isDown=function(...) if select(1,...)=='lctrl' then return true end; return is_down(...) end
-      love.keypressed(step==60 and '=' or '-')
+      love.keypressed(step==2 and '=' or '-')
       love.keyboard.isDown=is_down
-    elseif step==90 then love.mousemoved(100,100)
-    elseif step==100 then love.keypressed('p') end
+    elseif step==4 then love.mousemoved(100,100)
+    elseif step==5 then love.keypressed('p') end
   end
   if phase=='done' and not finished then
     finished=true
