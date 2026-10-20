@@ -562,5 +562,14 @@ class PosixEntries(unittest.TestCase):
         self.assertFalse((self.root / '.uml-viewer').exists())
 
 
+    def test_installer_names_a_missing_lua_prerequisite(self):
+        entry = str(REPO / 'scripts/get-uml-viewer')
+        env = dict(self.env, UML_LUA_EXECUTABLE='/missing/lua')
+        result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('lfs', result.stderr)
+        self.assertIn('luacov', result.stderr)
+        self.assertFalse((self.root / '.uml-viewer').exists())
+
 if __name__ == '__main__':
     unittest.main()

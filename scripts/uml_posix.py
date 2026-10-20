@@ -29,7 +29,8 @@ PY7ZR = 'py7zr==1.1.4'
 
 
 def run(argv, **kwargs):
-    return subprocess.run([str(x) for x in argv], check=True, **kwargs)
+    kwargs.setdefault('check', True)
+    return subprocess.run([str(x) for x in argv], **kwargs)
 
 
 def host():
@@ -47,6 +48,17 @@ def love_command():
     if not re.search(r'LOVE 11\.5\b', result.stdout):
         raise ValueError('需要 LOVE 11.5；实际版本：' + result.stdout.strip())
     return executable
+
+
+def lua_command():
+    requested = os.environ.get('UML_LUA_EXECUTABLE')
+    for name in ([requested] if requested else ['lua5.4', 'lua5.1', 'lua']):
+        executable = shutil.which(name)
+        if executable and run([executable, '-e', 'pcall(require, "luarocks.loader"); require("lfs"); require("luacov")'],
+                              capture_output=True, text=True, check=False).returncode == 0:
+            return executable
+    raise ValueError('需要 Lua 5.1/5.4 及 lfs、luacov：sudo apt install lua5.4 lua-filesystem lua-luacov，'
+                     '或设置 UML_LUA_EXECUTABLE。')
 
 
 def select_herdr():
@@ -244,6 +256,7 @@ def install(args):
         raise ValueError('usage: get-uml-viewer [--install-only]')
     host()
     love = love_command()
+    lua_command()
     herdr = select_herdr()
     root = Path.cwd().resolve()
     state = root / '.uml-viewer'
