@@ -70,7 +70,11 @@ function M.run(args,services)
   function love.load()
     love.window.setTitle('UML viewer — LOVE')
     love.window.setMode(1500,920,{resizable=true})
-    imgui.love.Init(); fonts=Fonts.load(imgui,Fonts.defaults(project_root)); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
+    imgui.love.Init()
+    -- Native acceptance processes must neither load nor save the user's layout.
+    -- ImGui reads settings at its first NewFrame, after LOVE initialization.
+    if probe_path or test_seconds then imgui.GetIO().IniFilename=nil end
+    fonts=Fonts.load(imgui,Fonts.defaults(project_root)); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
     local snapshot=restart and SessionFile.read(project_root) or nil
     path=Paths.canonical(Session.path(explicit_path,snapshot,path))
     local mail_seen

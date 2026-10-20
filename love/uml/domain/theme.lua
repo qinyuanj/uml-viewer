@@ -12,6 +12,7 @@ M.widths={class=2.5,package=2,selected=3.5,edge=1.6,edge_hot=2.8,edge_violating=
 M.colors={
   canvas_bg={22,28,32},panel={26,36,40},sidebar={18,22,24},line={42,61,54},
   ink={236,236,228},white={255,255,255},muted={157,184,168},gold={232,196,72},
+  button_hover={54,76,66},button_active={66,90,76},
   good={95,181,138},violation={196,42,36},violation_hot={255,64,48},warn={224,122,74},
   band={red={196,42,36},yellow={232,196,72},green={95,181,138}},
   edge={157,184,168},edge_hot={232,196,72},edge_violating={196,42,36},edge_violating_hot={255,64,48},

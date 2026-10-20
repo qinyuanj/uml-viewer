@@ -58,7 +58,7 @@ local function cells(c,class)
 end
 function M.rows(model)
   if not model then return nil end
-  local c=g(model,'class'); local rows,y={},16
+  local c=g(model,'class'); local rows,y={},0
   local function emit(kind,text,extra) local r=extra or {}; r.kind=kind; r.text=text; r.y=y; r.h=r.h or 18; rows[#rows+1]=r; y=y+r.h end
   local function heading(label) y=y+12; emit('heading',label) end
   emit('name',g(c,'name'),{h=20})
@@ -75,7 +75,7 @@ function M.rows(model)
     emit('crap',text)
   end
   if #(g(c,'ops') or {})>0 or mu(crap)~=nil or g(c,'coverage')~=nil or g(c,'cc')~=nil or g(c,'killed')~=nil or g(c,'survived')~=nil then
-    y=y+12; emit('group-header',''); emit('col-header',''); emit('stats',g(c,'name'),cells(c,true))
+    y=y+6; emit('group-header',''); emit('col-header',''); emit('stats',g(c,'name'),cells(c,true))
     for _,op in ipairs(g(c,'ops') or {}) do local r=cells(op,false); r.private=g(op,'private')==true; r['op-name']=g(op,'name'); emit('stats',(r.private and '- ' or '+ ')..(g(op,'text') or ''),r) end
   end
   if #(g(c,'fields') or {})>0 then heading(S.fields); for _,f in ipairs(g(c,'fields')) do emit('field',g(f,'text')) end end
@@ -109,8 +109,8 @@ function M.member_at(rows,y) return at(rows,y,'op-name') end
 function M.module_at(rows,y) return at(rows,y,'module')==true end
 local columns={{id='crap',label=S.columns.crap,key='crap-s',w=56,group='crap'},{id='cc',label=S.columns.cc,key='cc-s',w=32,group='crap'},{id='cov',label=S.columns.cov,key='cov-s',w=44,group='crap'},{id='killed',label=S.columns.killed,key='killed-s',w=52,group='mutation'},{id='survived',label=S.columns.survived,key='survived-s',w=60,group='mutation'},{id='uncovered',label=S.columns.uncovered,key='uncovered-s',w=78,group='mutation'}}
 function M.column_layout(width)
-  local out,x={},math.max(624,width or 624)
-  for i=#columns,1,-1 do local c={}; for k,v in pairs(columns[i]) do c[k]=v end; c.right=x; c.left=x-c.w; out[i]=c; x=c.left-10 end
+  local out,x={},math.max(560,width or 624)
+  for i=#columns,1,-1 do local c={}; for k,v in pairs(columns[i]) do c[k]=v end; c.right=x; c.left=x-c.w; out[i]=c; x=c.left-8 end
   return out
 end
 function M.group_layout(width)
