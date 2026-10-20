@@ -3,12 +3,17 @@ local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local samples={idle={},interaction={}}
 local started,finished,last,metadata
+local ranges={idle={},interaction={}}
 return function(frame,state,a)
   local now=love.timer.getTime()
   started=started or now
   local age=now-started
   local phase=age<2 and 'warmup' or age<7 and 'idle' or age<12 and 'interaction' or 'done'
-  if last and samples[phase] then samples[phase][#samples[phase]+1]=(now-last)*1000 end
+  if last and samples[phase] then
+    samples[phase][#samples[phase]+1]=(now-last)*1000
+    local r=ranges[phase]; local z=state.zoom or 1
+    r.min=r.min and math.min(r.min,z) or z; r.max=r.max and math.max(r.max,z) or z
+  end
   last=now
   if not metadata then
     local w,h,flags=love.window.getMode()
@@ -42,7 +47,8 @@ return function(frame,state,a)
     for name,values in pairs(samples) do
       table.sort(values); local total=0; for _,v in ipairs(values) do total=total+v end
       result.phases[name]={frames=#values,fps=1000/(total/#values),mean_ms=total/#values,
-        median_ms=values[math.ceil(#values*.5)],p95_ms=values[math.ceil(#values*.95)]}
+        median_ms=values[math.ceil(#values*.5)],p95_ms=values[math.ceil(#values*.95)],
+        zoom_min=ranges[name].min,zoom_max=ranges[name].max}
     end
     local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/benchmark.edn','wb'))
     -- Convert ordinary Lua records at this evidence boundary.
