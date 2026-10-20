@@ -14,13 +14,17 @@ describe('mailbox polling cache',function()
     stamp=2; text=''; assert.is_nil(box.take()); assert.are.equal(2,parses)
     stamp=nil; text=nil; assert.is_nil(box.take()); assert.are.equal(4,reads)
   end)
-  it('does not reparse unchanged commands already behind the restored cursor',function()
+  it('delivers a command queued behind the restored cursor instead of hiding it',function()
     local parses=0
-    local box=Mailbox.open('injected',{mtime=function() return 1 end,write=function() end,
-      read=function() return '{:next-id 2 :queue [{:id 1 :op :context}]}' end,
-      parse=function(text) parses=parses+1; return E.parse(text) end})
-    assert.is_nil(box.take(1)); assert.is_nil(box.take(1)); assert.are.equal(1,parses)
-    assert.are.equal(1,G.get(box.take(0),'id'))
+    local text='{:next-id 2 :queue [{:id 1 :op :context}]}'
+    local box=Mailbox.open('injected',{mtime=function() return 1 end,
+      write=function(_,value) text=value end,
+      read=function() return text end,
+      parse=function(s) parses=parses+1; return E.parse(s) end})
+    -- A restored cursor may exceed a queued id; the queue order is authoritative,
+    -- so the head is delivered rather than skipped.
+    assert.are.equal(1,G.get(box.take(1),'id'))
+    assert.is_nil(box.take(1))
   end)
   it('does no filesystem work on frames before the deadline',function()
     local now,reads=0,0

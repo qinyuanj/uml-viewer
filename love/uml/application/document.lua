@@ -136,6 +136,9 @@ function M.apply_mail(state,cmd,boundary)
 end
 function M.poll_mail(state,mailbox,boundary)
   if not state.path then return state end
+  -- mail_seen is a monotonic stamp of the last handled command id, persisted for
+  -- session continuity and diagnostics. The durable queue is the authority on
+  -- what is pending: take ignores the stamp, so restored mail is never skipped.
   while true do
     local cmd=mailbox.take(state.mail_seen or 0); if not cmd then return state end
     local ok,next_state=pcall(M.apply_mail,state,cmd,boundary)
