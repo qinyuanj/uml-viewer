@@ -17,21 +17,21 @@ function Read-UmlQualityConfig([string]$ProjectRoot) {
         $standard = $config.standardTools
         if ($standard -isnot [System.Collections.IDictionary]) { throw 'standardTools must be an object.' }
         foreach ($key in $standard.Keys) {
-            if ($key -cnotin @('sourceRoots', 'exclude', 'crapperOptions', 'mutatorOptions') -or
+            if ($key -cnotin @('sourceRoots', 'exclude', 'crapperOptions', 'mutatorOptions', 'dryerOptions') -or
                 $standard[$key] -isnot [array] -or
                 @($standard[$key] | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
                 throw "Invalid standardTools.${key}: expected an array of nonempty strings."
             }
         }
-        foreach ($optionKey in @('crapperOptions', 'mutatorOptions')) {
+        foreach ($optionKey in @('crapperOptions', 'mutatorOptions', 'dryerOptions')) {
             $needsValue = $false
-            $valueOptions = @('--coverage-command', '--threshold', '--test-command', '--busted-task', '--timeout-factor', '--mutation-warning', '--max-workers', '--lines')
+            $valueOptions = @('--coverage-command', '--threshold', '--test-command', '--busted-task', '--timeout-factor', '--mutation-warning', '--max-workers', '--lines', '--min-lines', '--min-nodes', '--format')
             foreach ($option in $standard[$optionKey]) {
                 if ($needsValue) { $needsValue = $false; continue }
                 if (-not $option.StartsWith('--')) { throw "$optionKey accepts tool options, not positional targets." }
                 $needsValue = $option -in $valueOptions
-                if ($option -in @('--root', '--source-root', '-s', '--exclude', '--full-tree', '--changed', '--mutate-all')) {
-                    throw "standardTools.$optionKey cannot declare routing flag $option. Use scope fields or explicit refresh arguments for --mutate-all."
+                if ($option -in @('--root', '--source-root', '-s', '--exclude', '--full-tree', '--changed', '--mutate-all', '--edn', '--text')) {
+                    throw "standardTools.$optionKey cannot declare routing flag $option. Use scope fields or explicit refresh arguments."
                 }
             }
             if ($needsValue) { throw "$optionKey has an option missing its value." }
@@ -40,7 +40,13 @@ function Read-UmlQualityConfig([string]$ProjectRoot) {
     }
     if (-not $config.ContainsKey('operations')) { return $config }
     if ($config.operations -isnot [System.Collections.IDictionary]) { throw 'operations must be an object.' }
-    foreach ($name in @('crap', 'mutate')) {
+    foreach ($name in @('crap', 'mutate', 'dry')) {
+        # crap and mutate remain mandatory; dry is optional so older manifests
+        # stay valid and the standard dryer runs instead.
+        if (-not $config.operations.ContainsKey($name)) {
+            if ($name -eq 'dry') { continue }
+            throw "Invalid uml-quality.json: $name requires argv, forwardArgs and validResultExitCodes."
+        }
         $op = $config.operations[$name]
         if ($op -isnot [System.Collections.IDictionary] -or $op.argv -isnot [array] -or $op.argv.Count -eq 0 -or
             $op.argv[0] -isnot [string] -or [string]::IsNullOrWhiteSpace($op.argv[0]) -or

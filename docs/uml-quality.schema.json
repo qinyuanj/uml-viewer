@@ -12,7 +12,8 @@
         "sourceRoots": {"$ref": "#/$defs/options"},
         "exclude": {"$ref": "#/$defs/options"},
         "crapperOptions": {"$ref": "#/$defs/options"},
-        "mutatorOptions": {"$ref": "#/$defs/options"}
+        "mutatorOptions": {"$ref": "#/$defs/options"},
+        "dryerOptions": {"$ref": "#/$defs/options"}
       }
     },
     "operations": {
@@ -26,7 +27,8 @@
             {"if": {"properties": {"scope": {"const": "whole-tree"}}}, "then": {"properties": {"forwardArgs": {"const": "none"}}}}
           ]
         },
-        "mutate": {"$ref": "#/$defs/operation"}
+        "mutate": {"$ref": "#/$defs/operation"},
+        "dry": {"$ref": "#/$defs/operation"}
       }
     }
   },

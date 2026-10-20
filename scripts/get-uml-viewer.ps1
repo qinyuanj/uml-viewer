@@ -179,16 +179,18 @@ try {
     if (-not $env:UML_CIMGUI_DIRECTORY) { Install-Cimgui '.uml-viewer/cimgui-love-1.90-1' }
     # The viewer probes this exact path before falling back to YaHei.
     Install-Sarasa '.uml-viewer/fonts'
-    # Both quality tools are mandatory for every project, independent of any
-    # deps.edn left over from the removed Clojure implementation.
+    # All three quality tools are mandatory for every project, independent of any
+    # deps.edn left over from the removed Clojure implementation. crapper and
+    # mutator feed the overlay; dryer reports duplicate structure.
+    $qualityTools = @('crapper', 'mutator', 'dryer')
     $toolErrors = @()
-    foreach ($tool in @('crapper', 'mutator')) {
+    foreach ($tool in $qualityTools) {
         try {
             Fetch-Repo ".uml-viewer/$tool" (Setting "$($tool.ToUpper())_REPO_URL" "https://github.com/qinyuanj/$tool.git") (Setting "$($tool.ToUpper())_REF" 'main')
         } catch { $toolErrors += "${tool}: $_" }
     }
     if ($toolErrors.Count -gt 0) { throw ('Could not fetch required quality tools: ' + ($toolErrors -join '; ')) }
-    foreach ($tool in @('crapper', 'mutator')) { Install-ToolVenv $tool $python }
+    foreach ($tool in $qualityTools) { Install-ToolVenv $tool $python }
     $ignore = if (Test-Path '.gitignore') { [string](Get-Content '.gitignore' -Raw) } else { '' }
     $ignore = [regex]::Replace($ignore, '(?ms)^# BEGIN UML-VIEWER\r?\n.*?^# END UML-VIEWER\r?\n?', '')
     [IO.File]::WriteAllText((Join-Path $root '.gitignore'), $ignore.TrimEnd() + "`n# BEGIN UML-VIEWER`n.uml-viewer/`numl-viewer-log.txt`n# END UML-VIEWER`n")

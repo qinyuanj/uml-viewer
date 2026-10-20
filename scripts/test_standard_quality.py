@@ -111,6 +111,57 @@ class StandardQuality(unittest.TestCase):
         self.assertEqual({'business/keep.lua', 'business/generated/omit.lua',
                           'business/generated/deep/keep.lua'}, set(json.loads(result.stdout)['argv']))
 
+    def test_standard_dry_passes_declared_source_roots_without_exclusions(self):
+        self.fixture_tool('dryer')
+        (self.project / 'business tree').mkdir()
+        (self.project / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['business tree'], 'exclude': [], 'dryerOptions': ['--threshold', '0.9']}}))
+        result = self.run_quality('dry')
+        self.assertEqual(3, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({'-s', 'business tree', '--threshold', '0.9'},
+                         set(json.loads(result.stdout)['argv']))
+
+    def test_standard_dry_names_business_files_when_exclusions_apply(self):
+        self.fixture_tool('dryer')
+        for name in ['business/keep.py', 'business/generated/omit.py', 'business/notes.txt']:
+            file = self.project / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('x = 1')
+        (self.project / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['business'], 'exclude': ['**/generated']}}))
+        result = self.run_quality('dry')
+        self.assertEqual(3, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['business/keep.py'], json.loads(result.stdout)['argv'])
+
+    def test_known_results_for_a_subset_of_operations_leave_dry_standard(self):
+        # A manifest that declares only crap and mutate still runs the standard
+        # dryer instead of failing validation.
+        self.fixture_tool('dryer')
+        command = self.project / 'configured.ps1'
+        command.write_text('Write-Output "configured command launched"; exit 0\n')
+        (self.project / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': [], 'exclude': []}, 'operations': {
+                'crap': {'argv': [str(command)], 'forwardArgs': 'none',
+                         'validResultExitCodes': [0], 'scope': 'whole-tree'},
+                'mutate': {'argv': [str(command)], 'forwardArgs': 'none',
+                           'validResultExitCodes': [0]}}}))
+        result = self.run_quality('dry')
+        self.assertEqual(3, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([], json.loads(result.stdout)['argv'])
+
+    def test_dry_rejects_routing_flags_in_declared_options(self):
+        self.fixture_tool('dryer')
+        record = self.project / '.uml-viewer/quality-result.json'
+        for options in [['--root', 'elsewhere'], ['--edn'], ['--threshold']]:
+            with self.subTest(options=options):
+                (self.project / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+                    'sourceRoots': [], 'exclude': [], 'dryerOptions': options}}))
+                record.write_text('{"validResult":true}')
+                result = self.run_quality('dry')
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertEqual('', result.stdout, 'invalid config launched dryer')
+                self.assertFalse(record.exists())
+
     def test_invalid_standard_scope_cannot_launch_or_reuse_old_result(self):
         self.fixture_tool('mutator')
         record = self.project / '.uml-viewer/quality-result.json'

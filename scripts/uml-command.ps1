@@ -22,16 +22,17 @@ try {
     }
     $commandArgs = $remaining
     if ($commandArgs.Count -gt 0 -and $commandArgs[0] -in @('-h', '--help')) {
-        Write-Output 'usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate] [args]'; exit 0
+        Write-Output 'usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate | dry] [args]'; exit 0
     }
-    if ($commandArgs.Count -gt 0 -and $commandArgs[0] -in @('crap', 'mutate')) {
+    if ($commandArgs.Count -gt 0 -and $commandArgs[0] -in @('crap', 'mutate', 'dry')) {
         $alias = $commandArgs[0]
         $forward = @($commandArgs | Select-Object -Skip 1)
         . "$PSScriptRoot/uml-quality-config.ps1"
         $resultPath = Join-Path $root '.uml-viewer/quality-result.json'
         if (Test-Path -LiteralPath $resultPath) { Remove-Item -LiteralPath $resultPath -Force }
         $qualityConfig = Read-UmlQualityConfig $root
-        if ($null -ne $qualityConfig -and $qualityConfig.ContainsKey('operations')) {
+        if ($null -ne $qualityConfig -and $qualityConfig.ContainsKey('operations') -and
+            $qualityConfig.operations.ContainsKey($alias)) {
             $result = Invoke-UmlConfiguredQuality $root $alias $forward $qualityConfig
             Write-UmlQualityResult $root $alias $result
             exit $result.exitCode
@@ -41,8 +42,9 @@ try {
         if (-not $declared) {
             # No declaration: standard tools inspect the whole project. The
             # Clojure alias route was removed with the JVM implementation.
-            $standard = [pscustomobject]@{ sourceRoots = @(); exclude = @(); crapperOptions = @(); mutatorOptions = @() }
+            $standard = [pscustomobject]@{ sourceRoots = @(); exclude = @(); crapperOptions = @(); mutatorOptions = @(); dryerOptions = @() }
         } else {
+            if (-not $standard.ContainsKey('dryerOptions')) { $standard.dryerOptions = @() }
             if (@($forward | Where-Object { $_ -in @('--root', '--source-root', '-s', '--exclude') }).Count -gt 0) {
                 throw 'Standard scope is configured in standardTools; refresh arguments cannot override roots or exclusions.'
             }
@@ -55,10 +57,12 @@ try {
             foreach ($sourceRoot in $standard.sourceRoots) { $scopeArgs += @('--source-root', $sourceRoot) }
             foreach ($exclusion in $standard.exclude) { $scopeArgs += @('--exclude', $exclusion) }
             $forward = $scopeArgs + @($standard.crapperOptions) + $forward
-        } else {
+        } elseif ($alias -eq 'mutate') {
             # Mutator prioritizes --source-root over explicit files; the adapter
             # already applied roots, so pass only filtered targets.
             $forward = @($standard.mutatorOptions) + $forward
+        } else {
+            $forward = @(Select-UmlDryScope $root $standard) + @($standard.dryerOptions) + $forward
         }
         # crapper replaces its snapshot, so standard refresh must select the
         # complete business tree. Its parser rejects partial paths/--changed
@@ -66,7 +70,7 @@ try {
         if ($alias -eq 'crap' -and $forward -notcontains '--full-tree') {
             $forward = @('--full-tree') + $forward
         }
-        $tool = if ($alias -eq 'crap') { 'crapper' } else { 'mutator' }
+        $tool = switch ($alias) { 'crap' { 'crapper' } 'mutate' { 'mutator' } default { 'dryer' } }
         $directory = Join-Path $root ".uml-viewer/$tool"
         if ($IsWindows) {
             $python = Join-Path $directory '.venv/Scripts/python.exe'
@@ -82,8 +86,11 @@ try {
             & $entry @forward
         }
         $code = $LASTEXITCODE
+        # dryer publishes .metrics/dry.edn only on exit 0; 1 is a usage error and
+        # 2 an unknown format, so both are rejected results.
+        $validCodes = switch ($alias) { 'crap' { @(0, 2) } 'mutate' { @(0, 3) } default { @(0) } }
         Write-UmlQualityResult $root $alias @{
-            exitCode = $code; validResult = $(if ($alias -eq 'crap') { $code -in @(0, 2) } else { $code -in @(0, 3) });
+            exitCode = $code; validResult = ($validCodes -contains $code);
             crapScope = $(if ($alias -eq 'crap') { 'whole-tree' } else { $null });
             configured = $false; tool = $tool
         }

@@ -47,6 +47,11 @@ snapshots produced by [crapper](https://github.com/qinyuanj/crapper) and
 those files at load, keyed by namespace and function name. Agents edit the
 policy, not the IR. See [Policy](#policy).
 
+[dryer](https://github.com/qinyuanj/dryer) is the third quality tool. It
+reports structurally duplicated forms in `.metrics/dry.edn`; the viewer does
+not overlay that snapshot yet, so `./uml dry` is a report you read from the
+terminal.
+
 ## Run
 
 Needs LOVE 11.5, PowerShell 7, git, Herdr >= 0.9.3, and Python 3.11+.
@@ -188,19 +193,22 @@ batch wrapper. Set `$env:CLAUDE_BIN = 'C:\path\Claude adapter.ps1'` before launc
 The adapter must preserve argv and the child exit status.
 
 Every project gets
-[crapper](https://github.com/qinyuanj/crapper) and
-[mutator](https://github.com/qinyuanj/mutator) cloned side by side into
+[crapper](https://github.com/qinyuanj/crapper),
+[mutator](https://github.com/qinyuanj/mutator) and
+[dryer](https://github.com/qinyuanj/dryer) cloned side by side into
 `.uml-viewer/` (branch `main`; override with `CRAPPER_REPO_URL`,
-`CRAPPER_REF`, `MUTATOR_REPO_URL`, `MUTATOR_REF`). The installer always
-fetches both tools, including in repositories that still contain a `deps.edn`
+`CRAPPER_REF`, `MUTATOR_REPO_URL`, `MUTATOR_REF`, `DRYER_REPO_URL`,
+`DRYER_REF`). The installer always
+fetches all three tools, including in repositories that still contain a `deps.edn`
 from the removed Clojure implementation. It then provisions each dispatcher
 path: `.uml-viewer/<tool>/.venv` with the tool installed editable. Failure to
-fetch either tool is fatal instead of a warning. They need Python 3.11+
+fetch any tool is fatal instead of a warning. They need Python 3.11+
 (select the interpreter with `UML_PYTHON_EXECUTABLE` when needed). Re-run
 `get-uml-viewer --install-only` to fetch updates; the editable installs use
 the updated source. Native Windows entries run each tool as
-`.venv/Scripts/python.exe -m crapper` (or `-m mutator`); sibling checkouts are
-not on `PATH` and are not used by the dispatcher. The mutator `main` branch includes
+`.venv/Scripts/python.exe -m crapper` (or `-m mutator`, `-m dryer`); sibling
+checkouts are not on `PATH` and are not used by the dispatcher. The mutator `main`
+branch includes
 argument-vector test commands and Windows process-tree timeout cleanup. For the
 standalone mutator, WSL2 with Ubuntu remains its recommended Windows setup;
 this recommendation does not apply to companion launch. Keep a WSL project in the
@@ -219,18 +227,20 @@ opened before these variables were set may need to be reopened. See
 [mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/main#windows).
 
 Analysis always runs from the examined project, forwards individual arguments,
-and preserves the tool's exit status. Standard crapper/mutator invocation is the
-primary quality route; a repository command override is an optional extension.
-The installed standard tools accept CLI options rather than loading persistent
-business-scope settings. `uml-quality.json` can persist these options through
-`standardTools`, independently of optional executable overrides in `operations`:
+and preserves the tool's exit status. Standard crapper/mutator/dryer invocation
+is the primary quality route; a repository command override is an optional
+extension. The installed standard tools accept CLI options rather than loading
+persistent business-scope settings. `uml-quality.json` can persist these options
+through `standardTools`, independently of optional executable overrides in
+`operations`:
 
 ```json
 {"version":1,"standardTools":{
   "sourceRoots":["business tree","common"],
   "exclude":["business tree/generated","**/vendor"],
   "crapperOptions":[],
-  "mutatorOptions":["--busted-task","fast","--max-workers","3"]
+  "mutatorOptions":["--busted-task","fast","--max-workers","3"],
+  "dryerOptions":["--threshold","0.9"]
 }}
 ```
 
@@ -238,13 +248,16 @@ Every field is an optional array of nonempty strings. Unknown fields fail.
 `standardTools` is the primary quality route. There is no Clojure alias route
 after the cutover; without a declaration the standard tools inspect the whole
 project. Explicit `operations` take priority
-and still require complete valid command declarations. Roots resolve from the
+and still require complete valid command declarations; `crap` and `mutate`
+remain mandatory there, while a `dry` entry is optional and leaves the standard
+dryer in place. Roots resolve from the
 project root and must be existing directories inside it. Exclusions are anchored
 at the project root, use either separator, and forbid absolute paths or `..`.
 `*` and `?` match within one segment; `**` matches whole directory segments,
 including zero segments; matching a directory excludes descendants. Matching is
 case-sensitive. Tool option arrays cannot declare owned routing flags (`--root`,
-`--source-root`, `-s`, `--exclude`, `--full-tree`, `--changed`, `--mutate-all`).
+`--source-root`, `-s`, `--exclude`, `--full-tree`, `--changed`, `--mutate-all`,
+`--edn`, `--text`).
 Scope fields own roots/exclusions; only explicit refresh arguments request full
 mutation. Refresh arguments cannot override configured roots/exclusions.
 
@@ -260,6 +273,7 @@ Without persistent configuration, supply scope flags per invocation:
 ```powershell
 .\uml.ps1 crap --source-root 'business tree' --source-root common --exclude 'business tree/generated'
 .\uml.ps1 mutate 'business tree/file with spaces.lua' --busted-task fast --max-workers 3
+.\uml.ps1 dry --threshold 0.9
 ```
 
 External `crap` adds `--full-tree`: crapper publishes every class under the
@@ -291,6 +305,14 @@ snapshots; exit 2 means baseline failure; usage and infrastructure errors are
 failures. Findings retain snapshots and never request an automatic rerun or
 `--mutate-all`. Snapshot joins remain by class namespace, then class id; missing
 CRAP or mutation remains red.
+
+Dryer writes `.metrics/dry.edn` on exit 0 only; exit 1 is a usage error and exit
+2 an unknown `--format`, so neither is a valid quality result. It has no
+`--exclude` flag, so with no declared exclusions `./uml dry` forwards the source
+roots with `-s` and lets dryer skip test/spec/vendor itself. With exclusions it
+enumerates the matching business files and passes them explicitly, which keeps
+the same glob semantics as CRAP and mutation. An empty selection fails without
+launching dryer. Nothing in the viewer reads `dry.edn` yet.
 
 Run `python -I scripts/test_standard_quality.py` for native public-entry checks.
 The optional read-only sibling crapper check uses its installed dependencies to
@@ -370,6 +392,7 @@ scripts\test_lua.ps1                                   # LuaJIT + Lua 5.4 busted
 & 'C:\Program Files\LOVE\lovec.exe' .\love ir .\examples\uml-viewer.policy.edn
 .\uml.ps1 crap                                         # .metrics/crap.edn
 .\uml.ps1 mutate love/uml/engine/layout.lua            # differential mutation
+.\uml.ps1 dry                                          # .metrics/dry.edn
 ```
 
 This repository's `uml-quality.json` declares

@@ -73,8 +73,10 @@ The diagram is already on screen.
 - Installer prerequisites are LOVE 11.5, PowerShell 7, git,
   Herdr >= 0.9.3, and Python 3.11+. `get-uml-viewer` provisions pinned
   cimgui-love 1.90-1 bindings and DLL automatically into `.uml-viewer/`.
-  It always fetches both crapper and mutator and provisions
-  their project-local `.uml-viewer/<tool>/.venv` environments.
+  It always fetches all three quality tools — crapper, mutator and dryer —
+  and provisions their project-local `.uml-viewer/<tool>/.venv` environments.
+  dryer reports duplicate structure in `.metrics/dry.edn`; nothing overlays
+  that snapshot, so `./uml dry` is read from the terminal.
 
 Do not commit or push unless asked. Esc interrupts a turn in this terminal;
 do not kill the process on interrupt.

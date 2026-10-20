@@ -15,7 +15,7 @@ _Avoid_: default herdr, PATH herdr
 由 viewer 管理的外部 Claude 会话，按序消费邮件队列、执行质量命令并驱动图展示。
 
 **quality dispatch**:
-viewer 对 CRAP 和 mutation 请求的通用分发：按项目配置调用标准工具，失败时停止后续 IR 与展示。
+viewer 对 CRAP、mutation 与重复检测请求的通用分发：按项目配置调用标准工具，失败时停止后续 IR 与展示。
 
 **Herdr migration**:
 将项目从旧 companion 后端迁到 Herdr 的过程：先由旧版本正常结束并归档旧 ownership，保留会话、policy/proposal 与邮件队列，再 fresh 创建 Herdr companion。不得跨后端使用 `--restart`。

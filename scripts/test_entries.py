@@ -65,6 +65,7 @@ class Entries(unittest.TestCase):
                         UML_VIEWER_REPO_URL=str(self.source), UML_VIEWER_REF='test',
                         CRAPPER_REPO_URL=str(self.source), CRAPPER_REF='test',
                         MUTATOR_REPO_URL=str(self.source), MUTATOR_REF='test',
+                        DRYER_REPO_URL=str(self.source), DRYER_REF='test',
                         UML_LOVE_EXECUTABLE=str(self.tools / 'love.ps1'),
                         UML_CIMGUI_DIRECTORY=str(self.cimgui),
                         UML_PYTHON_EXECUTABLE=str(self.python_stub),
@@ -101,26 +102,28 @@ class Entries(unittest.TestCase):
             self.assertEqual(policy, (self.project / 'policy.edn').read_bytes())
             self.assertFalse((self.project / 'uml-viewer-log.txt').exists())
         self.assertEqual(1, (self.project / '.gitignore').read_text().count('# BEGIN UML-VIEWER'))
-        # Both tools are fetched even though deps.edn remains from the removed
-        # Clojure implementation, and the dispatcher's project-local venvs exist.
-        for tool in ['crapper', 'mutator']:
+        # All three tools are fetched even though deps.edn remains from the
+        # removed Clojure implementation, and the dispatcher's project-local
+        # venvs exist.
+        for tool in ['crapper', 'mutator', 'dryer']:
             self.assertTrue((self.project / '.uml-viewer' / tool / '.git').exists(), tool)
             self.assertTrue((self.project / '.uml-viewer' / tool / '.venv/Scripts/python.exe').exists(), tool)
         pip = self.pip_log.read_text()
         self.assertIn('install --disable-pip-version-check -e .uml-viewer/crapper', pip)
         self.assertIn('install --disable-pip-version-check -e .uml-viewer/mutator', pip)
+        self.assertIn('install --disable-pip-version-check -e .uml-viewer/dryer', pip)
         self.assertFalse((self.project / 'examples').exists())
 
     def test_install_defaults_to_main_for_viewer_and_both_tools(self):
         subprocess.run(['git', '-C', str(self.source), 'branch', '-m', 'main'], check=True)
         env = self.env.copy()
-        for name in ['UML_VIEWER_REF', 'CRAPPER_REF', 'MUTATOR_REF']:
+        for name in ['UML_VIEWER_REF', 'CRAPPER_REF', 'MUTATOR_REF', 'DRYER_REF']:
             env.pop(name, None)
         result = self.install(env=env)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         expected = subprocess.check_output(
             ['git', '-C', str(self.source), 'rev-parse', 'main'], text=True).strip()
-        for tool in ['uml-viewer', 'crapper', 'mutator']:
+        for tool in ['uml-viewer', 'crapper', 'mutator', 'dryer']:
             actual = subprocess.check_output(
                 ['git', '-C', str(self.project / '.uml-viewer' / tool), 'rev-parse', 'HEAD'],
                 text=True).strip()
@@ -164,7 +167,7 @@ class Entries(unittest.TestCase):
         self.assertEqual(0, self.install().returncode)
         result = self.run_entry(self.entry() + ['--help'])
         self.assertEqual(0, result.returncode)
-        self.assertEqual('usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate] [args]',
+        self.assertEqual('usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate | dry] [args]',
                          result.stdout.strip())
         result = self.run_entry(self.entry() + ['diagram with spaces.edn'])
         self.assertEqual(0, result.returncode, result.stderr)

@@ -50,6 +50,29 @@ function Test-UmlBusinessFile([string]$Root, [string]$Path, [array]$Roots, [arra
     }
     return $true
 }
+function Select-UmlDryScope([string]$Root, $Standard) {
+    # dryer walks source trees and skips test/spec/vendor itself, but it has no
+    # exclusion flag. Without exclusions its own walker is the better selector;
+    # with exclusions the business files are enumerated and named explicitly so
+    # the same glob semantics as CRAP and mutation apply.
+    if (@($Standard.exclude).Count -eq 0) {
+        $scopeArgs = @()
+        foreach ($sourceRoot in @($Standard.sourceRoots)) { if ($sourceRoot) { $scopeArgs += @('-s', $sourceRoot) } }
+        return $scopeArgs
+    }
+    $roots = @(Get-UmlBusinessRoots $Root $Standard)
+    $files = @()
+    foreach ($sourceRoot in $roots) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $sourceRoot -File -Recurse)) {
+            if ($file.Extension -cnotin @('.clj', '.cljc', '.cljs', '.cljd', '.bb', '.java', '.go', '.ts', '.tsx', '.mts', '.cts', '.rs', '.py', '.lua')) { continue }
+            if (Test-UmlBusinessFile $Root $file.FullName $roots @($Standard.exclude)) {
+                $files += [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
+            }
+        }
+    }
+    if ($files.Count -eq 0) { throw 'No duplicate-analysis targets remain in the configured business scope; dryer was not started.' }
+    return @($files | Sort-Object -Unique)
+}
 function Select-UmlMutationTargets([string]$Root, $Standard, [array]$Forward) {
     $roots = @(Get-UmlBusinessRoots $Root $Standard)
     $options = @(); $targets = @(); $changed = $false
