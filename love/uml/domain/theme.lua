@@ -28,6 +28,7 @@ M.alpha={package_fill=80,package_stroke=170,sidebar=255,row_wash=48,stripe=255,s
 -- related ink and everything unrelated fades to the dim alpha.
 M.widths.edge_warm=2.1
 M.colors.edge_warm={200,214,204}
+M.colors.edge_violating_warm={220,56,44}
 M.colors.related={200,170,80}
 M.colors.child_wash={232,196,72}
 M.colors.port_fill={42,56,52}

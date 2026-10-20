@@ -10,7 +10,7 @@ local Highlight=require('uml.application.highlight')
 -- a hover lift never thins it below its violation width.
 local function edge_style(violating,hot,warm)
   local C,W=T.colors,T.widths
-  if violating then return T.pack(hot and C.edge_violating_hot or C.edge_violating),hot and W.edge_violating_hot or W.edge_violating end
+  if violating then return T.pack(hot and C.edge_violating_hot or warm and C.edge_violating_warm or C.edge_violating),hot and W.edge_violating_hot or W.edge_violating end
   if hot then return T.pack(C.edge_hot),W.edge_hot end
   if warm then return T.pack(C.edge_warm),W.edge_warm end
   return T.pack(C.edge),W.edge

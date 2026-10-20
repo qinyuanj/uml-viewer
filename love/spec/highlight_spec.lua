@@ -57,6 +57,9 @@ describe('selection and hover highlighting',function()
     local edges=A.commands(s,view)
     for _,c in ipairs(edge_cmds(edges,'a','b')) do assert.is_true(c.warm); assert.are.equal(T.widths.edge_warm,c.width); assert.are.equal(T.pack(T.colors.edge_warm),c.color); assert.is_falsy(c.dimmed) end
     for _,c in ipairs(edge_cmds(edges,'b','c')) do assert.is_falsy(c.warm); assert.are.equal(T.widths.edge_violating,c.width); assert.is_falsy(c.dimmed) end
+    for _,c in ipairs(edge_cmds(A.commands(s,{hover=sel('c')}),'b','c')) do
+      assert.is_true(c.warm); assert.are.equal(T.pack(T.colors.edge_violating_warm),c.color); assert.are.equal(T.widths.edge_violating,c.width)
+    end
     -- Hovering a child row lifts its parent class.
     assert.is_true(class_cmd(B.commands(s,{hover=G.map{kind=k('child'),id=k('kid'),parent=k('d')}}),'d').hovered)
     assert.is_true(T.widths.edge<T.widths.edge_warm and T.widths.edge_warm<T.widths.edge_hot,'hover is a slight lift, below selection')
