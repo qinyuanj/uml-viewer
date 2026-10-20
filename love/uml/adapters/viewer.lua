@@ -181,7 +181,9 @@ function M.run(args,services)
     if detail_window then detail_window.draw(state) end
     Menu.draw(imgui,state,state.selected,function(op,extra) mail.request(op,extra) end)
     if source_window then source_window.draw() end
-    if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back() end
+    list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
+    renderer.chrome(state,canvas_w,height)
+    list:PopClipRect()
     imgui.Render(); imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end

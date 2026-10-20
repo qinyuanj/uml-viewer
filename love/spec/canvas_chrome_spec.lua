@@ -1,0 +1,45 @@
+local E=require('uml.edn')
+local G=require('uml.domain.geom')
+local D=require('uml.application.document')
+local Events=require('uml.application.events')
+local B=require('uml.adapters.class_boxes')
+local T=require('uml.domain.theme')
+local S=require('uml.application.strings')
+local k=E.keyword
+local function state()
+ return D.new(E.parse('{:hierarchical true :title "Project" :classes [{:id :source.lua} {:id :other}] :edges [] :proposals [{:id :split :name "Split" :layers [{:id :core :label "Core" :nses [:source.lua]}]}]}'),'one')
+end
+describe('canvas title, navigation and dependency popup',function()
+ it('draws the title and breadcrumb with a return path using the shared font and theme',function()
+   local s=Events.drill(state(),k('source'))
+   local cmds=B.chrome(s,1220,900)
+   assert.are.equal('title',cmds[1].kind); assert.are.equal('source',cmds[1].text)
+   assert.are.equal('back',cmds[2].kind); assert.are.equal(S.back..' · source',cmds[2].text)
+   assert.are.equal(T.pack(T.colors.gold),cmds[2].color)
+   local painted={}; local font={}
+   local list={AddText_FontPtr=function(_,f,size,p,color,text) painted[#painted+1]={font=f,text=text,color=color} end}
+   B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},{body=font}).chrome(s,1220,900)
+   assert.are.equal(font,painted[1].font); assert.are.equal(cmds[2].text,painted[2].text)
+ end)
+ it('shows the active named proposal as a banner and hides title while waiting',function()
+   local s=Events.show_proposal(state(),k('split'))
+   local cmds=B.chrome(s,1220,900)
+   assert.are.equal('proposal-banner',cmds[1].kind)
+   assert.are.equal(S.proposal_banner..' · Split',cmds[1].text)
+   assert.are.equal(T.pack(T.colors.gold),cmds[1].color)
+   assert.are.equal(0,#B.chrome(D.waiting_state('a',0),1220,900))
+ end)
+ it('shows leaf dependency labels with violations first, in violation ink, clamped to the canvas',function()
+   local s=state(); s.pointer={1210,890}; s.hover=E.parse('{:kind :edge :deps [{:from :z :to :b} {:from :a :to :b :violating true} {:from :c :to :d :violating true}]}')
+   local cmds=B.chrome(s,1220,900); local popup
+   for _,c in ipairs(cmds) do if c.kind=='dependency-popup' then popup=c end end
+   assert.is_not_nil(popup); assert.are.same({'a -> b','c -> d','z -> b'},{popup.rows[1].text,popup.rows[2].text,popup.rows[3].text})
+   assert.are.equal(T.pack(T.colors.violation),popup.rows[1].color); assert.are.equal(T.pack(T.colors.ink),popup.rows[3].color)
+   assert.is_true(popup.x>=8 and popup.x+popup.w<=1212); assert.is_true(popup.y>=8 and popup.y+popup.h<=900)
+   local painted={}; local list={AddRectFilled=function() end,AddRect=function() end,PushClipRect=function() end,PopClipRect=function() end,
+     AddText_FontPtr=function(_,f,size,p,color,text) painted[text]=color end}
+   B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end},{body={}}).chrome(s,1220,900)
+   assert.are.equal(T.pack(T.colors.violation),painted['a -> b'])
+   s.hover=E.parse('{:kind :dep :deps [{:from :a :to :b}]}'); assert.are.equal('dependency-popup',B.chrome(s,1220,900)[2].kind)
+ end)
+end)

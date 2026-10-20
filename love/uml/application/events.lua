@@ -11,13 +11,17 @@ local function copy(s) local n={}; for k,v in pairs(s) do n[k]=v end; return n e
 local function rebuild(s)
   if s.document and G.get(s.document,'hierarchical') then
     s.scene=D.compile_view(s.document,s.snapshots,s.focus,s.extra)
-    s.cam_x=0; s.cam_y=0; s.selected=nil
+    -- Recompiling geometry is not navigation: retain camera/zoom and valid
+    -- selection/detail targets (ADR 0002).
+    D.drop_missing_detail(s)
   end
   return s
 end
 -- Explicit navigation (drill, back, proposal switch) asks the adapter to fit the
 -- new view once it knows the canvas size; generic rebuilds never do.
-local function navigate(s) s=rebuild(s); s.fit_pending=true; return s end
+local function navigate(s)
+  s=rebuild(s); s.cam_x=0; s.cam_y=0; s.selected=nil; s.hover=nil; s.pointer=nil; s.drag=nil; s.fit_pending=true; return s
+end
 function M.show_proposal(s,id)
   if id then local found=false; for _,p in ipairs(H.named_proposals(s.document)) do if E.equal(id,G.get(p,'id')) then found=true end end; if not found then return s end end
   local n=copy(s); n.focus=E.vector(); n.extra=G.copy(s.extra)

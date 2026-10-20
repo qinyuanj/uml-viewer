@@ -25,6 +25,7 @@ M.regen='重新生成 IR'
 M.close_source='关闭源码'
 M.close_detail='关闭详情'
 M.back='< 返回'
+M.proposal_banner='提案（未在源码中实例化）'
 M.help=[[单击类或命名空间查看卡片。
 双击命名空间或类进入下一层。
 Esc（或 ←）返回上一层。

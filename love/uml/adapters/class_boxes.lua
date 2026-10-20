@@ -92,7 +92,7 @@ function M.commands(scene,view)
     local first=#commands+1
     commands[#commands+1]={kind='class',rect=r,shape=G.name(G.get(c,'shape')),red=band=='red',band=band,id=id,
       missing=unmeasured,grade=g,fill=T.fill(g),stroke=T.stroke(g),
-      selected=sel_id~=nil and E.equal(id,sel_id),hovered=hover_id~=nil and E.equal(id,hover_id),
+      selected=h.focus~=nil and E.equal(id,h.focus),hovered=hover_id~=nil and E.equal(id,hover_id),
       related=h.related(id) or nil}
     quality(commands,c,'class')
     local stereo=G.name(G.get(c,'stereotype')); local marker=stereo=='abstract' or stereo=='interface'
@@ -103,7 +103,26 @@ function M.commands(scene,view)
     for _,s in ipairs(slots) do if s.role=='name' and s.top then
       commands[#commands+1]={kind='band',rect=r,x=G.get(r,'x')+6,w=G.get(r,'w')-12,y=math.min(G.bottom(r)-2,s.top+s.h+1),color=T.stroke(g)}; break
     end end
-    for _,line in ipairs(slots) do if line.kind=='rule' then line.color=T.stroke(g) end; commands[#commands+1]=line end
+    local function marked(kind,id)
+      for _,hit in ipairs{view.hover or {},view.selected or {}} do
+        if G.name(G.get(hit,'kind'))==kind and E.equal(id,G.get(hit,'id')) then return true end
+      end
+      return false
+    end
+    for i,line in ipairs(slots) do
+      local source=(G.get(c,'lines') or {})[i]
+      if line.role=='child' and marked('child',G.get(source,'id')) then
+        commands[#commands+1]={kind='child-wash',rect=G.rect(G.get(r,'x')+5,(line.top or line.y)-1,G.get(r,'w')-10,line.h or 18),color=T.pack(T.colors.child_wash,T.alpha.child_wash)}
+      end
+      if line.kind=='rule' then line.color=T.stroke(g) end; commands[#commands+1]=line
+    end
+    for _,dir in ipairs{'in','out'} do for _,p in ipairs(G.get(c,dir..'-ports') or {}) do
+      local pr=G.get(p,'rect'); local px=G.cx(pr); local bx=math.max(G.get(r,'x')+6,math.min(G.right(r)-6,px))
+      local behind=dir=='in' and {px,G.bottom(pr)} or {bx,G.bottom(r)}
+      local tip=dir=='in' and {bx,G.get(r,'y')} or {px,G.get(pr,'y')}
+      commands[#commands+1]={kind='port-link',behind=behind,tip=tip}
+      commands[#commands+1]={kind='port',id=G.get(p,'id'),rect=pr,text=G.get(p,'name') or G.name(G.get(p,'id')),marked=marked('port',G.get(p,'id'))}
+    end end
     if unmeasured then commands[#commands+1]={kind='no-data',rect=r,text=S.no_data,right=G.right(r)-pad,y=G.bottom(r)-M.no_data_strip-2,size=F.sizes.level,color=T.band_color('red')} end
     -- Every command of this class carries its owner and, under a selection
     -- that does not reach it, the dim flag.
@@ -127,6 +146,38 @@ function M.fit(font,size,text,max_w,bold,italic)
   local natural=measure(font,size,text)+extra
   if max_w and natural>max_w and natural>0 then return size*math.max(0,max_w)/natural end
   return size
+end
+-- Screen-space canvas chrome: the original diagram banner, return scope and
+-- leaf-dependency popup. Uses the usable canvas dimensions, never the sidebar.
+function M.chrome(state,width,height)
+  local out={}; if state.waiting then return out end
+  local diagram=G.get(state.scene,'diagram'); local title=G.get(diagram,'title')
+  if G.get(diagram,'proposal') then
+    local name
+    for _,p in ipairs(require('uml.domain.hierarchy').named_proposals(state.document)) do
+      if E.equal(G.get(p,'id'),G.get(state.extra,'proposal-id')) then name=G.get(p,'name') or G.name(G.get(p,'id')) end
+    end
+    out[#out+1]={kind='proposal-banner',text=S.proposal_banner..(name and ' · '..name or ''),x=12,y=8,color=T.pack(T.colors.gold)}
+  elseif title then out[#out+1]={kind='title',text=title,x=12,y=8,color=T.pack(T.colors.muted)} end
+  if #(state.focus or {})>0 or G.get(state.extra,'open-layer') then
+    local parts={}; for _,p in ipairs(state.focus or {}) do parts[#parts+1]=G.name(p) end
+    local scope=#parts>0 and table.concat(parts,'.') or title or G.name(G.get(state.extra,'open-layer'))
+    out[#out+1]={kind='back',text=S.back..' · '..scope,x=12,y=28,color=T.pack(T.colors.gold)}
+  end
+  local hover=state.hover; local kind=G.name(G.get(hover,'kind')); local deps=G.get(hover,'deps')
+  if (kind=='edge' or kind=='dep') and deps and #deps>0 and state.pointer then
+    local rows={}; local tw=40
+    for _,d in ipairs(deps) do local label=(G.name(G.get(d,'from')) or '')..' -> '..(G.name(G.get(d,'to')) or '')
+      tw=math.max(tw,L.text_w(label)/16*F.sizes.body)
+      rows[#rows+1]={text=label,violating=not not G.get(d,'violating'),color=T.pack(G.get(d,'violating') and T.colors.violation or T.colors.ink)}
+    end
+    table.sort(rows,function(a,b) if a.violating~=b.violating then return a.violating end; return a.text<b.text end)
+    local w,h=math.min(tw+16,math.max(16,width-16)),16+#rows*(F.sizes.body+2)
+    local mx,my=state.pointer[1],state.pointer[2]; local x=math.max(8,math.min(mx,width-w-8)); local y=my+16
+    if y+h>height then y=math.max(8,my-h-8) end
+    out[#out+1]={kind='dependency-popup',x=x,y=y,w=w,h=h,rows=rows}
+  end
+  return out
 end
 function M.new(imgui,fonts)
   fonts=fonts or {}
@@ -189,6 +240,20 @@ function M.new(imgui,fonts)
         if list.AddCircle then list:AddCircle(point(c.x,c.y),c.radius*scale,ink(T.stroke(c.grade)),0,W.dot) end
         local font=fonts.badge or fonts.body
         text(font,F.sizes.badge,nil,c.x-measure(font,F.sizes.badge,c.text)/2,c.y-F.sizes.badge/2,ink(T.colors.white),c.text)
+      elseif c.kind=='child-wash' then
+        local r=c.rect; list:AddRectFilled(point(G.get(r,'x'),G.get(r,'y')),point(G.right(r),G.bottom(r)),packed(c.color),2*scale,0)
+      elseif c.kind=='port' then
+        local r=c.rect; local color=c.marked and T.colors.gold or T.colors.muted
+        list:AddRectFilled(point(G.get(r,'x'),G.get(r,'y')),point(G.right(r),G.bottom(r)),ink(c.marked and T.colors.port_fill_on or T.colors.port_fill),3*scale,0)
+        list:AddRect(point(G.get(r,'x'),G.get(r,'y')),point(G.right(r),G.bottom(r)),ink(color),3*scale,0,c.marked and W.port_on or W.port)
+        text(fonts.body,10,G.get(r,'w')-6,G.cx(r),G.cy(r)-5,ink(c.marked and T.colors.ink or T.colors.muted),c.text,false,false,true)
+      elseif c.kind=='port-link' then
+        local a,b=c.behind,c.tip; local color=ink(T.colors.muted)
+        list:AddLine(point(a[1],a[2]),point(b[1],b[2]),color,W.port_link)
+        local dx,dy=b[1]-a[1],b[2]-a[2]; local len=math.sqrt(dx*dx+dy*dy)
+        if len>0 then dx,dy=dx/len,dy/len; local co,si=math.cos(math.pi/9),math.sin(math.pi/9)
+          for _,sign in ipairs{-1,1} do list:AddLine(point(b[1],b[2]),point(b[1]-10*(dx*co-sign*dy*si),b[2]-10*(dy*co+sign*dx*si)),color,W.port_link) end
+        end
       elseif c.kind=='band' then list:AddLine(point(c.x,c.y),point(c.x+c.w,c.y),ink(c.color),W.band)
       elseif c.kind=='rule' then list:AddLine(point(c.x+6,c.y),point(c.x+c.w-6,c.y),ink(c.color or T.stroke(nil)),W.rule)
       elseif c.kind=='text' then
@@ -204,6 +269,19 @@ function M.new(imgui,fonts)
       elseif c.kind=='marker' or c.kind=='level' then
         text((c.kind=='marker' and fonts.marker or fonts.level) or fonts.body,c.size or 13,nil,c.x,c.y,packed(c.color or 0xffeeeeee),c.text)
       end
+    end
+  end
+  -- Screen-space overlay, in the same atlas as all other canvas text.
+  api.chrome=function(state,width,height,ui)
+    ui=ui or 1; local list=imgui.GetBackgroundDrawList_Nil()
+    for _,c in ipairs(M.chrome(state,width,height)) do
+      if c.kind=='dependency-popup' then
+        list:AddRectFilled(vec(c.x*ui,c.y*ui),vec((c.x+c.w)*ui,(c.y+c.h)*ui),T.pack(T.colors.popup_bg,T.alpha.popup),4*ui,0)
+        list:AddRect(vec(c.x*ui,c.y*ui),vec((c.x+c.w)*ui,(c.y+c.h)*ui),T.pack(T.colors.line),4*ui,0,ui)
+        list:PushClipRect(vec(c.x*ui,c.y*ui),vec((c.x+c.w)*ui,(c.y+c.h)*ui),true)
+        for i,row in ipairs(c.rows) do list:AddText_FontPtr(fonts.body,F.sizes.body*ui,vec((c.x+8)*ui,(c.y+8+(i-1)*(F.sizes.body+2))*ui),row.color,row.text,nil,0,nil) end
+        list:PopClipRect()
+      else list:AddText_FontPtr(fonts.body,F.sizes.body*ui,vec(c.x*ui,c.y*ui),c.color,c.text,nil,0,nil) end
     end
   end
   -- The back label, drawn on the same draw list as the canvas.

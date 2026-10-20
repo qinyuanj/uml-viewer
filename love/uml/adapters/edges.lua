@@ -50,8 +50,9 @@ function M.draw(imgui,list,scene,ox,oy,scale,selected)
     else local p,b=cmd.tip,cmd.behind; local dx,dy=p[1]-b[1],p[2]-b[2]; local len=math.sqrt(dx*dx+dy*dy); if len==0 then dx,dy,len=1,0,1 end; dx,dy=dx/len,dy/len
       local cos,sin=math.cos(math.pi/9),math.sin(math.pi/9)
       local a={p[1]-16*(dx*cos-dy*sin),p[2]-16*(dy*cos+dx*sin)}; local c={p[1]-16*(dx*cos+dy*sin),p[2]-16*(dy*cos-dx*sin)}
-      if cmd.head=='triangle' then triangle(p,a,c,T.pack(T.colors.canvas_bg),cmd.color,T.widths.edge)
-      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and 0xffe4ecec or T.pack(T.colors.canvas_bg); list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width)
+      local bg=T.pack(T.colors.canvas_bg); if cmd.dimmed then bg=T.fade(bg) end
+      if cmd.head=='triangle' then triangle(p,a,c,bg,cmd.color,cmd.width)
+      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and (cmd.dimmed and T.fade(T.pack(T.colors.ink)) or T.pack(T.colors.ink)) or bg; list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width)
       else line(p,a,cmd.color,cmd.width); line(p,c,cmd.color,cmd.width) end
     end
   end

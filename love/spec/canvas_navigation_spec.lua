@@ -68,7 +68,9 @@ describe('canvas navigation',function()
     assert.is_true(Events.back(settled).fit_pending)
     assert.is_true(Events.show_proposal(settled,nil).fit_pending)
     settled.zoom=2; settled.cam_x=11
-    local cleared=Events.cycle_declutter(settled); assert.is_nil(cleared.fit_pending); near(2,cleared.zoom)
+    settled.selected=G.map{kind=k('class'),id=k('source.lua')}
+    local cleared=Events.cycle_declutter(settled); assert.is_nil(cleared.fit_pending); near(2,cleared.zoom); near(11,cleared.cam_x)
+    assert.is_true(E.equal(settled.selected,cleared.selected),'generic rebuild retains valid selection')
     assert.are.equal(settled,Events.settle(settled,dims),'nothing pending leaves the view alone')
   end)
   it('fits a newly displayed diagram but retains the view on same-diagram display and reloads (ADR 0002)',function()
@@ -85,6 +87,12 @@ describe('canvas navigation',function()
     local waiting=D.waiting_state('a.edn',0); waiting.project_root='.'
     assert.is_true(display(waiting,'a.edn',1).fit_pending,'first display after a fresh launch is a new load')
     local reloaded=D.reload(same,text,'m2',nil,'stamp'); assert.is_nil(reloaded.fit_pending); near(2.5,reloaded.zoom)
+    local Session=require('uml.application.session')
+    local saved=Session.snapshot(current); local fresh=boundary.load('a.edn'); fresh.fit_pending=true
+    local restored=Session.restore(fresh,saved)
+    assert.is_nil(restored.fit_pending,'restart must not refit a saved view')
+    near(2.5,restored.zoom); near(33,restored.cam_x); near(44,restored.cam_y)
+    assert.is_true(E.equal(current.selected,restored.selected))
   end)
   local function class_point(s,id)
     local r=g(Hit.class_by_id(s.scene,k(id)),'rect'); local z=Events.zoom_of(s)

@@ -28,7 +28,7 @@ local function with_control(f)
   local ok,err=pcall(f); love.keyboard.isDown=old; assert(ok,err)
 end
 local before,anchor
-return function(frame,s)
+return function(frame,s,services)
   if frame==2 then
     check(#s.focus==0 and not s.fit_pending,'initial root is fitted'); dump('root',s)
     local x,y=on_class(s,'source'); love.mousemoved(x,y); love.mousepressed(x,y,1,false,2)
@@ -61,6 +61,16 @@ return function(frame,s)
     before={cam_y=s.cam_y}; love.mousemoved(300,300); love.wheelmoved(0,-2)
   elseif frame==9 then
     check(s.cam_y>=before.cam_y,'wheel pans down'); dump('wheel',s)
-    local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/navigation-pass.txt','wb')); f:write('PASS native callbacks: fit, drill, cursor zoom, drag pan, fit key, back, transformed hit, wheel\n'); f:close()
+    before={cam_x=s.cam_x,cam_y=s.cam_y,zoom=s.zoom,selected=E.encode(s.selected)}
+    -- Shim only the binding's capture query in this owned process. The actual
+    -- callback still forwards input to imgui, but must leave the canvas alone.
+    local binding=services.imgui.love; local mouse,key=binding.GetWantCaptureMouse,binding.GetWantCaptureKeyboard
+    binding.GetWantCaptureMouse=function() return true end; binding.GetWantCaptureKeyboard=function() return true end
+    love.mousepressed(1000,800,1,false,1); love.mousemoved(950,750); love.mousereleased(950,750,1)
+    with_control(function() love.wheelmoved(0,1); love.keypressed('=') end)
+    binding.GetWantCaptureMouse=mouse; binding.GetWantCaptureKeyboard=key
+  elseif frame==10 then
+    check(near(s.cam_x,before.cam_x) and near(s.cam_y,before.cam_y) and near(s.zoom,before.zoom) and E.encode(s.selected)==before.selected,'imgui capture blocks canvas input')
+    local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/navigation-pass.txt','wb')); f:write('PASS native callbacks: fit, drill, cursor zoom, drag pan, fit key, back, transformed hit, wheel, imgui capture\n'); f:close()
   end
 end

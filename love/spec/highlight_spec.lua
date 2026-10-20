@@ -30,7 +30,20 @@ describe('selection and hover highlighting',function()
   it('a selection inside a class (child row or port) focuses its parent class',function()
     local s=scene()
     local boxes=B.commands(s,{selected=G.map{kind=k('port'),id=k('x'),parent=k('a')}})
+    assert.is_true(class_cmd(boxes,'a').selected,'the parent box is selected gold')
     assert.is_true(class_cmd(boxes,'b').related); assert.is_true(class_cmd(boxes,'c').dimmed)
+  end)
+  it('carries input hover and selection all the way to box and edge draw commands',function()
+    local Events=require('uml.application.events'); local Hit=require('uml.engine.hit')
+    local s={scene=scene(),focus=E.vector(),extra=E.map(),cam_x=0,cam_y=0,zoom=1}
+    local r=G.get(Hit.class_by_id(s.scene,k('a')),'rect'); local x,y=G.get(r,'x')+5,G.get(r,'y')+5
+    s=Events.on_move(s,x,y)
+    assert.is_true(class_cmd(B.commands(s.scene,s),'a').hovered)
+    assert.is_true(edge_cmds(A.commands(s.scene,s),'a','b')[1].warm)
+    s=Events.on_left_press(s,x,y); s=Events.on_release(s,x,y)
+    assert.is_true(class_cmd(B.commands(s.scene,s),'a').selected)
+    assert.is_true(class_cmd(B.commands(s.scene,s),'d').dimmed)
+    assert.is_true(edge_cmds(A.commands(s.scene,s),'a','b')[1].hot)
   end)
   it('dims the unrelated edges of a selection',function()
     local s=scene()
@@ -51,6 +64,32 @@ describe('selection and hover highlighting',function()
   it('a hovered edge is drawn hot like the original',function()
     local s=scene()
     for _,c in ipairs(edge_cmds(A.commands(s,{hover=E.parse('{:kind :edge :from :a :to :b}')}),'a','b')) do assert.are.equal(T.widths.edge_hot,c.width) end
+  end)
+  it('washes a selected or hovered child row and draws labeled incoming and outgoing ports with links',function()
+    local s=C.compile_diagram(E.parse('{:packages [{:id :p :label "P" :classes [{:id :a :name "A" :contents [{:id :kid :name "Kid"}] :in-deps [{:id :input :name "Input"}] :out-deps [{:id :output :name "Output"}]}]}] :edges []}'))
+    local cmds=B.commands(s,{hover=E.parse('{:kind :child :id :kid :parent :a}')})
+    local washes,ports,links={},{},{}
+    for _,c in ipairs(cmds) do if c.kind=='child-wash' then washes[#washes+1]=c elseif c.kind=='port' then ports[#ports+1]=c elseif c.kind=='port-link' then links[#links+1]=c end end
+    assert.are.equal(1,#washes); assert.are.equal(T.pack(T.colors.child_wash,T.alpha.child_wash),washes[1].color)
+    assert.are.equal(2,#ports); assert.are.same({'Input','Output'},{ports[1].text,ports[2].text}); assert.are.equal(2,#links)
+    local box=G.get(G.get(s,'classes')[1],'rect')
+    assert.are.equal(G.get(box,'y'),links[1].tip[2]); assert.are.equal(G.bottom(box),links[2].behind[2])
+    local hot=B.commands(s,{hover=E.parse('{:kind :port :id :input :parent :a}')})
+    local inputs={}; for _,c in ipairs(hot) do if c.kind=='port' then inputs[#inputs+1]=c end end
+    assert.is_true(inputs[1].marked); assert.is_falsy(inputs[2].marked)
+    local painted={}
+    local list={AddLine=function() end,AddRectFilled=function() end,AddRect=function() end,AddCircleFilled=function() end,
+      AddText_FontPtr=function(_,font,size,point,color,text) painted[text]=true end}
+    B.new({ImVec2_Float=function(x,y) return {x=x,y=y} end,GetBackgroundDrawList_Nil=function() return list end}).draw(s,1000,1000,{zoom=.5,hover=E.parse('{:kind :port :id :input :parent :a}')})
+    assert.is_true(painted.Input and painted.Output,'ports have visible labels in the actual renderer')
+  end)
+  it('keeps highlighted triangle arrowheads at their edge width and dims hollow fills with their edge',function()
+    local s=C.compile_diagram(E.parse('{:packages [{:id :p :classes [{:id :a} {:id :b} {:id :c}]}] :edges [{:from :b :to :c :kind :inheritance :violating true}]}'))
+    local strokes,fills={},{}
+    local list={AddLine=function() end,AddTriangle=function(_,a,b,c,color,w) strokes[#strokes+1]=w end,AddTriangleFilled=function(_,a,b,c,color) fills[#fills+1]=color end}
+    local imgui={ImVec2_Float=function(x,y) return {x=x,y=y} end}
+    A.draw(imgui,list,s,0,0,.25,{selected=sel('b')}); assert.are.equal(T.widths.edge_violating_hot,strokes[1])
+    fills={}; A.draw(imgui,list,s,0,0,4,{selected=sel('a')}); assert.are.equal(T.fade(T.pack(T.colors.canvas_bg)),fills[1])
   end)
   it('draws dimmed elements with the theme dim alpha and fixed screen-px strokes at any zoom',function()
     local s=scene(); local strokes={}

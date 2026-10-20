@@ -95,6 +95,7 @@ function M.restore_session(state,snap)
   E.assoc(extra,E.keyword('open-layer'),layer or E.nil_value)
   s.focus=focus; s.extra=extra; s.scene=M.compile_view(s.document,s.snapshots,focus,extra)
   s.cam_x=snap.cam_x or 0; s.cam_y=snap.cam_y or 0; s.zoom=snap.zoom or 1
+  s.fit_pending=nil; s.drag=nil; s.hover=nil; s.pointer=nil
   s.selected=snap.selected; s.detail_id=snap.detail_id; s.discussion_context=snap.discussion_context
   return M.drop_missing_detail(s)
 end
