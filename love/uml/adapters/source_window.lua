@@ -22,7 +22,7 @@ local function window(imgui,options,window_id)
   local function ui() local u=options.ui; if type(u)=='function' then u=u() end; return u or 1 end
   local service=options.source or Source
   local files={root=options.root,read=options.read or read,is_file=options.is_file or is_file}
-  local current,pending,viewport,language,anchor,caret
+  local current,pending,viewport,language,anchor,caret,selecting
   local function c4(c) return imgui.ImVec4_Float(c[1]/255,c[2]/255,c[3]/255,1) end
   local api={}
   function api.open(ident)
@@ -124,11 +124,15 @@ local function window(imgui,options,window_id)
           end
         end
       end
-      if imgui.IsWindowHovered(imgui.ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) and imgui.IsMouseClicked(0,false) then anchor=position(); caret=anchor end
-      if anchor and imgui.IsMouseDown(0) then caret=position() or caret end
+      if imgui.IsMouseClicked(0,false) then
+        selecting=imgui.IsWindowHovered(imgui.ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)
+        if selecting then anchor=position(); caret=anchor end
+      end
+      if selecting and anchor and imgui.IsMouseDown(0) then caret=position() or caret end
+      if not imgui.IsMouseDown(0) then selecting=false end
       viewport.selection=View.selected(current.rows,anchor,caret)
       viewport.lines=line_origins
-      if #viewport.selection>0 and love and love.keyboard and love.keyboard.isDown('lctrl','rctrl') and imgui.IsKeyPressed(imgui.ImGuiKey_C,false) then imgui.SetClipboardText(viewport.selection) end
+      if #viewport.selection>0 and imgui.IsWindowFocused(0) and not imgui.IsAnyItemActive() and imgui.GetIO().KeyCtrl and imgui.IsKeyPressed(imgui.ImGuiKey_C,false) then imgui.SetClipboardText(viewport.selection) end
       if pending and not current.line then imgui.SetScrollY(0) end
       if font then imgui.PopFont() end
       imgui.EndChild()

@@ -42,7 +42,7 @@ function M.reload(state,text,mtime,snapshots,metrics_stamp)
     local doc=require('uml.domain.ir').read_document(text)
     local s={}; for key,value in pairs(state) do s[key]=value end
     s.document=doc; s.mtime=mtime; s.metrics_stamp=metrics_stamp; s.snapshots=snapshots
-    s.scene=M.compile_view(doc,snapshots,s.focus,s.extra); s.revision=state.revision+1; return s
+    s=M.restore_session(s,state); s.revision=state.revision+1; return s
   end)
   if ok then return next_state,true end
   return state,false,tostring(next_state)

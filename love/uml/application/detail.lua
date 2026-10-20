@@ -26,21 +26,51 @@ function M.for_state(state,id)
   local doc=state.document
   if not doc then return M.model(state.scene,id) end
   if state.snapshots then doc=require('uml.application.overlay').apply(doc,state.snapshots) end
-  local classes,edges=E.vector(),g(doc,'edges') or E.vector()
-  local seen={}
+  local classes,edges=E.vector(),E.vector()
+  local seen,seen_edges={},{}
+  local function add_edges(scene)
+    for _,edge in ipairs(g(scene,'edges') or {}) do
+      local key=E.encode(E.vector{g(edge,'from'),g(edge,'to'),g(edge,'kind') or E.nil_value,g(edge,'label') or E.nil_value})
+      if not seen_edges[key] then seen_edges[key]=true; edges[#edges+1]=edge end
+    end
+  end
+  add_edges(doc)
   local function add(c)
     local cid=g(c,'id'); local key=E.encode(cid)
     if not seen[key] then seen[key]=true; classes[#classes+1]=c end
     for _,child in ipairs(g(c,'contents') or {}) do add(child) end
+  end
+  local function add_view(view)
+    add_edges(view)
+    for _,p in ipairs(g(view,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+    for _,c in ipairs(g(view,'classes') or {}) do add(c) end
+    for _,c in ipairs(g(view,'foreign') or {}) do add(c) end
   end
   -- Authored leaf data wins over the abbreviated contents rows of collapsed
   -- namespace boxes. Then add root/current boxes for synthetic groups and ports.
   for _,c in ipairs(g(doc,'classes') or {}) do add(c) end
   for _,p in ipairs(g(doc,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
   if g(doc,'hierarchical') then
-    local root=require('uml.domain.hierarchy').view_at(doc,E.vector())
-    for _,p in ipairs(g(root,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+    local hierarchy=require('uml.domain.hierarchy')
+    add_view(hierarchy.view_at(doc,E.vector()))
+    -- A reachable port can name an intermediate namespace absent from the
+    -- root/current boxes. Resolve its own parent view only when requested.
+    local parent=E.vector(); for part in G.name(id):gmatch('[^.]+') do parent[#parent+1]=E.keyword(part) end
+    table.remove(parent)
+    if #parent>0 then
+      local target_view=hierarchy.view_at(doc,parent)
+      add_view(target_view)
+      for _,p in ipairs(g(target_view,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do
+        if E.equal(g(c,'id'),id) and g(c,'drill?') then
+          for _,dir in ipairs{'in-deps','out-deps'} do for _,dep in ipairs(g(c,dir) or {}) do
+            add(dep)
+            add_edges({edges={G.map{from=dir=='out-deps' and id or g(dep,'id'),to=dir=='out-deps' and g(dep,'id') or id,kind=E.keyword('dependency')}}})
+          end end
+        end
+      end end
+    end
   end
+  add_edges(state.scene)
   for _,c in ipairs(g(state.scene,'classes') or {}) do add(c) end
   return M.model(G.map{classes=classes,edges=edges,packages=g(state.scene,'packages') or E.vector(),diagram=g(state.scene,'diagram')},id)
 end

@@ -207,8 +207,9 @@ function M.on_leave(s)
   if s.hover==nil and s.pointer==nil then return s end
   local n=copy(s); n.hover=nil; n.pointer=nil; return n
 end
+local function on_back_hotspot(s,x,y) return (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 end
 function M.on_press(s,x,y)
-  if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end
+  if on_back_hotspot(s,x,y) then return M.back(s) end
   local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
   local kind=G.name(G.get(hit,'kind'))
   if kind=='child' or kind=='port' then return M.open_detail(s,hit) end
@@ -220,7 +221,6 @@ end
 -- releasing without moving applies the click.
 M.drag_threshold=3
 local grabs={class=true,child=true,port=true,dep=true}
-local function on_back_hotspot(s,x,y) return (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 end
 function M.on_left_press(s,x,y)
   if on_back_hotspot(s,x,y) then return M.back(s) end
   local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
@@ -242,7 +242,7 @@ function M.on_release(s,x,y)
   return M.on_press(n,d.x,d.y)
 end
 function M.on_double_press(s,x,y)
-  if (G.get(s.extra,'open-layer') or #(s.focus or {})>0) and y<44 and x<320 then return M.back(s) end
+  if on_back_hotspot(s,x,y) then return M.back(s) end
   local wx,wy=M.world_xy(s,x,y); local hit=require('uml.engine.hit').at(s.scene,wx,wy)
   local layer=M.layer_id(hit); if layer then return M.drill(s,layer) end
   return M.open_detail(s,hit)

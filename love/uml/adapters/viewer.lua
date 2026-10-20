@@ -55,6 +55,7 @@ function M.run(args,services)
   local metrics=Metrics.new()
   local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0
   local detail_window
+  local frame_active=false
   local polling=Polling.new(function() return love.timer.getTime() end)
   local force_refresh,show_performance,frame_ms=false,false,0
   local companion,keeping_companion,lifecycle_options=nil,false,nil
@@ -210,10 +211,11 @@ function M.run(args,services)
       local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts,display=display,chrome=chrome})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
     end
-    imgui.love.Update(dt); imgui.NewFrame()
+    imgui.love.Update(dt); imgui.NewFrame(); frame_active=true
     if test_seconds and elapsed>=test_seconds then love.event.quit(0) end
   end
   function love.draw()
+    if not frame_active then return end
     local bg=T.colors.canvas_bg
     love.graphics.clear(bg[1]/255,bg[2]/255,bg[3]/255,1)
     local d=display()
@@ -242,7 +244,7 @@ function M.run(args,services)
     if dragging_edge or Display.on_inspector_edge(d,love.mouse.getX()) then
       imgui.SetMouseCursor(imgui.ImGuiMouseCursor_ResizeEW)
     end
-    imgui.Render(); imgui.love.RenderDrawLists()
+    imgui.Render(); frame_active=false; imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end
   function love.quit()
