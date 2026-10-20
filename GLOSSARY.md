@@ -26,9 +26,9 @@ _Avoid_: reindexing, in-place upgrade
 _Avoid_: 真实图, real diagram（界面文案中）
 
 **提案**:
-policy 中一个具名分组，不存在于源码里；与源码图并列。policy 与邮件中写作 `:proposals`。
+policy 中一个具名分组，不存在于源码里；与源码图并列。
 _Avoid_: 方案, proposal（界面文案中）
 
 **隐藏**:
-把某个元素从当前提案或真实图中排除的操作。policy 与邮件中写作 `:omit`。
+把某个元素从当前提案或真实图中排除的操作。
 _Avoid_: 省略, omit（界面文案中）
