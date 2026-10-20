@@ -30,13 +30,14 @@ M.close_source='关闭源码'
 M.close_detail='关闭详情'
 M.back='< 返回'
 M.proposal_banner='提案（未在源码中实例化）'
+M.performance='性能：%d FPS · 帧耗时 %.2f ms'
 M.help=[[单击类或命名空间查看卡片。
 双击命名空间或类进入下一层。
 Esc（或 ←）返回上一层。
 滚轮平移；Shift+滚轮横向平移。
 Ctrl+滚轮或 Ctrl+/− 以光标为中心缩放。
 空白处左键拖拽平移；Ctrl+0 适配全图。
-R 重新加载。
+R 重新加载；F3 切换性能显示。
 单击上方的源码图或某个提案即可显示。]]
 -- Element menu labels; the mail operations themselves stay English.
 M.menu={['refresh-crap']='刷新 CRAP',['refresh-mutate']='刷新 mutation',['refresh-mutate-all']='全量 mutation',omit='隐藏'}

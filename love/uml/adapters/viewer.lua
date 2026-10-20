@@ -25,6 +25,8 @@ local PolicyFile=require('uml.adapters.policy_file')
 local T=require('uml.domain.theme')
 local Display=require('uml.domain.display')
 local Dpi=require('uml.adapters.dpi')
+local Polling=require('uml.domain.polling')
+local Strings=require('uml.application.strings')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
 local function parse_args(args)
@@ -53,6 +55,8 @@ function M.run(args,services)
   local metrics=Metrics.new()
   local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0
   local detail_window
+  local polling=Polling.new(function() return love.timer.getTime() end)
+  local force_refresh,show_performance,frame_ms=false,false,0
   local companion,keeping_companion,lifecycle_options=nil,false,nil
   local function load_document(p)
     local snapshots,stamp=metrics.snapshot(metrics.root(p))
@@ -148,7 +152,7 @@ function M.run(args,services)
     publish()
   end
   function love.update(dt)
-    elapsed=elapsed+dt; frames=frames+1
+    elapsed=elapsed+dt; frames=frames+1; frame_ms=dt*1000
     -- A per-monitor DPI change preserves the camera and the inspector's view-
     -- unit width. Rebuild only between frames (the previous frame was rendered).
     os_scale=Dpi.os_scale() or os_scale
@@ -177,7 +181,8 @@ function M.run(args,services)
       end
     end
     local ok,err=pcall(function()
-      state=mail.poll(state); path=state.path or path
+      local due=polling.due(force_refresh); force_refresh=false
+      if due then state=mail.poll(state); path=state.path or path end
       if state.quit_for_restart then
         if companion then
           if not companion.restart_stop then
@@ -189,7 +194,7 @@ function M.run(args,services)
         SessionFile.save(state.project_root,Session.snapshot(state,chrome()))
         love.event.quit(0); return
       end
-      if not state.waiting then
+      if due and not state.waiting then
         local stamp=Watch.mtime(path)
         local snapshots,metrics_stamp=metrics.snapshot(metrics.root(path))
         if stamp~=state.mtime or metrics_stamp~=state.metrics_stamp then
@@ -229,6 +234,10 @@ function M.run(args,services)
     if source_window then source_window.draw() end
     list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
     renderer.chrome(state,d.view_w,d.view_h,d.ui)
+    if show_performance then
+      list:AddText_FontPtr(fonts.body,Fonts.sizes.body*d.ui,imgui.ImVec2_Float(12*d.ui,48*d.ui),T.pack(T.colors.muted),
+        string.format(Strings.performance,love.timer.getFPS(),frame_ms),nil,0,nil)
+    end
     list:PopClipRect()
     if dragging_edge or Display.on_inspector_edge(d,love.mouse.getX()) then
       imgui.SetMouseCursor(imgui.ImGuiMouseCursor_ResizeEW)
@@ -253,7 +262,11 @@ function M.run(args,services)
   function love.keypressed(k)
     imgui.love.KeyPressed(k)
     if k=='f' and love.keyboard.isDown('lctrl','rctrl') then inspector.focus_search(); return end
-    if not imgui.love.GetWantCaptureKeyboard() and not inspector.search_active() then state=Events.on_key(state,k,dims()) end
+    if not imgui.love.GetWantCaptureKeyboard() and not inspector.search_active() then
+      if k=='f3' then show_performance=not show_performance end
+      if k=='r' then force_refresh=true end
+      state=Events.on_key(state,k,dims())
+    end
   end
   function love.mousemoved(x,y)
     imgui.love.MouseMoved(x,y)
