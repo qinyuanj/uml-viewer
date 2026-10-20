@@ -16,7 +16,7 @@ local function screenshot(name)
 end
 local proposal_count
 return function(frame,state,ui)
-  if frame==1 then love.window.requestAttention(true); love.mouse.setPosition(20,20) end
+  if frame==1 then ui.imgui.GetIO():AddMousePosEvent(20,20) end
   if not (ui and ui.inspector) then failed=failed or 'viewer did not expose the inspector adapter'; love.event.quit(1); return end
   local ins=ui.detail_window
   local function bounds(key) return ins.bounds()[key] or ui.inspector.bounds()[key] end
@@ -31,6 +31,9 @@ return function(frame,state,ui)
     state.detail_scroll=0
   elseif frame==5 then
     local d=ins.detail(); check(d.rect~=nil,'detail card bounds missing')
+    local horizontal=ins.bounds().horizontal
+    check(horizontal and horizontal.maximum<1,'default 640x700 detail with vertical overflow must fit uncovered column: '..tostring(horizontal and horizontal.maximum)..' width '..tostring(horizontal and horizontal.content_width))
+    screenshot('detail-default.png')
     if d.rect then ui.imgui.GetIO():AddMousePosEvent((d.rect.left+d.rect.right)/2,(d.rect.top+d.rect.bottom)/2) end
   elseif frame==6 then
     check(ins.detail_hovered()==true,'pointer over the detail card was not detected')
@@ -69,7 +72,7 @@ return function(frame,state,ui)
     ui.imgui.SetWindowSize_Str('A###uml-detail',ui.imgui.ImVec2_Float(400,700),ui.imgui.ImGuiCond_Always)
   elseif frame==25 then
     local horizontal=ins.bounds().horizontal
-    check(horizontal and horizontal.maximum>200,'narrow detail must expose horizontal scroll to final metric columns')
+    check(horizontal and horizontal.maximum>150,'narrow detail must expose horizontal scroll to final metric columns')
     screenshot('detail-narrow.png')
   elseif frame==26 then
     ui.imgui.SetWindowSize_Str('A###uml-detail',ui.imgui.ImVec2_Float(900,700),ui.imgui.ImGuiCond_Always)

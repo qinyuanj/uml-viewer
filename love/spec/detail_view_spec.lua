@@ -15,6 +15,10 @@ describe('detail window view model',function()
   it('keeps the original 20px title and 18px rows at fixed right-aligned columns',function()
     local items=view(); local cols=Detail.column_layout()
     assert.are.equal(20,items[1].h); assert.are.equal('title',items[1].font)
+    assert.are.equal(0,items[1].y)
+    for i,it in ipairs(items) do if it.kind=='group-header' then
+      assert.are.equal(6,it.y-items[i-1].y-items[i-1].h)
+    end end
     local go=op(items,'go'); assert.are.equal(18,go.h); assert.are.equal('code',go.font)
     for i,col in ipairs(cols) do local c=cell(go,col.id); if c then assert.are.equal(col.right,c.right); assert.are.equal('right',c.align) end end
     local header=find(items,function(it) return it.kind=='col-header' end)
@@ -22,11 +26,13 @@ describe('detail window view model',function()
     for _,c in ipairs(header.cells) do assert.are.same(T.colors.gold,c.color); assert.is_string(S.column_tips[c.id]) end
   end)
   it('uses available detail width while retaining a readable horizontally scrollable minimum',function()
-    for _,case in ipairs{{300,624},{624,624},{900,900}} do
+    for _,case in ipairs{{300,560},{576,576},{624,624},{900,900}} do
       local items=V.rows(Detail.rows(Detail.model(scene(tiny),E.keyword('a'))),case[1])
       local go=op(items,'go')
       assert.equal(case[2],cell(go,'uncovered').right)
       assert.is_true(go.clip_right>=130)
+      local header=find(items,function(it) return it.kind=='col-header' end)
+      assert.is_true(cell(header,'uncovered').right<=case[2])
     end
   end)
   it('colors cells with the original semantic rules from theme constants',function()

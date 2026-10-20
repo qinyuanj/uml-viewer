@@ -95,6 +95,9 @@ function M.run(args,services)
     os_scale=Dpi.os_scale() or os_scale
     inspector_w=saved.inspector_w
     imgui.love.Init()
+    -- ImGui loads settings at its first NewFrame. Test processes must neither
+    -- load nor save the user's layout; normal viewer persistence stays enabled.
+    if probe_path or test_seconds then imgui.GetIO().IniFilename=nil end
     local d=display()
     if d.ui~=1 then imgui.GetStyle():ScaleAllSizes(d.ui) end
     local font_opts=Fonts.defaults(project_root); font_opts.display=d

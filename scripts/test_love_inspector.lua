@@ -2,8 +2,27 @@
 local G=require('uml.domain.geom')
 local E=require('uml.edn')
 local Events=require('uml.application.events')
+local cancel_label,isolation_failure,button_failure
 return function(frame,state,ui)
   local gui_io=ui.imgui.GetIO()
+  if frame==1 then
+    local isolated=gui_io.IniFilename==nil
+    gui_io.IniFilename=nil -- The red run must also protect the user's settings.
+    isolation_failure=not isolated
+    local button=ui.imgui.Button
+    ui.imgui.Button=function(label,...)
+      if label:find('##cancel-rename',1,true) then cancel_label=label end
+      if label:find('##new-proposal',1,true) or label:find('##declutter',1,true) or label:find('##regen',1,true) then
+        local style=ui.imgui.GetStyle()
+        local bg,ink=style.Colors[ui.imgui.ImGuiCol_Button],style.Colors[ui.imgui.ImGuiCol_Text]
+        if math.abs(bg.x*255-42)>1 or math.abs(bg.y*255-61)>1 or math.abs(bg.z*255-54)>1
+          or math.abs(ink.x*255-232)>1 or math.abs(ink.y*255-196)>1 or math.abs(ink.z*255-72)>1 then
+          button_failure='sidebar buttons must use original green fill and gold ink'
+        end
+      end
+      return button(label,...)
+    end
+  end
   local function point(key)
     local b=assert(ui.inspector.bounds()[key],'missing '..key)
     gui_io:AddMousePosEvent(b.x,b.y)
@@ -23,6 +42,11 @@ return function(frame,state,ui)
   elseif frame==12 then love.event.push('textinput','中文方案输入')
   elseif frame==16 then
     assert(ui.inspector.name()=='中文方案输入','rename field must receive Chinese textinput')
+    if isolation_failure or button_failure or cancel_label~='取消##cancel-rename' then
+      local f=assert(io.open(os.getenv('UML_VIEWER_EVIDENCE')..'/acceptance-fail.txt','wb'))
+      f:write(isolation_failure and 'native tests must disable ImGui ini before the first frame' or button_failure or 'rename must offer 取消, got '..tostring(cancel_label)); f:close()
+      return love.event.quit(1)
+    end
     assert(ui.fonts.source==(os.getenv('UML_FONT_TEST_EXPECT') or 'sarasa'))
     for _,f in ipairs{ui.fonts.body,ui.fonts.title,ui.fonts.badge,ui.fonts.level,ui.fonts.marker,ui.fonts.code} do
       for _,code in ipairs{0x4e2d,0x6587,0x65b9,0x6848,0x8f93,0x5165} do assert(f:FindGlyphNoFallback(code)~=nil,'missing CJK glyph '..code) end

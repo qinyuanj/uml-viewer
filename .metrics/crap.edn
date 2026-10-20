@@ -1,5 +1,5 @@
 {:entries [
-  {:name "M.run", :namespace "love.uml.adapters.viewer", :complexity 96, :coverage 0.0, :crap 9312.0}
+  {:name "M.run", :namespace "love.uml.adapters.viewer", :complexity 98, :coverage 0.0, :crap 9702.0}
   {:name "M.new", :namespace "love.uml.adapters.inspector", :complexity 92, :coverage 0.0, :crap 8556.0}
   {:name "M.new", :namespace "love.uml.adapters.source_window", :complexity 63, :coverage 29.2453, :crap 1468.8759}
   {:name "M.new", :namespace "love.uml.adapters.project_files", :complexity 27, :coverage 0.0, :crap 756.0}
@@ -21,7 +21,7 @@
   {:name "M.scan", :namespace "love.uml.python_language.graph_python", :complexity 72, :coverage 100.0, :crap 72.0}
   {:name "M.ensure_parent", :namespace "love.uml.adapters.atomic_file", :complexity 9, :coverage 9.0909, :crap 69.8565}
   {:name "M.decode", :namespace "love.uml.adapters.json", :complexity 42, :coverage 75.0, :crap 69.5625}
-  {:name "M.new", :namespace "love.uml.adapters.detail_window", :complexity 58, :coverage 91.358, :crap 60.1712}
+  {:name "M.new", :namespace "love.uml.adapters.detail_window", :complexity 58, :coverage 91.25, :crap 60.2536}
   {:name "M.commands", :namespace "love.uml.adapters.class_boxes", :complexity 58, :coverage 100.0, :crap 58.0}
   {:name "M.await_exit", :namespace "love.uml.adapters.process", :complexity 8, :coverage 9.0909, :crap 56.0842}
   {:name "parse_args", :namespace "love.uml.adapters.viewer", :complexity 7, :coverage 0.0, :crap 56.0}

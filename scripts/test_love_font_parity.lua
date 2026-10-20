@@ -40,6 +40,10 @@ return function(frame,state,ui)
       end end
       f:close()
     end
+    local horizontal=ui.detail_window.bounds().horizontal
+    assert(horizontal and horizontal.maximum<1,'default 640x700 detail must show all metric columns without horizontal scroll')
+    local card=assert(ui.detail_window.bounds()['detail-card'])
+    assert(horizontal.content_width<=card.right-card.left,'final uncovered column exceeds visible card width')
     local rows=assert(Detail.rows(assert(Detail.model(state.scene,G.get(state.selected,'id')))),'selected detail missing')
     assert(rows[1].h==20)
     for i=2,#rows do assert(rows[i].h==18 and rows[i].y>=rows[i-1].y+rows[i-1].h) end

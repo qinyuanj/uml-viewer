@@ -50,6 +50,18 @@ function M.new(imgui,callbacks,fonts)
   end
   -- Selected class summary: identity, quality lines, then member lines. The
   -- full six-column metrics card opens in the detail window, not here.
+  local function themed_button(label,size)
+    local function color(key,c)
+      imgui.PushStyleColor_Vec4(key,imgui.ImVec4_Float(c[1]/255,c[2]/255,c[3]/255,1))
+    end
+    color(imgui.ImGuiCol_Button,T.colors.line)
+    color(imgui.ImGuiCol_ButtonHovered,T.colors.button_hover)
+    color(imgui.ImGuiCol_ButtonActive,T.colors.button_active)
+    color(imgui.ImGuiCol_Text,T.colors.gold)
+    local pressed=imgui.Button(label,size)
+    imgui.PopStyleColor(4)
+    return pressed
+  end
   local function class_summary(model)
     local c=model.class
     inked(G.get(c,'name'))
@@ -123,9 +135,9 @@ function M.new(imgui,callbacks,fonts)
         end
         remember(c.id and 'proposal:'..G.name(c.id) or 'real')
       end
-      if imgui.Button(S.new_proposal..'##new-proposal',imgui.ImVec2_Float(-1,0)) and callbacks.new_proposal then callbacks.new_proposal() end
+      if themed_button(S.new_proposal..'##new-proposal',imgui.ImVec2_Float(-1,0)) and callbacks.new_proposal then callbacks.new_proposal() end
       remember('new-proposal')
-      if imgui.Button(S.declutter..'##declutter',imgui.ImVec2_Float(-1,0)) and callbacks.declutter then callbacks.declutter() end
+      if themed_button(S.declutter..'##declutter',imgui.ImVec2_Float(-1,0)) and callbacks.declutter then callbacks.declutter() end
       remember('declutter')
       menu_open=imgui.BeginPopup('uml-proposal-menu')
       if menu_open then
@@ -146,7 +158,7 @@ function M.new(imgui,callbacks,fonts)
           if callbacks.rename then callbacks.rename(rename_id,api.name()) end
           rename_id=nil
         end
-        if imgui.Button(S.close_source..'##cancel-rename') then rename_id=nil end
+        if imgui.Button(S.cancel..'##cancel-rename') then rename_id=nil end
       end
       if callbacks.name_changed then callbacks.name_changed(api.name()) end
       inked(S.p_hint,T.colors.muted)
@@ -165,7 +177,7 @@ function M.new(imgui,callbacks,fonts)
       end
       imgui.EndChild()
       remember('summary-card')
-      if imgui.Button(S.regen..'##regen',imgui.ImVec2_Float(-1,0)) and callbacks.regen then callbacks.regen() end
+      if themed_button(S.regen..'##regen',imgui.ImVec2_Float(-1,0)) and callbacks.regen then callbacks.regen() end
       remember('regen')
     end
     imgui.End()
