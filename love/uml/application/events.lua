@@ -266,6 +266,12 @@ function M.locate(s,id,dims)
   local present=false
   for _,c in ipairs(G.get(s.document,'classes') or {}) do if E.equal(id,G.get(c,'id')) then present=true end end
   for _,p in ipairs(G.get(s.document,'packages') or {}) do for _,c in ipairs(G.get(p,'classes') or {}) do if E.equal(id,G.get(c,'id')) then present=true end end end
+  if not present and G.get(s.document,'hierarchical') then
+    local parent=V(); for part in G.name(id):gmatch('[^.]+') do parent[#parent+1]=K(part) end
+    table.remove(parent)
+    local candidate=require('uml.engine.hit').class_by_id(D.compile_view(s.document,s.snapshots,parent,E.map()),id)
+    present=candidate and G.get(candidate,'drill?')
+  end
   if not present then return s end
   local n=copy(s); n.extra=G.copy(s.extra); n.focus=V()
   local hit=require('uml.engine.hit')
