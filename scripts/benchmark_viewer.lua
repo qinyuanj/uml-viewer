@@ -28,12 +28,17 @@ return function(frame,state,a)
     if step==0 then love.keypressed('f3'); love.keypressed('f3') end
     if step<30 then love.wheelmoved(0,1)
     elseif step<60 then love.wheelmoved(0,-1)
-    elseif step==60 then love.keypressed('p')
-    elseif step==90 then love.mousemoved(100,100) end
+    elseif step==60 or step==75 then
+      local is_down=love.keyboard.isDown
+      love.keyboard.isDown=function(...) if select(1,...)=='lctrl' then return true end; return is_down(...) end
+      love.keypressed(step==60 and '=' or '-')
+      love.keyboard.isDown=is_down
+    elseif step==90 then love.mousemoved(100,100)
+    elseif step==100 then love.keypressed('p') end
   end
   if phase=='done' and not finished then
     finished=true
-    local result={environment=metadata,method='2s warmup, 5s idle, 5s process-local wheel pan/P/hover; vsync unchanged; frame deltas include polling and render/present',phases={}}
+    local result={environment=metadata,method='2s warmup, 5s idle, 5s process-local wheel pan/Ctrl zoom/P/hover; vsync unchanged; frame deltas include polling and render/present',phases={}}
     for name,values in pairs(samples) do
       table.sort(values); local total=0; for _,v in ipairs(values) do total=total+v end
       result.phases[name]={frames=#values,fps=1000/(total/#values),mean_ms=total/#values,
