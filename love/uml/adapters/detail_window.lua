@@ -5,6 +5,7 @@
 local G=require('uml.domain.geom')
 local T=require('uml.domain.theme')
 local Detail=require('uml.application.detail')
+local DetailCache=require('uml.application.detail_cache')
 local View=require('uml.application.detail_view')
 local S=require('uml.application.strings')
 local F=require('uml.adapters.fonts')
@@ -14,6 +15,11 @@ function M.new(imgui,callbacks,fonts)
   fonts=fonts or {}; callbacks=callbacks or {}
   local api,bounds={},{}
   local detail_hovered,detail_view_h,detail_scroll,detail_hover=false,0,0,nil
+  -- Building the complete card scene costs tens of milliseconds (overlay join
+  -- plus two full hierarchy compiles), so it is computed once per document and
+  -- target rather than on every frame the card is visible.
+  local model_for=DetailCache.new()
+  local function cached(state) return model_for(state,state.detail_id) end
   function api.bounds() return bounds end
   function api.visible(state) return state~=nil and state.detail_id~=nil end
   function api.detail_hovered() return detail_hovered end
@@ -21,7 +27,7 @@ function M.new(imgui,callbacks,fonts)
   -- Wheel input stays an application transition; the adapter only reports
   -- whether the pointer was over the card drawn last frame.
   function api.wheel(state,delta)
-    if not detail_hovered or not state.detail_id or not Detail.for_state(state,state.detail_id) then return state end
+    if not detail_hovered or not state.detail_id or not cached(state) then return state end
     return require('uml.application.inspector').scroll(state,delta,detail_view_h)
   end
   local function vec(x,y) return imgui.ImVec2_Float(x,y) end
@@ -41,9 +47,8 @@ function M.new(imgui,callbacks,fonts)
   function api.draw(state,display)
     detail_hovered=false
     if not state.detail_id then return end
-    local model=Detail.for_state(state,state.detail_id); if not model then return end
+    local model,rows=cached(state); if not model then return end
     local ui=display and display.ui or 1
-    local rows=Detail.rows(model)
     imgui.SetNextWindowPos(vec(48*ui,80*ui),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowSize(vec(Detail.width*ui,Detail.height*ui),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowBgAlpha(1)

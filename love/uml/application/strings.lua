@@ -12,6 +12,14 @@ M.search_empty='没有匹配的类'
 M.tree_and_proposals='命名空间树 / 提案'
 M.new_proposal='新建提案'
 M.declutter='精简视图'
+-- The button names the mode it will select next, matching the original labels.
+M.declutter_modes={
+  full='精简：无',
+  arrows='精简：箭头',
+  triangles='移除箭头',
+  elements='精简：元素',
+  classes='精简：类',
+}
 M.rename='重命名'
 M.delete='删除'
 M.proposal_name='提案名称'

@@ -189,7 +189,10 @@ function M.run(args,services)
           if not companion.restart_stop then
             Worker.command(companion,'stop',{keep=true}); companion.restart_stop=true
           end
-          if companion.phase~='stopped' or not companion.exited then return end
+          -- A helper that already failed needs no further stop; waiting for a
+          -- 'stopped' phase that can never arrive strands :quit-for-restart.
+          local settled=companion.phase=='stopped' or companion.phase=='failed'
+          if not settled or not companion.exited then return end
           keeping_companion=true
         end
         SessionFile.save(state.project_root,Session.snapshot(state,chrome()))

@@ -116,4 +116,48 @@ describe('detail window adapter',function()
     Adapter.new(imgui,{}).draw(n); assert.is_nil(calls.begin)
     Adapter.new(imgui,{close=function() error('must not close') end}).draw(s); assert.is_string(calls.begin)
   end)
+  it('builds the complete card scene once per document and target, not per frame',function()
+    local Detail=require('uml.application.detail')
+    local built=0; local original=Detail.for_state
+    Detail.for_state=function(...) built=built+1; return original(...) end
+    local ok,err=pcall(function()
+      local imgui=fake(false)
+      local adapter=Adapter.new(imgui,{})
+      for _=1,3 do adapter.draw(s) end
+      assert.are.equal(1,built)
+      -- A different target rebuilds once; redrawing the same target does not.
+      local other={}; for k,v in pairs(s) do other[k]=v end; other.detail_id=E.keyword('d0-b')
+      adapter.draw(other); adapter.draw(other)
+      assert.are.equal(2,built)
+    end)
+    Detail.for_state=original
+    if not ok then error(err,0) end
+  end)
+end)
+describe('selected card cache',function()
+  local Detail=require('uml.application.detail')
+  local Cache=require('uml.application.detail_cache')
+  local Document=require('uml.application.document')
+  it('serves one model per document, revision and target to every consumer',function()
+    local doc=IR.read_document(tiny); local state=Document.new(doc)
+    local built=0; local original=Detail.for_state
+    Detail.for_state=function(...) built=built+1; return original(...) end
+    local ok,err=pcall(function()
+      -- One cache instance backs both the sidebar summary and the detail card,
+      -- so the same class on the same frame is built once for each consumer set.
+      local shared=Cache.new()
+      local id=E.keyword('d0-a')
+      assert.is_not_nil((shared(state,id))); assert.is_not_nil((shared(state,id)))
+      assert.are.equal(1,built)
+      local model,rows=shared(state,id)
+      assert.is_true(E.equal(id,require('uml.domain.geom').get(model.class,'id')))
+      assert.is_true(#rows>0)
+      -- A revision bump (reload, metrics change) must rebuild.
+      local reloaded={}; for k,v in pairs(state) do reloaded[k]=v end; reloaded.revision=state.revision+1
+      shared(reloaded,id); assert.are.equal(2,built)
+      assert.is_nil(shared(state,nil))
+    end)
+    Detail.for_state=original
+    if not ok then error(err,0) end
+  end)
 end)

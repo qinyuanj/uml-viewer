@@ -45,6 +45,12 @@ function M.commands(state)
   for _,p in ipairs(H.named_proposals(state.document)) do local id=G.get(p,'id'); out[#out+1]={kind='proposal',id=id,label=G.get(p,'name') or G.name(id),active=E.equal(active,id)} end
   return out
 end
+-- The button names the current declutter mode, as the original does, so the
+-- user can read the active state without opening anything.
+function M.declutter_label(state)
+  local mode=G.name(G.get(state.extra,'declutter') or E.keyword('full'))
+  return S.declutter_modes[mode] or S.declutter
+end
 -- Screen-space hit test for the inspector list: proposal rows first, then the
 -- real-diagram link, New Proposal, and Declutter. Nil means no inspector hit.
 function M.hit(state,x,y,window_w)

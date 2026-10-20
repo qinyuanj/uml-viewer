@@ -330,6 +330,11 @@ describe('Herdr recovery relaunch',function()
     assert.is_truthy(script:find('[?1049l',1,true))
     assert.is_truthy(script:find('[?2004l',1,true))
     assert.is_truthy(script:find('[<u',1,true))
+    -- Mouse tracking left on by a killed TUI feeds SGR reports to the
+    -- replacement agent as keystrokes; every enabled mode must be reset.
+    for _,mode in ipairs{'[?1000l','[?1002l','[?1003l','[?1006l'} do
+      assert.is_truthy(script:find(mode,1,true))
+    end
     local text=state.run_text
     assert.is_true(text:sub(1,2)=='& ')
     assert.is_truthy(text:find("'companion-runner'",1,true))

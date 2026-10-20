@@ -5,7 +5,7 @@ local ffi=require('ffi')
 local E=require('uml.edn')
 local G=require('uml.domain.geom')
 local I=require('uml.application.inspector')
-local Detail=require('uml.application.detail')
+local DetailCache=require('uml.application.detail_cache')
 local S=require('uml.application.strings')
 local T=require('uml.domain.theme')
 local C=require('uml.domain.config')
@@ -21,6 +21,9 @@ function M.new(imgui,callbacks,fonts)
   local api={}
   local bounds={}
   local menu_open=false
+  -- The summary card shows the selected class; rebuilding its model costs two
+  -- hierarchy compiles, so it is memoized per document, revision and target.
+  local model_for=DetailCache.new()
   function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
@@ -134,7 +137,10 @@ function M.new(imgui,callbacks,fonts)
       if fonts.title then imgui.PopFont() end
       if search_focus then imgui.SetKeyboardFocusHere(); search_focus=false end
       imgui.SetNextItemWidth(-1)
-      local enter=imgui.InputText(S.search..'##class-search',search_buffer,4096,imgui.ImGuiInputTextFlags_EnterReturnsTrue)
+      -- The field fills the sidebar, so the search text is a hint drawn inside
+      -- an empty box. A visible label would be clipped at the right edge.
+      local enter=imgui.InputTextWithHint('##class-search',S.search,search_buffer,4096,
+        imgui.ImGuiInputTextFlags_EnterReturnsTrue)
       search_active=imgui.IsItemActive(); remember('search')
       local results=I.search(state,api.search_query())
       if search_document~=state.document then search_id=nil; search_document=state.document end
@@ -169,7 +175,7 @@ function M.new(imgui,callbacks,fonts)
       end
       if themed_button(S.new_proposal..'##new-proposal',imgui.ImVec2_Float(-1,0)) and callbacks.new_proposal then callbacks.new_proposal() end
       remember('new-proposal')
-      if themed_button(S.declutter..'##declutter',imgui.ImVec2_Float(-1,0)) and callbacks.declutter then callbacks.declutter() end
+      if themed_button(I.declutter_label(state)..'##declutter',imgui.ImVec2_Float(-1,0)) and callbacks.declutter then callbacks.declutter() end
       remember('declutter')
       menu_open=imgui.BeginPopup('uml-proposal-menu')
       if menu_open then
@@ -198,7 +204,7 @@ function M.new(imgui,callbacks,fonts)
       local id=G.get(state.selected,'id')
       if imgui.BeginChild_Str('summary-card',imgui.ImVec2_Float(0,-40*ui),imgui.ImGuiChildFlags_None,0) then
         local kind=G.name(G.get(state.selected,'kind'))
-        local model=id and Detail.for_state(state,id)
+        local model=id and model_for(state,id)
         if model then class_summary(model)
         elseif kind=='package' and id then package_summary(state,id)
         else

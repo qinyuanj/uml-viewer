@@ -211,8 +211,13 @@ function M.new(identity,options)
       .."';"
       ..'[K.W]::FreeConsole() | Out-Null;'
       ..'if (-not [K.W]::AttachConsole('..shell_pid..')) { exit 3 };'
+      -- Reset everything the outgoing agent may have enabled. Mouse tracking
+      -- modes must be switched off first: a pane that keeps reporting SGR
+      -- mouse events delivers them to the replacement agent as keystrokes,
+      -- which renders as "<0;41;10m<5;41;5M" garbage on its prompt line.
       ..'$e = [char]27;'
-      .."$seq = $e + '[?1049l' + $e + '[?2004l' + $e + '[<u' + $e + '[<u' + $e + '[<u' + $e + '[?25h';"
+      .."$seq = $e + '[?1003l' + $e + '[?1002l' + $e + '[?1006l' + $e + '[?1000l'"
+      .." + $e + '[?1049l' + $e + '[?2004l' + $e + '[<u' + $e + '[<u' + $e + '[<u' + $e + '[?25h';"
       ..'$bytes = [Text.Encoding]::UTF8.GetBytes($seq);'
       ..'$h = [K.W]::CreateFile("CONOUT$", 1073741824, 3, [System.IntPtr]::Zero, 3, 0, [System.IntPtr]::Zero);'
       ..'if ($h -eq [System.IntPtr](-1)) { exit 4 };'

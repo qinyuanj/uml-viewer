@@ -21,6 +21,16 @@ describe('inspector public commands',function()
     selected.selected=require('uml.domain.geom').map{kind=E.keyword('class'),id=E.keyword('a')}
     assert.is_nil(I.empty_explanation(selected))
   end)
+  it('names the active declutter mode on its button, like the original',function()
+    local I=require('uml.application.inspector')
+    local Events=require('uml.application.events')
+    local state=D.new(IR.read_document('{:hierarchical true :prefix "demo" :classes [{:id :a :ns "demo.a"}]}'))
+    local expect={'精简：无','精简：箭头','移除箭头','精简：元素','精简：类','精简：无'}
+    for i=1,#expect do
+      assert.are.equal(expect[i],I.declutter_label(state))
+      state=Events.cycle_declutter(state)
+    end
+  end)
   it('subtracts the fixed 280px sidebar from the canvas extent used by panning and hits',function()
     local I=require('uml.application.inspector'); local Events=require('uml.application.events')
     local d=I.canvas_dims(1500,920)
