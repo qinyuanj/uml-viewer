@@ -24,7 +24,7 @@ function M.run(args)
   end
   local os_name=love.system.getOS()
   assert(os_name=='Linux' or os_name=='OS X','IR requires WSL or macOS Apple Silicon')
-  local paths=require('uml.adapters.posix_path'); root=paths.canonical(root)
+  local paths=require('uml.adapters.platform_path'); root=paths.canonical(root)
   local files=Files.new(root,paths)
   for lang,module in pairs(scanners) do
     local selected=module

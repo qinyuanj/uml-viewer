@@ -17,3 +17,4 @@ reference/
 .uml-viewer/
 uml-viewer-log.txt
 # END UML-VIEWER
+__pycache__/

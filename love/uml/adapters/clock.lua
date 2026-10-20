@@ -6,7 +6,7 @@
 local M={}
 local okffi=pcall(require,'ffi')
 local function system()
-  if okffi then return require('uml.adapters.posix_process') end
+  if okffi then return require('uml.adapters.process') end
 end
 function M.monotonic_ms()
   local process=system()
