@@ -9,5 +9,11 @@ function love.conf(t)
   if headless[args[1]] then
     t.window=false
     for _,module in ipairs{'window','graphics','audio','joystick','keyboard','mouse','physics','sound','touch','video'} do t.modules[module]=false end
+  else
+    -- The viewer window: original 1500x920, resizable, high-DPI. Per-monitor
+    -- DPI awareness must be declared before the window is created.
+    t.window.width=1500; t.window.height=920
+    t.window.resizable=true; t.window.highdpi=true
+    require('uml.adapters.dpi').enable_awareness()
   end
 end

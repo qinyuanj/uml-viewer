@@ -9,8 +9,23 @@ local function get(m,k) local v,found=E.get(m or E.map(),E.keyword(k)); if found
 local function vector_copy(items)
   local out=E.vector(); for i=1,#(items or {}) do out[i]=items[i] end; return out
 end
-function M.snapshot(state)
+-- Window chrome (#84) travels beside the view: window px size and the
+-- DPI-independent inspector width. The viewer adapter owns it, so a same- or
+-- different-diagram :display never resets it.
+local chrome_keys={{'window_w','window-w'},{'window_h','window-h'},{'inspector_w','inspector-width'}}
+function M.chrome(snapshot)
+  local out={}
+  if not snapshot or E.kind(snapshot)~='map' then return out end
+  for _,k in ipairs(chrome_keys) do
+    local v=get(snapshot,k[2]); if type(v)=='number' and v>0 then out[k[1]]=v end
+  end
+  return out
+end
+function M.snapshot(state,chrome)
   local m=E.map()
+  for _,k in ipairs(chrome_keys) do
+    local v=chrome and chrome[k[1]]; if type(v)=='number' then E.assoc(m,E.keyword(k[2]),v) end
+  end
   if state.path then E.assoc(m,E.keyword('path'),state.path) end
   if state.discussion_context then
     E.assoc(m,E.keyword('discussion-context'),G.copy(state.discussion_context))

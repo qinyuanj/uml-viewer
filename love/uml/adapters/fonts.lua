@@ -2,6 +2,7 @@
 -- Lookup: explicit path -> UML_CJK_FONT -> provisioned Sarasa -> system YaHei.
 -- Messages here are stderr/assertions and stay English.
 local S=require('uml.application.strings')
+local Display=require('uml.domain.display')
 local M={}
 M.sizes=require('uml.domain.theme').fonts
 M.sarasa='SarasaMonoSC-Regular.ttf'
@@ -43,8 +44,13 @@ function M.load(imgui,opts)
   builder:AddText(S.glyph_text(),nil)
   local ranges=builder:BuildRanges()
   local fonts={path=choice.path,source=choice.source,ranges=ranges,builder=builder}
+  -- opts.display (domain.display) rasterises at device px; widget text then
+  -- measures size*ui window px through imgui's global font scale.
+  local display=opts and opts.display
+  local raster=function(size) return display and Display.font_raster(display,size) or size end
+  if display then io.FontGlobalScale=Display.font_global_scale(display) end
   for _,role in ipairs{'badge','level','marker','code','body'} do
-    local font=atlas:AddFontFromFileTTF(choice.path,M.sizes[role],nil,ranges.Data)
+    local font=atlas:AddFontFromFileTTF(choice.path,raster(M.sizes[role]),nil,ranges.Data)
     assert(font~=nil,'CJK font could not be loaded: '..choice.path)
     fonts[role]=font
   end
