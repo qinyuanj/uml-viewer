@@ -62,6 +62,46 @@ class PosixEntries(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertIn('hello', (self.root / (language + '.edn')).read_text())
 
+
+    def test_language_detection_from_markers(self):
+        # No :lang and no :sources in the policy: the marker file in the tree
+        # decides the scanner, and the result must carry the detected language.
+        markers = {
+            'lua': ('.', 'src/a.lua', 'local M={}\nfunction M.hello() return true end\nreturn M\n'),
+            'python': ('pyproject.toml', 'src/a.py', 'def hello():\n    return True\n'),
+            'typescript': ('package.json', 'src/a.ts', 'export function hello(): boolean { return true; }\n'),
+            'rust': ('Cargo.toml', 'src/lib.rs', 'pub fn hello() -> bool { true }\n'),
+        }
+        for language, (marker, relative, source) in markers.items():
+            with self.subTest(language=language):
+                for stale in list(self.root.glob('src/*')):
+                    stale.unlink()
+                for other in ('pyproject.toml', 'package.json', 'Cargo.toml'):
+                    (self.root / other).unlink(missing_ok=True)
+                if marker != '.':
+                    (self.root / marker).write_text('')
+                path = self.root / relative
+                path.parent.mkdir(exist_ok=True)
+                path.write_text(source)
+                (self.root / 'detect.edn').write_text('{:src "src" :prefix "app"}')
+                name = language + '-detected.edn'
+                result = self.entry('ir', 'detect.edn', name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                document = (self.root / name).read_text()
+                self.assertRegex(document, r':lang\s+:' + language + r'\b')
+                self.assertRegex(document, r':classes\s+\[\s*\{')
+                self.assertIn('hello', document)
+
+    def test_ambiguous_markers_require_an_explicit_language(self):
+        (self.root / 'src').mkdir(exist_ok=True)
+        (self.root / 'src/a.lua').write_text('return {}\n')
+        (self.root / 'Cargo.toml').write_text('')
+        (self.root / 'ambiguous.edn').write_text('{:src "src" :prefix "app"}')
+        result = self.entry('ir', 'ambiguous.edn', 'ambiguous-result.edn')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('declare explicit :lang or :sources', result.stderr)
+        self.assertFalse((self.root / 'ambiguous-result.edn').exists())
+
     def test_ir_matches_existing_language_goldens(self):
         fixtures = [('rust-fixture', 'fixtures/jvm-goldens/rust.ir.edn')]
         for fixture, golden in fixtures:
