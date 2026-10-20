@@ -23,6 +23,8 @@ local Worker=require('uml.adapters.companion_worker')
 local Mailbox=require('uml.adapters.mailbox')
 local PolicyFile=require('uml.adapters.policy_file')
 local T=require('uml.domain.theme')
+local Display=require('uml.domain.display')
+local Dpi=require('uml.adapters.dpi')
 local M={}
 local function read(path) local f=assert(io.open(path,'rb')); local s=f:read('*a'); f:close(); return s end
 local function parse_args(args)
@@ -67,15 +69,40 @@ function M.run(args,services)
   local project_root=os.getenv('UML_VIEWER_PROJECT_ROOT')
   project_root=project_root and #project_root>0 and project_root or '.'
   project_root=Paths.canonical(project_root)
+  -- Window chrome: OS DPI (adapters.dpi), the backend framebuffer scale and
+  -- the DPI-independent inspector width; every frame derives one display
+  -- record (domain.display) shared by drawing, imgui and pointer input.
+  local os_scale,inspector_w,dragging_edge,font_display
+  local function display()
+    return Display.new{window_w=love.graphics.getWidth(),window_h=love.graphics.getHeight(),
+      os_scale=os_scale,framebuffer_scale=love.window.getDPIScale(),inspector_w=inspector_w}
+  end
+  local function chrome()
+    local w,h=love.window.getMode()
+    return {window_w=w,window_h=h,inspector_w=display().inspector_w}
+  end
   function love.load()
     love.window.setTitle('UML viewer — LOVE')
-    love.window.setMode(1500,920,{resizable=true})
-    imgui.love.Init()
-    -- Native acceptance processes must neither load nor save the user's layout.
-    -- ImGui reads settings at its first NewFrame, after LOVE initialization.
-    if probe_path or test_seconds then imgui.GetIO().IniFilename=nil end
-    fonts=Fonts.load(imgui,Fonts.defaults(project_root)); imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
     local snapshot=restart and SessionFile.read(project_root) or nil
+    local saved=Session.chrome(snapshot)
+    os_scale=Dpi.os_scale()
+    local ui=Display.ui_scale(os_scale,love.window.getDPIScale())
+    local desktop_w,desktop_h=love.window.getDesktopDimensions()
+    local window_w,window_h=Display.window_size(saved.window_w,saved.window_h,ui,desktop_w,desktop_h)
+    love.window.setMode(window_w,window_h,{resizable=true,highdpi=true,
+      minwidth=math.floor(Display.window_min.w*ui),minheight=math.floor(Display.window_min.h*ui)})
+    -- setMode may move the window to another monitor: re-read its DPI.
+    os_scale=Dpi.os_scale() or os_scale
+    inspector_w=saved.inspector_w
+    imgui.love.Init()
+    -- ImGui loads settings at its first NewFrame. Test processes must neither
+    -- load nor save the user's layout; normal viewer persistence stays enabled.
+    if probe_path or test_seconds then imgui.GetIO().IniFilename=nil end
+    local d=display()
+    if d.ui~=1 then imgui.GetStyle():ScaleAllSizes(d.ui) end
+    local font_opts=Fonts.defaults(project_root); font_opts.display=d
+    fonts=Fonts.load(imgui,font_opts); font_display=d
+    imgui.love.BuildFontAtlas(); renderer=Boxes.new(imgui,fonts)
     path=Paths.canonical(Session.path(explicit_path,snapshot,path))
     local mail_seen
     if backend then
@@ -98,7 +125,7 @@ function M.run(args,services)
       if companion then Worker.command(companion,'wake',{id=G.get(cmd,'id')}) end
     end
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,notify=notify_agent,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
-    if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source,fonts=fonts}) end
+    if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source,fonts=fonts,ui=function() return display().ui end}) end
     inspector=Inspector.new(imgui,{
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
       new_proposal=function() state=InspectorModel.press(state,G.map{kind=E.keyword('new-proposal')},{boundary=PolicyFile}); publish() end,
@@ -120,6 +147,22 @@ function M.run(args,services)
   end
   function love.update(dt)
     elapsed=elapsed+dt; frames=frames+1
+    -- A per-monitor DPI change preserves the camera and the inspector's view-
+    -- unit width. Rebuild only between frames (the previous frame was rendered).
+    os_scale=Dpi.os_scale() or os_scale
+    local d=display()
+    if fonts and (d.ui~=font_display.ui or d.fb~=font_display.fb) then
+      imgui.GetStyle():ScaleAllSizes(d.ui/font_display.ui)
+      imgui.GetIO().Fonts:Clear()
+      local opts=Fonts.defaults(project_root); opts.display=d
+      local rebuilt=Fonts.load(imgui,opts)
+      for k,v in pairs(rebuilt) do fonts[k]=v end
+      Fonts.current=fonts; font_display=d
+      imgui.love.BuildFontAtlas()
+    end
+    -- cimgui-love sets this at Init only; keep it current after monitor changes.
+    imgui.GetIO().DisplayFramebufferScale.x=d.fb
+    imgui.GetIO().DisplayFramebufferScale.y=d.fb
     if companion then
       local previous=companion.seen
       local polled,reason=pcall(Worker.poll,companion)
@@ -141,7 +184,7 @@ function M.run(args,services)
           if companion.phase~='stopped' or not companion.exited then return end
           keeping_companion=true
         end
-        SessionFile.save(state.project_root,Session.snapshot(state))
+        SessionFile.save(state.project_root,Session.snapshot(state,chrome()))
         love.event.quit(0); return
       end
       if not state.waiting then
@@ -155,7 +198,7 @@ function M.run(args,services)
     end)
     if not ok then io.stderr:write('Document reload rejected: '..tostring(err)..'\n') end
     if probe then
-      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts})
+      local passed,reason=pcall(probe,frames,state,{inspector=inspector,source_window=source_window,detail_window=detail_window,imgui=imgui,mail=mail,fonts=fonts,display=display,chrome=chrome})
       if not passed then io.stderr:write('Navigation acceptance failed: '..tostring(reason)..'\n'); love.event.quit(1); return end
     end
     imgui.love.Update(dt); imgui.NewFrame()
@@ -164,9 +207,12 @@ function M.run(args,services)
   function love.draw()
     local bg=T.colors.canvas_bg
     love.graphics.clear(bg[1]/255,bg[2]/255,bg[3]/255,1)
-    local width,height=love.graphics.getWidth(),love.graphics.getHeight()
-    local scale=Events.zoom_of(state)
-    local canvas_w=InspectorModel.canvas_w(width)
+    local d=display()
+    local height=d.window_h
+    local zoom=Events.zoom_of(state)
+    -- world -> window px: zoom times ui, applied once (domain.display).
+    local scale=Display.canvas_scale(d,zoom)
+    local canvas_w=d.canvas_px
     -- Edges are highlighted when they touch the selected class; the predicate
     -- stays a pure function of the scene edge.
     local sel_id=state.selected and G.get(state.selected,'id')
@@ -174,14 +220,18 @@ function M.run(args,services)
     local list=imgui.GetBackgroundDrawList_Nil()
     -- Clip canvas painting to the usable area left of the fixed sidebar.
     list:PushClipRect(imgui.ImVec2_Float(0,0),imgui.ImVec2_Float(canvas_w,height),true)
-    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,selected_edge)
-    renderer.draw(state.scene,width,height,{zoom=scale,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover,selected_edges=selected_edge})
+    Edges.draw(imgui,list,state.scene,-(state.cam_x or 0)*scale,-(state.cam_y or 0)*scale,scale,selected_edge,d.ui)
+    renderer.draw(state.scene,d.window_w,height,{zoom=zoom,ui=d.ui,cam_x=state.cam_x or 0,cam_y=state.cam_y or 0,selected=state.selected,hover=state.hover,selected_edges=selected_edge})
     list:PopClipRect()
-    inspector.draw(state)
-    if detail_window then detail_window.draw(state) end
+    inspector.draw(state,d)
+    if detail_window then detail_window.draw(state,d) end
     Menu.draw(imgui,state,state.selected,function(op,extra) mail.request(op,extra) end)
     if source_window then source_window.draw() end
-    if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back() end
+    if #state.focus>0 or G.get(state.extra,'open-layer') then renderer.back(d.ui) end
+    -- The sidebar's left edge shows the resize cursor while grabbable.
+    if dragging_edge or Display.on_inspector_edge(d,love.mouse.getX()) then
+      imgui.SetMouseCursor(imgui.ImGuiMouseCursor_ResizeEW)
+    end
     imgui.Render(); imgui.love.RenderDrawLists()
     if evidence and frames==4 then love.graphics.captureScreenshot(function(data) local f=assert(io.open(evidence..'/render.png','wb')); f:write(data:encode('png'):getString()); f:close() end) end
   end
@@ -192,32 +242,43 @@ function M.run(args,services)
     end
   end
   function love.textinput(t) imgui.love.TextInput(t) end
+  -- Events receive view units: extents from Display.dims, pointers via to_view.
   local function dims()
-    local d=InspectorModel.canvas_dims(love.graphics.getWidth(),love.graphics.getHeight())
+    local d=Display.dims(display())
     d.control=love.keyboard.isDown('lctrl','rctrl'); return d
   end
-  -- Canvas pointer input stops at the fixed sidebar's left edge.
-  local function on_canvas(x) return InspectorModel.in_canvas(x,love.graphics.getWidth()) end
+  -- Canvas pointer input stops at the sidebar's left edge.
+  local function on_canvas(x) return Display.in_canvas(display(),x) end
+  local function view_xy(x,y) return Display.to_view(display(),x,y) end
   function love.keypressed(k)
     imgui.love.KeyPressed(k)
     if not imgui.love.GetWantCaptureKeyboard() then state=Events.on_key(state,k,dims()) end
   end
   function love.mousemoved(x,y)
     imgui.love.MouseMoved(x,y)
-    if not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,x,y) end
+    if dragging_edge then inspector_w=Display.drag_inspector(display(),x); return end
+    if not imgui.love.GetWantCaptureMouse() and on_canvas(x) then state=Events.on_move(state,view_xy(x,y)) end
   end
   function love.mousepressed(x,y,button,istouch,presses)
     imgui.love.MousePressed(button)
+    -- The sidebar edge grip wins over the sidebar window that would capture it.
+    if button==1 and Display.on_inspector_edge(display(),x) and not (imgui.IsPopupOpen_Str and imgui.IsPopupOpen_Str('',imgui.ImGuiPopupFlags_AnyPopupId or 0)) then
+      dragging_edge=true; return
+    end
     if imgui.love.GetWantCaptureMouse() or not on_canvas(x) then return end
+    local vx,vy=view_xy(x,y)
     if button==2 then
-      state=Events.on_press(state,x,y)
+      state=Events.on_press(state,vx,vy)
       if Events.element_menu(state.selected) then imgui.OpenPopup_Str('uml-element-mail') end
     elseif button==1 then
       -- Both transitions honour the back hotspot first.
-      if (presses or 1)>=2 then state=Events.on_double_press(state,x,y) else state=Events.on_press(state,x,y) end
+      if (presses or 1)>=2 then state=Events.on_double_press(state,vx,vy) else state=Events.on_press(state,vx,vy) end
     end
   end
-  function love.mousereleased(x,y,button) imgui.love.MouseReleased(button) end
+  function love.mousereleased(x,y,button)
+    imgui.love.MouseReleased(button)
+    if button==1 and dragging_edge then inspector_w=Display.drag_inspector(display(),x); dragging_edge=false end
+  end
   function love.wheelmoved(x,y)
     if detail_window and detail_window.detail_hovered() then
       state=detail_window.wheel(state,-y)

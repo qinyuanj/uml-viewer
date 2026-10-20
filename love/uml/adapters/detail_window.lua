@@ -36,13 +36,16 @@ function M.new(imgui,callbacks,fonts)
     return imgui.CalcTextSize(text).x*size/F.sizes.body
   end
   local function close() if callbacks.close then callbacks.close() end end
-  function api.draw(state)
+  -- The paint plan, row heights and scroll offsets are view units (the pure
+  -- detail layout); display.ui converts them to window px only while painting.
+  function api.draw(state,display)
     detail_hovered=false
     if not state.detail_id then return end
     local model=Detail.for_state(state,state.detail_id); if not model then return end
+    local ui=display and display.ui or 1
     local rows=Detail.rows(model)
-    imgui.SetNextWindowPos(vec(48,80),imgui.ImGuiCond_FirstUseEver)
-    imgui.SetNextWindowSize(vec(Detail.width,Detail.height),imgui.ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowPos(vec(48*ui,80*ui),imgui.ImGuiCond_FirstUseEver)
+    imgui.SetNextWindowSize(vec(Detail.width*ui,Detail.height*ui),imgui.ImGuiCond_FirstUseEver)
     imgui.SetNextWindowBgAlpha(1)
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_WindowBg,c4(T.colors.canvas_bg))
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_TitleBgActive,c4(T.colors.line))
@@ -50,31 +53,33 @@ function M.new(imgui,callbacks,fonts)
     if imgui.Begin((G.get(model.class,'name') or model.ns or '')..'###uml-detail',open) then
       if imgui.Button(S.close_detail..'##close-detail') then close() end
       remember('close-detail')
-      local width=math.max(624,imgui.GetContentRegionAvail().x-16)
+      local width=math.max(624*ui,imgui.GetContentRegionAvail().x-16*ui)
+      local plan_w=width/ui
       imgui.SetNextWindowContentSize(vec(width,0))
       if imgui.BeginChild_Str('detail-card',vec(0,0),imgui.ImGuiChildFlags_None or 0,(imgui.ImGuiWindowFlags_HorizontalScrollbar or 0)+(imgui.ImGuiWindowFlags_NoScrollWithMouse or 0)) then
         detail_hovered=imgui.IsWindowHovered()==true
-        detail_view_h=imgui.GetWindowHeight()
+        detail_view_h=imgui.GetWindowHeight()/ui
         local scroll=Detail.scroll(rows,detail_view_h,state.detail_scroll or 0,0); detail_scroll=scroll
         local origin=imgui.GetCursorScreenPos(); local list=imgui.GetWindowDrawList()
-        local items=View.rows(rows,width)
+        local items=View.rows(rows,plan_w)
         bounds.horizontal={maximum=imgui.GetScrollMaxX(),offset=imgui.GetScrollX(),content_width=width}
-        local function pt(x,y) return vec(origin.x+x,y) end
+        -- x in view units; y already in window px.
+        local function pt(x,y) return vec(origin.x+x*ui,y) end
         local function text(role,x,top,h,color,s,clip_right)
-          local font,size=font_of(role),size_of(role)
+          local font,size=font_of(role),size_of(role)*ui
           if clip_right then list:PushClipRect(pt(0,top),pt(clip_right,top+h),true) end
           list:AddText_FontPtr(font,size,pt(x,top+(h-size)/2),T.pack(color),tostring(s),nil,0,nil)
           if clip_right then list:PopClipRect() end
         end
         local next_hover
         for n,it in ipairs(items) do
-          local top=origin.y+it.y-scroll
-          if it.stripe then list:AddRectFilled(pt(0,top),pt(width,top+it.h),T.pack(T.colors.panel),0,0) end
+          local top=origin.y+(it.y-scroll)*ui; local h=it.h*ui
+          if it.stripe then list:AddRectFilled(pt(0,top),pt(plan_w,top+h),T.pack(T.colors.panel),0,0) end
           if it.clickable then
             imgui.SetCursorScreenPos(pt(0,top))
-            local pressed=imgui.InvisibleButton('##detail-'..n,vec(math.max(1,width),it.h))
+            local pressed=imgui.InvisibleButton('##detail-'..n,vec(math.max(1,width),h))
             if imgui.IsItemHovered() then
-              list:AddRectFilled(pt(0,top),pt(width,top+it.h),T.pack(T.colors.gold,T.alpha.row_wash),0,0)
+              list:AddRectFilled(pt(0,top),pt(plan_w,top+h),T.pack(T.colors.gold,T.alpha.row_wash),0,0)
               next_hover=it.source.module and require('uml.edn').keyword('module') or it.source['op-name']
             end
             if pressed then
@@ -83,20 +88,22 @@ function M.new(imgui,callbacks,fonts)
             end
             remember(it.source.module and 'module' or it.source['op-name'] and 'member:'..it.source['op-name'] or 'rel:'..G.name(it.source.id))
           end
-          if it.swatch then list:AddRectFilled(pt(View.pad,top+4),pt(View.pad+View.swatch_w,top+it.h-4),T.pack(it.swatch),T.radius.swatch,0) end
-          if it.text then text(it.font,it.x,top,it.h,it.color,it.text,it.clip_right) end
+          if it.swatch then list:AddRectFilled(pt(View.pad,top+4*ui),pt(View.pad+View.swatch_w,top+h-4*ui),T.pack(it.swatch),T.radius.swatch*ui,0) end
+          if it.text then text(it.font,it.x,top,h,it.color,it.text,it.clip_right) end
           for _,c in ipairs(it.cells) do
+            -- Measured at the base size, so the width is already view units.
             local w=measure(font_of('code'),F.sizes.code,c.text)
             local x=c.align=='center' and (c.left+c.right-w)/2 or c.right-w
-            text('code',x,top,it.h,c.color,c.text)
-            if c.tip and imgui.IsMouseHoveringRect and imgui.IsMouseHoveringRect(pt(c.left,top),pt(c.right,top+it.h),true) then
+            text('code',x,top,h,c.color,c.text)
+            if c.tip and imgui.IsMouseHoveringRect and imgui.IsMouseHoveringRect(pt(c.left,top),pt(c.right,top+h),true) then
               imgui.BeginTooltip(); imgui.TextUnformatted(c.tip); imgui.EndTooltip()
             end
           end
+          local bar=T.widths.bar*ui
           for _,b in ipairs(it.bars) do
-            local y=top+it.h-T.widths.bar
-            list:AddRectFilled(pt(b.left,y),pt(b.right,y+T.widths.bar),T.pack(T.colors.line),T.widths.bar/2,0)
-            list:AddRectFilled(pt(b.left,y),pt(b.left+(b.right-b.left)*math.max(0,math.min(1,b.fraction)),y+T.widths.bar),T.pack(b.color),T.widths.bar/2,0)
+            local y=top+h-bar
+            list:AddRectFilled(pt(b.left,y),pt(b.right,y+bar),T.pack(T.colors.line),bar/2,0)
+            list:AddRectFilled(pt(b.left,y),pt(b.left+(b.right-b.left)*math.max(0,math.min(1,b.fraction)),y+bar),T.pack(b.color),bar/2,0)
           end
         end
         detail_hover=next_hover

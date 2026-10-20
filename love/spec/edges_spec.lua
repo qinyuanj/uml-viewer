@@ -116,4 +116,16 @@ describe('viewer edge scene parity',function()
     local imgui={ImVec2_Float=function(x,y) return {x=x,y=y} end}
     A.draw(imgui,draw,s,0,0,1); assert.are.equal(2,lines); assert.are.equal(2,triangles)
   end)
+  it('multiplies stroke widths by the DPI scale while zoom only moves geometry',function()
+    local A=require('uml.adapters.edges'); local C=require('uml.engine.compose'); local T=require('uml.domain.theme')
+    local s=C.prepare_scene(E.parse('{:diagram {} :packages [] :classes [{:id :a :rect {:x 0 :y 0 :w 20 :h 20}} {:id :b :rect {:x 180 :y 0 :w 20 :h 20}}] :edges [{:from :a :to :b :points [[20 10] [180 10]]}]}'))
+    local imgui={ImVec2_Float=function(x,y) return {x=x,y=y} end}
+    for _,case in ipairs{{1,1},{1.5,1},{1.5,3},{1.25,.2}} do
+      local widths,ends={},{}
+      local draw={AddLine=function(_,a,b,color,w) widths[#widths+1]=w; ends[#ends+1]=b.x end,AddTriangle=function() end,AddTriangleFilled=function() end}
+      A.draw(imgui,draw,s,0,0,case[2]*case[1],nil,case[1])
+      assert.is_true(math.abs(widths[1]-T.widths.edge*case[1])<1e-9)
+      assert.is_true(math.abs(ends[1]-180*case[2]*case[1])<1e-9)
+    end
+  end)
 end)

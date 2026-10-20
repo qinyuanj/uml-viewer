@@ -24,14 +24,16 @@ function M.commands(scene,selected)
     if g(e,'head') and g(e,'tip') then out[#out+1]={kind='head',head=G.name(g(e,'head')),tip=g(e,'tip'),behind=g(e,'behind'),color=color,width=width} end
   end; return out
 end
-function M.draw(imgui,list,scene,ox,oy,scale,selected)
-  ox,oy,scale=ox or 0,oy or 0,scale or 1
+-- scale is world->window px (zoom times ui); ui is the DPI factor that turns
+-- the theme's screen-px widths into window px.
+function M.draw(imgui,list,scene,ox,oy,scale,selected,ui)
+  ox,oy,scale,ui=ox or 0,oy or 0,scale or 1,ui or 1
   local function point(p) return imgui.ImVec2_Float(ox+p[1]*scale,oy+p[2]*scale) end
   -- Widths are fixed screen px from the theme; geometry alone scales.
-  local function line(a,b,color,width) list:AddLine(point(a),point(b),color,width) end
+  local function line(a,b,color,width) list:AddLine(point(a),point(b),color,width*ui) end
   local function triangle(a,b,c,fill,color,width)
     list:AddTriangleFilled(point(a),point(b),point(c),fill)
-    list:AddTriangle(point(a),point(b),point(c),color,width)
+    list:AddTriangle(point(a),point(b),point(c),color,width*ui)
   end
   for _,cmd in ipairs(M.commands(scene,selected)) do
     if cmd.kind=='stroke' then for i=1,#cmd.points-1 do line(cmd.points[i],cmd.points[i+1],cmd.color,cmd.width) end
@@ -40,7 +42,7 @@ function M.draw(imgui,list,scene,ox,oy,scale,selected)
       local cos,sin=math.cos(math.pi/9),math.sin(math.pi/9)
       local a={p[1]-16*(dx*cos-dy*sin),p[2]-16*(dy*cos+dx*sin)}; local c={p[1]-16*(dx*cos+dy*sin),p[2]-16*(dy*cos-dx*sin)}
       if cmd.head=='triangle' then triangle(p,a,c,T.pack(T.colors.canvas_bg),cmd.color,T.widths.edge)
-      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and 0xffe4ecec or T.pack(T.colors.canvas_bg); list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width)
+      elseif cmd.head=='diamond' or cmd.head=='diamond-fill' then local back={p[1]-16*dx,p[2]-16*dy}; local fill=cmd.head=='diamond-fill' and 0xffe4ecec or T.pack(T.colors.canvas_bg); list:AddQuadFilled(point(p),point(a),point(back),point(c),fill); list:AddQuad(point(p),point(a),point(back),point(c),cmd.color,cmd.width*ui)
       else line(p,a,cmd.color,cmd.width); line(p,c,cmd.color,cmd.width) end
     end
   end
