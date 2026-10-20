@@ -1,6 +1,22 @@
 # Platform acceptance — issue #5 / spec #1
 
-Herdr is now the sole companion backend on native Windows/macOS. Windows Herdr acceptance is **partial**, recorded in [windows-herdr-21-acceptance.md](windows-herdr-21-acceptance.md); seven native checks are tracked by [#30](https://github.com/qinyuanj/uml-viewer/issues/30). The maintainer cancelled macOS end-to-end acceptance (#22) and authorized tmux/psmux retirement (#23); cancellation is not a pass. Linux/WSL companion launch is unsupported after retirement. Automated simulations do not replace native observations.
+Herdr is the sole companion backend **on every supported platform** (ADR 0007).
+Delivery targets are WSL2 + Ubuntu 24.04 + WSLg and macOS Apple Silicon; native
+Windows and Intel Mac are unsupported.
+
+Current status:
+
+- **WSL/Linux**: the full lifecycle runs natively and is recorded in
+  [acceptance-evidence/106-wsl/](../acceptance-evidence/106-wsl/README.md)
+  (Herdr 0.9.5 / protocol 22, LOVE 11.5, Lua 5.1/5.4/LuaJIT, Python 3.12).
+- **macOS Apple Silicon**: the implementation reuses the same POSIX adapters,
+  but **no real-machine acceptance has been run**. Compilation, unit tests and
+  the existence of upstream binaries are not acceptance.
+- **Windows native**: historical only. The records below describe earlier
+  backends and are not evidence for the current implementation.
+
+Automated simulations do not replace native observations. The paragraphs that
+follow are the historical Windows/macOS record, kept for provenance.
 
 Addendum (2026-10-15, spec #32): the cancellation sentence above is historical. macOS end-to-end acceptance was later executed and **passed** with Herdr 0.9.4/protocol 22 on Darwin 27.0.0 arm64; #22 was closed with the acceptance log in [acceptance-evidence/acceptance-log.md](../acceptance-evidence/acceptance-log.md). Platform terminal attach remains NOT VERIFIED and is tracked by [#49](https://github.com/qinyuanj/uml-viewer/issues/49).
 
