@@ -10,7 +10,7 @@ function M.new(root,host)
     local f,err=io.open(absolute(path),'rb'); assert(f,err); local text=f:read('*a'); f:close(); return text
   end
   local function write(path,text)
-    Atomic.write(absolute(path),text)
+    local target=absolute(path); Atomic.ensure_parent(target); Atomic.write(target,text)
   end
   local function snapshot(path,scanner,opts)
     local canonical=host.canonical(absolute(path)); local files={}

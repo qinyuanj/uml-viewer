@@ -188,6 +188,13 @@ describe('Herdr Windows full session client',function()
   end)
 end)
 describe('Claude executable discovery boundary',function()
+  local Process=require('uml.adapters.process')
+  local native_windows
+  before_each(function()
+    native_windows=Process.windows
+    Process.windows=function() return true end
+  end)
+  after_each(function() Process.windows=native_windows end)
   it('accepts a configured executable with spaces and preserves it literally',function()
     local seen
     local path=Claude.executable{run=function(argv)
