@@ -100,6 +100,17 @@ describe('detail window adapter',function()
     Adapter.new(imgui,{close=function() closed=true end}).draw(s)
     assert.is_true(closed)
   end)
+  it('paints a gold wash across the complete hovered detail row',function()
+    local imgui=fake(false); local fills={}
+    imgui.GetWindowDrawList=function() return setmetatable({AddRectFilled=function(_,a,b,color) fills[#fills+1]={a=a,b=b,color=color} end},{__index=function() return function() end end}) end
+    imgui.IsItemHovered=function() return true end
+    Adapter.new(imgui,{}).draw(s)
+    local wash
+    for _,fill in ipairs(fills) do if fill.color==T.pack(T.colors.gold,T.alpha.row_wash) then wash=fill end end
+    assert.is_not_nil(wash)
+    assert.are.equal(0,wash.a.x); assert.are.equal(600,wash.b.x)
+    assert.are.equal(18,wash.b.y-wash.a.y)
+  end)
   it('draws nothing while no detail target is open',function()
     local imgui,calls=fake(false); local n={}; for k,v in pairs(s) do n[k]=v end; n.detail_id=nil
     Adapter.new(imgui,{}).draw(n); assert.is_nil(calls.begin)
