@@ -10,8 +10,25 @@ function M.provisioned(root) return (root or '.'):gsub('\\','/')..'/.uml-viewer/
 local function exists(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
 local function warn(text) io.stderr:write(text) end
 local warned=false
+-- System CJK fallbacks, in preference order, for a platform with no
+-- provisioned Sarasa. Windows uses Microsoft YaHei; POSIX uses the Noto CJK
+-- families shipped by Ubuntu/macOS package sets.
+local SYSTEM_FONTS={
+  yahei={'C:/Windows/Fonts/msyh.ttc','C:/Windows/Fonts/msyh.ttf'},
+  noto={'/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+        '/System/Library/Fonts/PingFang.ttc'},
+}
 function M.defaults(root)
-  return {env=os.getenv('UML_CJK_FONT'),root=root,windir=os.getenv('WINDIR'),exists=exists,warn=warn}
+  local windir=os.getenv('WINDIR')
+  local candidates={}
+  if windir and windir~='' then
+    candidates[#candidates+1]=(windir:gsub('\\','/')..'/Fonts/msyh.ttc')
+    candidates[#candidates+1]=(windir:gsub('\\','/')..'/Fonts/msyh.ttf')
+  end
+  for _,path in ipairs(SYSTEM_FONTS.noto) do candidates[#candidates+1]=path end
+  return {env=os.getenv('UML_CJK_FONT'),root=root,windir=windir,candidates=candidates,
+    exists=exists,warn=warn}
 end
 function M.resolve(opts)
   local has=opts.exists or exists; local say=opts.warn or warn
@@ -24,7 +41,24 @@ function M.resolve(opts)
   end
   local sarasa=M.provisioned(opts.root)
   if has(sarasa) then return {path=sarasa,source='sarasa'} end
-  local yahei=(opts.windir or 'C:/Windows'):gsub('\\','/')..'/Fonts/msyh.ttc'
+  local fallbacks=opts.candidates
+  if not fallbacks then
+    fallbacks={}
+    local windir=opts.windir or 'C:/Windows'
+    fallbacks[1]=(windir:gsub('\\','/'))..'/Fonts/msyh.ttc'
+    for _,path in ipairs(SYSTEM_FONTS.noto) do fallbacks[#fallbacks+1]=path end
+  end
+  for _,path in ipairs(fallbacks) do
+    if has(path) then
+      if not warned then
+        warned=true
+        say('uml viewer: Sarasa Mono SC not found at '..sarasa..'; falling back to '..path
+          ..'. Run get-uml-viewer to provision the font.\n')
+      end
+      return {path=path,source=path:find('msyh',1,true) and 'yahei' or 'system'}
+    end
+  end
+  local yahei=fallbacks[1]
   if not warned then
     warned=true
     say('uml viewer: Sarasa Mono SC not found at '..sarasa..'; falling back to Microsoft YaHei. Run get-uml-viewer to provision the font.\n')

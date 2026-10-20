@@ -93,11 +93,23 @@ describe('read-only companion preflight adapter',function()
     assert.is_truthy(tostring(missing):find('ownership is missing',1,true))
     remove_root(root)
   end)
-  it('refuses commands for an unsupported platform',function()
+  it('selects Herdr on WSL/Linux as well as Windows and macOS',function()
+    local root=temp_root()
+    for _,platform in ipairs{'Linux','Mac','Windows'} do
+      local calls={}
+      local result=select(root,{'--backend','herdr'},{os=platform,calls=calls,
+        path=platform=='Windows' and 'C:/tools' or '/usr/bin'})
+      assert.are.equal('herdr',result.backend)
+      assert.are.equal('herdr',result.selected.release and 'herdr' or nil)
+    end
+    remove_root(root)
+  end)
+
+  it('refuses a platform it cannot launch a companion on',function()
     local root=temp_root()
     local calls={}
-    local err=failure(root,{}, {os='Linux',calls=calls})
-    assert.is_truthy(tostring(err):find('Linux/WSL companion launch is unsupported',1,true))
+    local err=failure(root,{}, {os='Plan9',calls=calls})
+    assert.is_truthy(tostring(err):find('Unsupported companion platform',1,true))
     assert.are.equal(0,#calls)
     remove_root(root)
   end)

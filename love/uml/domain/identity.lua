@@ -76,7 +76,7 @@ function M.encode(record)
   assert(type(pid)=='number' and pid==math.floor(pid) and pid>=1 and pid<=MAX32,
     'identity pid must be an unsigned 32-bit integer')
   local started=record.started
-  assert(type(started)=='string' and started:match('^%d+$'),'identity start time must be unsigned decimal FILETIME ticks')
+  assert(type(started)=='string' and started:match('^%d+$'),'identity start time must be opaque unsigned decimal text')
   assert(record.runtime=='love','identity runtime must be love')
   assert(type(record.cwd)=='string' and #record.cwd>0,'identity cwd must be a non-empty string')
   return '{"pid":'..string.format('%.0f',pid)..',"started":'..json_string(started)

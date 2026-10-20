@@ -264,9 +264,11 @@ function M.preflight_checks(record,opts)
   if opts.restart and not recorded then
     M.fail('Companion ownership is missing; cannot restart',{status='failure'})
   end
+  -- Herdr is the only backend on every supported platform: Windows, macOS and
+  -- WSL/Linux all launch the same native Herdr server.
   local os=opts.os or ''
-  if os:sub(1,7)~='Windows' and os:sub(1,3)~='Mac' then
-    M.fail('Linux/WSL companion launch is unsupported after tmux retirement. Run the viewer and Herdr from native Windows or macOS; WSL no longer opens a tmux pane. Ownership and queues are retained.',{status='failure'})
+  if os~='Windows' and os~='Linux' and os:sub(1,3)~='Mac' then
+    M.fail('Unsupported companion platform: '..tostring(os)..'. Run the viewer and Herdr natively; ownership and queues are retained.',{status='failure'})
   end
   return recorded or 'herdr'
 end

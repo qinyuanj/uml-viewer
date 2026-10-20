@@ -1,7 +1,7 @@
 local log=require('uml.adapters.log')
 local game_args=love.arg.parseGameArguments(arg or {})
 local function canonical_path(path)
-  local ok,result=pcall(function() return require('uml.adapters.windows_path').canonical(path) end)
+  local ok,result=pcall(function() return require('uml.adapters.platform_path').load().canonical(path) end)
   if ok then return result end
   return (path or ''):gsub('\\','/')
 end
@@ -63,7 +63,7 @@ if game_args[1]=='companion-controller' then
       local function select_once()
         if not selected then
           selected=Preflight.select(identity.cwd,{'--backend','herdr'},
-            {os='Windows',canonical=canonical_path}).selected
+            {canonical=canonical_path}).selected
         end
         return selected
       end
@@ -97,7 +97,7 @@ if game_args[1]=='companion-smoke' then
       local executable,game=love_paths()
       say('preflight')
       local selected=Preflight.select(root,{'--backend','herdr'},
-        {os='Windows',canonical=canonical_path}).selected
+        {canonical=canonical_path}).selected
       say('backend')
       local backend=Herdr.new(nil,{selected=selected,canonical=canonical_path,
         runner={executable=executable,argv={executable,game,'companion-runner'}},
@@ -127,7 +127,7 @@ if game_args[1]=='companion-preflight' then
     local root=game_args[2]
     local args={}; for i=3,#game_args do args[#args+1]=game_args[i] end
     local ok,result=pcall(function()
-      return require('uml.adapters.companion_preflight').select(root,args,{os='Windows'})
+      return require('uml.adapters.companion_preflight').select(root,args,{})
     end)
     local code
     if ok then

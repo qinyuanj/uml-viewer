@@ -253,8 +253,11 @@ describe('read-only companion preflight',function()
       local err=error_of(function() preflight(nil,{requested=backend}) end)
       assert.is_truthy(err.message:find('companions are retired',1,true))
     end
-    local linux=error_of(function() preflight(nil,{os='Linux'}) end)
-    assert.is_truthy(linux.message:find('Linux/WSL companion launch is unsupported',1,true))
+    local unsupported=error_of(function() preflight(nil,{os='Plan9'}) end)
+    assert.is_truthy(unsupported.message:find('Unsupported companion platform',1,true))
+    for _,platform in ipairs{'Linux','Mac','Windows'} do
+      assert.are.equal('herdr',preflight(nil,{os=platform}))
+    end
   end)
   it('rejects missing restart, corrupt records and incomplete or foreign ownership',function()
     local missing=error_of(function() preflight(nil,{restart=true}) end)

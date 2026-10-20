@@ -193,7 +193,7 @@ def command(root, args):
     root = root.resolve()
     os.chdir(root)
     if args in (['--help'], ['-h']):
-        print('usage: uml [--runtime love] [ir | crap | mutate | dry] [args]')
+        print('usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate | dry] [args]')
         return 0
     host()
     if '--runtime' in args:
@@ -226,7 +226,9 @@ def command(root, args):
         # 质量分发实现与安装器共用入口，独立模块保留协议边界。
         from uml_quality import dispatch
         return dispatch(root, args[0], args[1:])
-    raise ValueError('POSIX viewer/companion 生命周期尚待 #109–#111 实现；当前可使用 ./uml ir。')
+    # 其余路径都是 viewer 生命周期：默认 fresh、--restart 替换、--backend herdr。
+    from uml_launch import launch
+    return launch(root, tool_root, args, restart='--restart' in args)
 
 
 def main():

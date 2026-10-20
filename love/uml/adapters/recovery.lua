@@ -3,7 +3,7 @@
 local E=require('uml.edn')
 local Atomic=require('uml.adapters.atomic_file')
 local Clock=require('uml.adapters.clock')
-local OS=require('uml.adapters.os_lock')
+local OS=require('uml.adapters.lock')
 local Process=require('uml.adapters.process')
 local R=require('uml.domain.recovery')
 local M={}
@@ -247,12 +247,8 @@ end
 local token_seed
 function M.new_token()
   if token_seed==nil then
-    local pid=0
-    local ok,ffi=pcall(require,'ffi')
-    if ok then
-      ffi.cdef[[unsigned long GetCurrentProcessId(void);]]
-      pid=tonumber(ffi.C.GetCurrentProcessId())
-    end
+    local ok,pid=pcall(function() return Process.current_pid() end)
+    pid=ok and pid or 0
     token_seed=(Clock.monotonic_ms()+os.time()*1000+pid)%2147483647
     math.randomseed(token_seed)
     math.random(); math.random()

@@ -15,9 +15,16 @@ function M.default_probe(path)
   return {executable=true,canonical=canonical}
 end
 
+function M.host_os()
+  local name=love and love.system and love.system.getOS()
+  if name=='Windows' then return 'Windows' end
+  if name=='OS X' then return 'Mac' end
+  return 'Linux'
+end
+
 function M.select(root,args,options)
   options=options or {}
-  local platform=options.os or 'Windows'
+  local platform=options.os or M.host_os()
   local selection=C.selection_args(args)
   local record=Ownership.read(root)
   C.preflight_checks(record,{root=root,requested=selection.backend,restart=options.restart,

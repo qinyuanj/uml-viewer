@@ -101,7 +101,9 @@ local function backend(run,owner,extra)
   local overrides={}
   for key,value in pairs(extra or {}) do overrides[key]=value end
   if overrides.identity then identity=overrides.identity; overrides.identity=nil end
-  local options={run=run,owner=owner,selected={path='herdr',release='0.9.3'},
+  -- These fixtures exercise the Windows boundary (pwsh terminal reset,
+  -- claude.exe argv); the platform is stated, never inferred from the host.
+  local options={run=run,owner=owner,selected={path='herdr',release='0.9.3'},windows=true,
     canonical=function(path) return (path or ''):gsub('\\','/') end,
     clock=function() return 0 end,sleep=function() end,
     read_companion=function() return nil end,
@@ -301,7 +303,7 @@ describe('Herdr recovery relaunch',function()
       end
       return run(argv)
     end
-    local options={run=routed,owner=fake_owner(state),selected={path='herdr',release='0.9.3'},
+    local options={run=routed,owner=fake_owner(state),selected={path='herdr',release='0.9.3'},windows=true,
       canonical=function(p) return p end,clock=function() return 0 end,sleep=function() end,
       runner={executable='love',argv={'love','C:/love','companion-runner'}},
       read_companion=function() return nil end,write_companion=function(_,r) return r end}
@@ -371,7 +373,7 @@ describe('Herdr recovery relaunch',function()
         end
         return run(argv)
       end,
-      owner=fake_owner(state),selected={path='herdr',release='0.9.3'},
+      owner=fake_owner(state),selected={path='herdr',release='0.9.3'},windows=true,
       canonical=function(p) return p end,clock=function() return 0 end,sleep=function() end,
       runner={executable='love',argv={'runner'}},
       read_companion=function() return nil end,write_companion=function(_,r) return r end})

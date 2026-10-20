@@ -1,7 +1,8 @@
--- OS DPI boundary. LOVE 11.5 on Windows starts DPI-unaware (the OS bitmap-
--- stretches the window and reports 96 DPI) and its getDPIScale stays 1, so the
--- viewer declares per-monitor awareness before the window exists and reads the
--- window DPI itself. domain.display turns the result into the ui scale.
+-- OS display scale boundary. On Windows LOVE 11.5 starts DPI-unaware (the OS
+-- bitmap-stretches the window and reports 96 DPI) so the viewer declares
+-- per-monitor awareness before the window exists and reads the window DPI.
+-- On POSIX the compositor (WSLg/Weston, macOS) owns scaling; LOVE's own
+-- framebuffer scale already reports it, so no OS query is needed or possible.
 -- UML_VIEWER_TEST_DPI_SCALE simulates a display scale in isolated native tests.
 local M={}
 local okffi,ffi=pcall(require,'ffi')
@@ -32,6 +33,7 @@ function M.override()
   if v and v>0 then return v end
 end
 -- OS display scale (1 = 96 DPI) of the active window, else the system DPI.
+-- nil means "the backend already reports the real scale".
 function M.os_scale()
   local forced=M.override(); if forced then return forced end
   local u=windows(); if not u then return nil end

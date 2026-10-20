@@ -4,8 +4,8 @@ local G=require('uml.domain.geom')
 local IR=require('uml.domain.ir')
 local D=require('uml.application.document')
 local Events=require('uml.application.events')
-local Paths=require('uml.adapters.windows_path')
-local Watch=require('uml.adapters.file_watch')
+local Paths=require('uml.adapters.platform_path').load()
+local Watch=require('uml.adapters.platform_watch').load()
 local Boxes=require('uml.adapters.class_boxes')
 local Edges=require('uml.adapters.edges')
 local Metrics=require('uml.adapters.metrics')
@@ -49,8 +49,17 @@ function M.run(args,services)
   services=services or {}
   local explicit_path,restart,backend=parse_args(args)
   local path=explicit_path or 'examples/uml-viewer.edn'
+  -- Dependency location: explicit override, else the project's provisioned
+  -- install copy, discovered from the project root, never from the host OS.
+  local project_root_env=os.getenv('UML_VIEWER_PROJECT_ROOT')
+  local base=project_root_env and #project_root_env>0 and project_root_env or '.'
   local dependencies=os.getenv('UML_CIMGUI_DIRECTORY')
-  if dependencies then dependencies=dependencies:gsub('\\','/'); package.path=dependencies..'/?.lua;'..dependencies..'/?/init.lua;'..package.path; package.cpath=dependencies..'/?.dll;'..package.cpath end
+  if not dependencies then
+    local discovered=base:gsub('\\','/'):gsub('/$','')..'/.uml-viewer/cimgui-love-1.90-1'
+    local probe=io.open(discovered..'/cimgui/init.lua','rb')
+    if probe then probe:close(); dependencies=discovered end
+  end
+  if dependencies then dependencies=dependencies:gsub('\\','/'); package.path=dependencies..'/?.lua;'..dependencies..'/?/init.lua;'..package.path; package.cpath=dependencies..'/?.so;'..dependencies..'/?.dll;'..package.cpath end
   local imgui=require('cimgui')
   local metrics=Metrics.new()
   local state,renderer,inspector,source_window,mail,fonts,elapsed,frames= nil,nil,nil,nil,nil,nil,0,0

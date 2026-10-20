@@ -27,7 +27,7 @@ function M.new(identity,options)
   B.clock=options.clock or Clock.monotonic_ms
   B.sleep=options.sleep or Clock.sleep
   B.canonical=options.canonical or function(path) return (path or ''):gsub('\\','/') end
-  B.windows=options.windows~=false
+  if options.windows~=nil then B.windows=options.windows else B.windows=Process.windows() end
   B.selected=options.selected
   B.write_companion=options.write_companion or function(root,record)
     return Ownership.write(root,Recovery.to_edn(record))
@@ -123,7 +123,6 @@ function M.new(identity,options)
   end
 
   function B.launch_server(session,cwd)
-    if not B.windows then B.fail('LOVE companion launch supports native Windows only') end
     local spawn=B.options.spawn_server or function(executable,argv,directory)
       return Process.spawn_detached(executable,argv,directory)
     end
@@ -169,9 +168,36 @@ function M.new(identity,options)
     return value
   end
 
+  -- The runner must exec the agent directly so its recorded identity is the
+  -- agent's own process. Windows additionally needs a real executable: a
+  -- .cmd/.bat wrapper re-parses argv and cannot prove child identity.
+  function B.require_direct_command(command)
+    local first=tostring(command[1] or '')
+    if first=='' then B.fail('Herdr command must be a nonempty argv vector') end
+    if B.windows then
+      if not first:lower():match('%.exe$') then
+        B.fail('Herdr requires direct native claude.exe (or node.exe + official cli.js); wrapper child identity is unsupported')
+      end
+      return first
+    end
+    local resolved=first
+    if not resolved:find('/',1,true) then
+      for directory in (os.getenv('PATH') or ''):gmatch('[^:]+') do
+        local candidate=directory..'/'..first
+        local handle=io.open(candidate,'rb')
+        if handle then handle:close(); resolved=candidate; break end
+      end
+    end
+    local handle=resolved and io.open(resolved,'rb')
+    if not handle then B.fail('Companion executable not found on PATH: '..first) end
+    handle:close()
+    return resolved
+  end
+
   function B.runner_command(record,command)
-    if B.windows and not tostring(command[1] or ''):lower():match('%.exe$') then
-      B.fail('Herdr recovery requires direct claude.exe or node.exe + official cli.js; wrappers cannot prove child identity')
+    local first=B.require_direct_command(command)
+    if not B.windows and first~=command[1] then
+      command=H.copy(command); command[1]=first
     end
     local manifest=record.runner_state..'.launch.edn'
     local copy=H.copy(record); copy.command=H.copy(command)
@@ -199,8 +225,23 @@ function M.new(identity,options)
     end
   end
 
+  -- Reset what a previous agent left enabled. Mouse tracking modes must go
+  -- first: a pane still reporting SGR mouse events delivers them to the
+  -- replacement agent as keystrokes, which renders as garbage on its prompt.
+  local RESET_SEQUENCE='\27[?1003l\27[?1002l\27[?1006l\27[?1000l'
+    ..'\27[?1049l\27[?2004l\27[<u\27[<u\27[<u\27[?25h'
+
+  function B.terminal_reset_posix(record)
+    -- No console handle exists on POSIX; write the sequence to the pane's own
+    -- terminal by running printf inside that pane.
+    B.pane_run(record.session,record.pane,'printf %s '..Text.shell_word(RESET_SEQUENCE))
+    B.sleep(250)
+    checked({B.herdr(),'--session',record.session,'pane','send-keys',record.pane,'ctrl+c'})
+    B.sleep(150)
+  end
+
   function B.terminal_reset(record)
-    if not B.windows then return end
+    if not B.windows then return B.terminal_reset_posix(record) end
     local shell_pid=tostring(record.shell_pid)
     local script="$ErrorActionPreference='Stop';"
       .."Add-Type -Namespace K -Name W -MemberDefinition '"
@@ -254,9 +295,8 @@ function M.new(identity,options)
     B.session_check(session)
     if type(command)~='table' or #command==0 then B.fail('Herdr command must be a nonempty argv vector') end
     for _,value in ipairs(command) do if type(value)~='string' then B.fail('Herdr command must be a nonempty argv vector') end end
-    if B.windows and not tostring(command[1]):lower():match('%.exe$') then
-      B.fail('Herdr requires direct native claude.exe (or node.exe + official cli.js); wrapper child identity is unsupported')
-    end
+    local resolved=B.require_direct_command(command)
+    if resolved~=command[1] then command=H.copy(command); command[1]=resolved end
     if B.identity and not B.identity.provisional then B.fail('Cannot create over existing Herdr ownership') end
     local sessions=B.cli(session,'session','list','--json').sessions
     if type(sessions)~='table' then B.fail('Ambiguous session inventory') end

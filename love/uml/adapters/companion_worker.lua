@@ -5,7 +5,7 @@ local R=require('uml.adapters.recovery')
 local L=require('uml.adapters.companion_lifecycle')
 local E=require('uml.edn')
 local Clock=require('uml.adapters.clock')
-local Lock=require('uml.adapters.os_lock')
+local Lock=require('uml.adapters.lock')
 local M={}
 local function write(path,value)
   local temporary=path..'.tmp'
@@ -99,7 +99,7 @@ function M.run(request_path,services)
     if not owner or owner.start~=request.viewer.start then stop=true end
   end
   local record,B
-  local options={canonical=services.canonical or require('uml.adapters.windows_path').canonical,
+  local options={canonical=services.canonical or require('uml.adapters.platform_path').load().canonical,
     progress=function(stage)
       event(stage); commands()
       if stop then error('Companion startup cancelled',0) end
