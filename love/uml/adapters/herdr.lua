@@ -294,8 +294,22 @@ function M.new(identity,options)
     if record.supervisor then return Recovery.status(record) end
   end
 
+  -- A sockaddr_un path is 108 bytes including the terminator. Herdr derives its
+  -- API socket from XDG_CONFIG_HOME and the session name; an overlong root makes
+  -- the server fail with an opaque EINVAL, so refuse with the actual cause.
+  function B.socket_check(session)
+    local root=os.getenv('XDG_CONFIG_HOME')
+    if not root or root=='' then root=(os.getenv('HOME') or '')..'/.config' end
+    local path=('%s/herdr/sessions/%s/herdr.sock'):format(root:gsub('/+$',''),session)
+    if #path+1>108 then
+      B.fail('Herdr socket path is too long for a Unix socket ('..#path..' > 107): '..path
+        ..'; set a shorter XDG_CONFIG_HOME or project path')
+    end
+  end
+
   function B.create(session,cwd,command)
     B.session_check(session)
+    B.socket_check(session)
     if type(command)~='table' or #command==0 then B.fail('Herdr command must be a nonempty argv vector') end
     for _,value in ipairs(command) do if type(value)~='string' then B.fail('Herdr command must be a nonempty argv vector') end end
     local resolved=B.require_direct_command(command)

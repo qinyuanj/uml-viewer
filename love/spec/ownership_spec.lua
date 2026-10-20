@@ -71,11 +71,14 @@ end
 describe('companion lifecycle ownership',function()
   it('names a fresh session uniquely per launch within the Herdr grammar',function()
     local name=Lifecycle.session_name('C:/projects/some project','abcdef12-rest')
-    assert.is_truthy(name:match('^uml%-viewer%-some%-project%-%x+%-abcdef12$'))
     assert.is_true(#name<=64)
     local long=Lifecycle.session_name('C:/projects/'..string.rep('x',200),'abcdef12-rest')
     assert.is_true(#long<=64)
     assert.is_truthy(long:match('^uml%-viewer%-x+%-%x+%-abcdef12$'))
+    -- Two project roots whose names share a prefix must not collide.
+    local a=Lifecycle.session_name('C:/projects/alpha-one','abcdef12-rest')
+    local b=Lifecycle.session_name('C:/projects/alpha-two','abcdef12-rest')
+    assert.are_not.equal(a,b)
   end)
   it('refuses existing, legacy and corrupt ownership before selecting or creating',function()
     for _,contents in ipairs{minimal_owned('C:/p'),

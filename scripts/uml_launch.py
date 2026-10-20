@@ -57,6 +57,10 @@ def verify_previous(state, root, restart):
     viewer = read_record(state / IDENTITY)
     if restart and launcher is None:
         raise ValueError('没有 launcher 进程记录；请通过 ./uml 启动后再使用 --restart。')
+    # An empty or unreadable state directory is not an identity at all.
+    for path in (state / LAUNCHER, state / IDENTITY):
+        if path.exists() and read_record(path) is None:
+            raise ValueError(f'{path.name} 不是有效记录；拒绝 restart。')
     for label, record in (('launcher', launcher), ('LOVE viewer', viewer)):
         if record is None:
             continue
@@ -100,6 +104,8 @@ def forward_args(viewer_args):
 def launch(root, tool_root, viewer_args, restart=False):
     state = root / '.uml-viewer'
     state.mkdir(exist_ok=True)
+    # Refuse an unusable identity before spending seconds on a preflight that
+    # would otherwise run first.
     launcher, viewer = verify_previous(state, root, restart)
     love = preflight(tool_root, root, viewer_args)
     forwarded = forward_args(viewer_args)

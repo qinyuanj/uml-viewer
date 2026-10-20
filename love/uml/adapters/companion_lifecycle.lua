@@ -25,9 +25,13 @@ local function game_directory()
   return '.'
 end
 
+-- Herdr derives its API socket from XDG_CONFIG_HOME + session name, and a
+-- sockaddr_un path is limited to 108 bytes. Keep the generated name short
+-- enough that any reasonable config root still fits.
+local BASE_LIMIT=10
 function M.session_name(root,uuid)
   local base=(root:gsub('\\','/'):match('([^/]+)/*$') or 'project'):gsub('[^%w_%-]','-')
-  base=base:sub(1,24)
+  base=base:sub(1,BASE_LIMIT)
   local hash=0
   for index=1,#root do hash=(hash*31+root:byte(index))%4294967296 end
   local suffix=(uuid or ''):gsub('%-',''):sub(1,8)
