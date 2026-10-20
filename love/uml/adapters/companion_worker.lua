@@ -99,7 +99,7 @@ function M.run(request_path,services)
     if not owner or owner.start~=request.viewer.start then stop=true end
   end
   local record,B
-  local options={canonical=services.canonical or require('uml.adapters.platform_path').load().canonical,
+  local options={canonical=services.canonical or require('uml.adapters.platform_path').canonical,
     progress=function(stage)
       event(stage); commands()
       if stop then error('Companion startup cancelled',0) end
@@ -114,7 +114,9 @@ function M.run(request_path,services)
         local opened,failed=pcall(services.open_window,record.session)
         if not opened then
           failure='Terminal attach failed: '..tostring(failed)
-        elseif type(failed)~='table' or failed.terminal~='windows-terminal' then
+        else
+          -- Nothing attaches automatically on the supported platforms; the
+          -- ready event carries the command a person can run in a terminal.
           failure='Companion started; attach manually: '
             ..tostring(type(failed)=='table' and failed.attach or 'herdr session attach '..tostring(record.session))
         end

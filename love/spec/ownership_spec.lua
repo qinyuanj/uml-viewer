@@ -25,11 +25,11 @@ end
 local function options(run_calls)
   local calls=run_calls or {}
   return {canonical=function(path) return (path or ''):gsub('\\','/') end,
-    preflight={os='Windows',path='C:/tools',probe=function(path) return {executable=true,canonical=path} end,
+    preflight={os='Linux',path='/tools',probe=function(path) return {executable=true,canonical=path} end,
       run=function(argv) calls[#calls+1]=argv
         if argv[2]=='--version' then return {exit=0,out='herdr 0.9.4'} end
         return {exit=0,out='{"$schema":"x","protocol":22,"schema_version":1}'} end},
-    claude=function() return 'C:/Tools/claude.exe' end,
+    claude=function() return '/Tools/claude' end,
     uuid=function() return '12345678-uuid' end}
 end
 local function fake_backend(captured)
@@ -46,28 +46,6 @@ local function minimal_owned(root)
     ..':socket "C:/s" :workspace "w1" :pane "w1:p1" :terminal-id "t" :shell-pid 1 '
     ..':owner-start "o" :server-pid "2" :server-start "r" :command ["claude.exe"]}'
 end
-local alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-local function decode_utf16le(text)
-  local bytes={}
-  local buffer,bits=0,0
-  for i=1,#text do
-    local char=text:sub(i,i)
-    if char=='=' then break end
-    local value=alphabet:find(char,1,true)
-    if value then
-      buffer=buffer*64+(value-1); bits=bits+6
-      if bits>=8 then
-        bits=bits-8
-        bytes[#bytes+1]=math.floor(buffer/2^bits)%256
-        buffer=buffer%2^bits
-      end
-    end
-  end
-  local out={}
-  for i=1,#bytes,2 do out[#out+1]=string.char(bytes[i]) end
-  return table.concat(out)
-end
-
 describe('companion lifecycle ownership',function()
   it('names a fresh session uniquely per launch within the Herdr grammar',function()
     local name=Lifecycle.session_name('C:/projects/some project','abcdef12-rest')
@@ -79,6 +57,28 @@ describe('companion lifecycle ownership',function()
     local a=Lifecycle.session_name('C:/projects/alpha-one','abcdef12-rest')
     local b=Lifecycle.session_name('C:/projects/alpha-two','abcdef12-rest')
     assert.are_not.equal(a,b)
+  end)
+  it('shrinks the name so the Herdr socket path stays inside the measured limit',function()
+    -- Herdr 0.9.5 starts its server at 101 bytes but fails workspace creation
+    -- from 102 bytes, so the generated name must fit the config root instead of
+    -- assuming one. This root is the one the WSL acceptance harness uses.
+    local config_root='/tmp/uml-restart-xdg-o7gbqk3s/config'
+    local name=Lifecycle.session_name('/projects/some project','abcdef12-rest',config_root)
+    local socket=config_root..'/herdr/sessions/'..name..'/herdr.sock'
+    assert.is_true(#socket<=Lifecycle.MAX_SOCKET_BYTES,socket..' ('..#socket..' bytes)')
+    assert.is_truthy(name:match('^uml%-viewer%-[%w_%-]+$'),name)
+    assert.is_true(#name<=Lifecycle.MAX_NAME_BYTES)
+    local other=Lifecycle.session_name('/projects/other','abcdef12-rest',config_root)
+    assert.are_not.equal(name,other)
+    assert.is_truthy(other:match('abcdef12$'))
+  end)
+  it('reports the real cause when no name can fit the config root',function()
+    local error_of=function(fn) local ok,err=pcall(fn); assert.is_false(ok); return err end
+    local err=error_of(function()
+      Lifecycle.session_name('/projects/some project','abcdef12-rest','/tmp/'..string.rep('x',120))
+    end)
+    assert.is_truthy(tostring(err):find('XDG_CONFIG_HOME',1,true))
+    assert.is_truthy(tostring(err):find('Unix socket path',1,true))
   end)
   it('refuses existing, legacy and corrupt ownership before selecting or creating',function()
     for _,contents in ipairs{minimal_owned('C:/p'),
@@ -104,12 +104,12 @@ describe('companion lifecycle ownership',function()
     local captured={}
     local opts=options()
     opts.backend=function(selected)
-      assert.are.equal('C:/tools/herdr.exe',selected.path)
+      assert.are.equal('/tools/herdr',selected.path)
       return fake_backend(captured)
     end
     local owned=Lifecycle.create(root,opts)
     assert.is_truthy(owned.session:match('^uml%-viewer%-'))
-    assert.are.equal('C:/Tools/claude.exe',captured.command[1])
+    assert.are.equal('/Tools/claude',captured.command[1])
     assert.are.equal('--session-id',captured.command[3])
     assert.are.equal('--append-system-prompt',captured.command[5])
     assert.are.equal(require('uml.domain.companion').standing_rules,captured.command[6])
@@ -163,54 +163,19 @@ describe('companion lifecycle ownership',function()
   end)
 end)
 
-describe('Herdr Windows full session client',function()
-  it('opens the Windows full session client with nesting disabled only in its child environment',function()
-    local calls={}
-    local opened=Lifecycle.open_window('uml-viewer-owned',{
-      windows=true,herdr='C:/tools/herdr.exe',
-      run=function(argv,timeout,env_remove)
-        calls[#calls+1]={argv=argv,timeout=timeout,env_remove=env_remove}
-        return {exit=0,out=''}
-      end})
-    assert.are.equal('windows-terminal',opened.terminal)
-    assert.are.equal(1,#calls)
-    local call=calls[1]
-    assert.are.equal('wt.exe',call.argv[1])
-    assert.are.equal('new-tab',call.argv[4])
-    assert.are.equal('--title',call.argv[5])
-    assert.are.equal('uml-viewer-owned',call.argv[6])
-    assert.are.equal('pwsh.exe',call.argv[7])
-    assert.are.equal('-EncodedCommand',call.argv[9])
-    assert.are.equal(10000,call.timeout)
-    assert.are.same({'HERDR_ENV','NO_COLOR'},call.env_remove)
-    local script=decode_utf16le(call.argv[10])
-    assert.is_truthy(script:find("session attach 'uml-viewer-owned'",1,true))
-    assert.is_truthy(script:find("& 'C:/tools/herdr.exe'",1,true))
-    assert.is_truthy(script:find('$env:HERDR_ENV=$null',1,true))
-    assert.is_truthy(script:find('$env:NO_COLOR=$null',1,true))
+describe('companion terminal attach',function()
+  it('reports a manual attach command instead of opening a terminal',function()
+    local calls=0
+    local opened=Lifecycle.open_window('uml-viewer-owned',{run=function() calls=calls+1 end})
+    assert.are.equal('none',opened.terminal)
+    assert.are.equal('uml-viewer-owned',opened.session)
+    assert.are.equal("'herdr' session attach 'uml-viewer-owned'",opened.attach)
+    assert.are.equal(0,calls)
   end)
 end)
 describe('Claude executable discovery boundary',function()
-  local Process=require('uml.adapters.process')
-  local native_windows
-  before_each(function()
-    native_windows=Process.windows
-    Process.windows=function() return true end
-  end)
-  after_each(function() Process.windows=native_windows end)
-  it('accepts a configured executable with spaces and preserves it literally',function()
-    local seen
-    local path=Claude.executable{run=function(argv)
-      seen=argv
-      assert.are.equal('pwsh.exe',argv[1])
-      assert.are.equal('-NoProfile',argv[2])
-      assert.are.equal('-EncodedCommand',argv[3])
-      return {exit=0,out='C:\\With Spaces\\claude.ps1'}
-    end}
-    assert.are.equal('C:\\With Spaces\\claude.ps1',path)
-    assert.is_not_nil(seen)
-  end)
-  it('fails closed when no safe executable is configured',function()
-    assert.is_false(pcall(Claude.executable,{run=function() return {exit=1,out='',err='unsafe wrapper'} end}))
+  it('uses CLAUDE_BIN when it is set and otherwise the bare name',function()
+    assert.are.equal('/opt/claude/bin/claude',Claude.executable{env={CLAUDE_BIN='/opt/claude/bin/claude'}})
+    assert.are.equal('claude',Claude.executable{env={}})
   end)
 end)

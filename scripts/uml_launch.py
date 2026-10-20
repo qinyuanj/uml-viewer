@@ -38,14 +38,14 @@ def write_record(path, record):
     atomic_write(path, json.dumps(record, sort_keys=True) + '\n')
 
 
-def await_exit(identity, label, timeout=30.0, interval=0.05):
+def await_exit(record, label, timeout=30.0, interval=0.05):
     """等待记录中的进程真实退出；PID 复用或身份变化一律拒绝。"""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        observed = proc_identity(identity['pid'])
+        observed = proc_identity(record['pid'])
         if observed is None:
             return
-        if observed['start'] != identity['start']:
+        if observed['start'] != record['started']:
             raise ValueError(f'{label} 进程身份已变化（PID 被复用）；拒绝继续。')
         time.sleep(interval)
     raise ValueError(f'旧 {label} 仍在运行；先发送 :quit-for-restart 并等待退出，再运行 ./uml --restart。')

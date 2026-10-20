@@ -58,10 +58,15 @@ function M.new(imgui,callbacks,fonts)
     if imgui.Begin((G.get(model.class,'name') or model.ns or '')..'###uml-detail',open) then
       if imgui.Button(S.close_detail..'##close-detail') then close() end
       remember('close-detail')
-      -- Measure inside the child, after its padding and scrollbar allocation.
       -- The 560-unit floor keeps narrower manually resized windows scrollable.
       if imgui.BeginChild_Str('detail-card',vec(0,0),imgui.ImGuiChildFlags_None or 0,(imgui.ImGuiWindowFlags_HorizontalScrollbar or 0)+(imgui.ImGuiWindowFlags_NoScrollWithMouse or 0)) then
-        local width=math.max(560*ui,imgui.GetContentRegionAvail().x)
+        -- Derive the content width from the window, not from the region that is
+        -- left: the region shrinks by the scrollbar once the rows overflow, so
+        -- using it makes the scrollbar appear, vanish and appear again and the
+        -- horizontal scrollbar flicker with it. Reserving the scrollbar always
+        -- keeps the layout identical on every frame.
+        local style=imgui.GetStyle()
+        local width=math.max(560*ui,imgui.GetWindowWidth()-2*style.WindowPadding.x-style.ScrollbarSize)
         local plan_w=width/ui
         detail_hovered=imgui.IsWindowHovered()==true
         detail_view_h=imgui.GetWindowHeight()/ui

@@ -11,22 +11,13 @@ local function files(root, result)
   end
   return result
 end
--- Mutation workers run deep below target/mutation-workers on Windows; the
--- relative path resolves to an absolute path past MAX_PATH, which plain
--- io.open rejects. The \\?\ prefix opens the same file without that limit.
-local function open_path(path)
-  if package.config:sub(1,1) ~= '\\' then return path end
-  if path:sub(1,4) == '\\\\?\\' then return path end
-  return '\\\\?\\' .. lfs.currentdir() .. '\\' .. (path:gsub('/', '\\'))
-end
-
 describe('repository EDN compatibility',function()
   for _, root in ipairs({'examples','.metrics','lua-fixture','acceptance-evidence','fixtures/jvm-goldens','typescript-fixture','rust-fixture','python-fixture'}) do
     -- Mutation workers exclude metrics and other generated trees by design.
     if lfs.attributes(root,'mode') == 'directory' then
       for _, path in ipairs(files(root)) do
         it('preserves semantics of '..path,function()
-          local f=assert(io.open(open_path(path),'rb')); local source=f:read('*a'); f:close()
+          local f=assert(io.open(path,'rb')); local source=f:read('*a'); f:close()
           local value=edn.parse(source)
           assert.is_true(edn.equal(value,edn.parse(edn.encode(value))))
         end)

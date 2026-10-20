@@ -1,7 +1,7 @@
 local log=require('uml.adapters.log')
 local game_args=love.arg.parseGameArguments(arg or {})
 local function canonical_path(path)
-  local ok,result=pcall(function() return require('uml.adapters.platform_path').load().canonical(path) end)
+  local ok,result=pcall(function() return require('uml.adapters.platform_path').canonical(path) end)
   if ok then return result end
   return (path or ''):gsub('\\','/')
 end

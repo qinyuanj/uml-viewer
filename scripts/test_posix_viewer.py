@@ -72,7 +72,7 @@ def main():
         (project / '.uml-viewer').mkdir()
         shutil.copytree(REPO / '.uml-viewer/cimgui-love-1.90-1', project / '.uml-viewer/cimgui-love-1.90-1')
 
-        process = run_viewer(project, evidence, 30)
+        process = run_viewer(project, evidence, 45)
         first = wait_for(lambda: scene_files(evidence), 40, message='first scene')
         result['checks'].append(('first scene published', str(first[0].name)))
 
@@ -94,16 +94,23 @@ def main():
         result['checks'].append(('rendered frame', f'{shot} {shot.stat().st_size} bytes '
                                   f'sha256={hashlib.sha256(shot.read_bytes()).hexdigest()[:16]}'))
 
-        process.terminate()
+        # The viewer leaves on its own schedule (UML_VIEWER_TEST_SECONDS), the
+        # same love.quit path a user's window close takes. SIGKILL is never used;
+        # a viewer that misses its deadline is a failure, not something to wait
+        # out.
         try:
-            code = process.wait(timeout=20)
+            code = process.wait(timeout=90)
         except subprocess.TimeoutExpired:
-            process.kill()
-            raise AssertionError('viewer did not exit after SIGTERM')
+            process.terminate()
+            try:
+                code = process.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                raise AssertionError('viewer ignored its own test duration and SIGTERM')
+            raise AssertionError(f'viewer missed its test duration (exit {code})')
         out, err = process.communicate()
         (evidence / 'viewer-stdout.txt').write_text(out or '')
         (evidence / 'viewer-stderr.txt').write_text(err or '')
-        assert code in (0, 143), f'viewer exited {code}: {err}'
+        assert code == 0, f'viewer exited {code}: {err}'
         result['checks'].append(('viewer exit', str(code)))
         result['ok'] = True
     except AssertionError as error:

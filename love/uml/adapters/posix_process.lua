@@ -1,6 +1,6 @@
 -- POSIX process boundary. argv is passed literally to posix_spawn: no shell is
 -- ever involved, so spaces and metacharacters cannot be reinterpreted.
--- Output/status are returned as data, like the Windows boundary.
+-- Output/status are returned as data rather than raised, so callers decide.
 -- Creation identity is the kernel's starttime jiffies sampled from /proc; every
 -- process observing the same PID reads the identical decimal text, so PID reuse
 -- is detected by an exact string comparison.
@@ -68,7 +68,6 @@ local function read_file(path)
   local text=file:read('*a'); file:close(); return text
 end
 
-function M.windows() return false end
 function M.current_pid() api(); return tonumber(ffi.C.getpid()) end
 
 function M.monotonic_ms()

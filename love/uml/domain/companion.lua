@@ -9,7 +9,7 @@ function M.fail(message,data)
 end
 
 M.legacy_guidance="tmux/psmux companions are retired. Ownership and resources were retained; no takeover or cleanup was attempted. Finish the old viewer/session using the old release, verify that this project's legacy resources have exited, then archive .uml-viewer/companion.edn and start ./uml fresh with Herdr. Do not use --restart to migrate; retain session.edn and mailbox queues."
-M.herdr_guidance="Herdr 0.9.3 or newer (protocol 22) is required. Install a release from https://github.com/herdrdev/herdr/releases (https://herdr.dev). No automatic download, upgrade or fallback. Windows native acceptance is partial; macOS end-to-end acceptance passed with Herdr 0.9.4 (spec #32), terminal attach unverified (#49)."
+M.herdr_guidance="Herdr 0.9.3 or newer (protocol 22) is required. Install a release from https://github.com/herdrdev/herdr/releases (https://herdr.dev). No automatic download, upgrade or fallback. WSL/Linux is the delivered platform (spec #106); macOS Apple Silicon is implemented but awaits real-machine acceptance; Windows native is unsupported (ADR 0007). Terminal attach is unverified (#49)."
 M.recovery_prompt="Recovery: do not scan sources or rewrite policy. Read the current .uml-viewer/to-agent.edn queue; pop and handle commands oldest first, preserving the latest context and existing proposals. Apply the standing quality-result gate to each refresh; only valid results followed by successful IR permit :display. A failed refresh stops that request's IR/display, reports its cause, and leaves later FIFO mail runnable. If there is no pending refresh, restore :display from .uml-viewer/view.edn; never issue an unconditional recovery display after a failed refresh. Then wait for directives."
 M.standing_rules=[=[You are the UML-viewer companion. The current working directory is the
 project being examined (the one whose diagram is on screen), not
@@ -167,14 +167,11 @@ function M.selection_args(args)
 end
 
 function M.herdr_candidates(os,path,probe)
-  local windows=type(os)=='string' and os:sub(1,7)=='Windows'
-  local exe=windows and 'herdr.exe' or 'herdr'
-  local separator=windows and ';' or ':'
   local result,seen={},{}
-  for part in (path or ''):gmatch('[^'..separator..']+') do
+  for part in (path or ''):gmatch('[^:]+') do
     part=part:gsub('"','')
     if part~='' then
-      local candidate=part:gsub('[/\\]+$','')..'/'..exe
+      local candidate=part:gsub('/+$','')..'/herdr'
       local observed=probe(candidate)
       if observed and observed.executable then
         local canonical=observed.canonical
@@ -264,11 +261,17 @@ function M.preflight_checks(record,opts)
   if opts.restart and not recorded then
     M.fail('Companion ownership is missing; cannot restart',{status='failure'})
   end
-  -- Herdr is the only backend on every supported platform: Windows, macOS and
-  -- WSL/Linux all launch the same native Herdr server.
-  local os=opts.os or ''
-  if os~='Windows' and os~='Linux' and os:sub(1,3)~='Mac' then
-    M.fail('Unsupported companion platform: '..tostring(os)..'. Run the viewer and Herdr natively; ownership and queues are retained.',{status='failure'})
+  -- Herdr is the only backend, and only the POSIX platforms are delivered:
+  -- WSL/Linux and macOS Apple Silicon. Windows native is retired (ADR 0007), so
+  -- it is refused with that reason instead of the generic one.
+  local platform=tostring(opts.os or '')
+  if platform:sub(1,7)=='Windows' then
+    M.fail('Windows native is not a supported platform (ADR 0007). Use WSL2 + WSLg'
+      ..' or macOS Apple Silicon; ownership and queues are retained.',{status='failure'})
+  end
+  if platform~='Linux' and platform:sub(1,3)~='Mac' then
+    M.fail('Unsupported companion platform: '..platform..'. Run the viewer and Herdr'
+      ..' natively; ownership and queues are retained.',{status='failure'})
   end
   return recorded or 'herdr'
 end

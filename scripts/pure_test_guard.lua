@@ -6,7 +6,7 @@ end
 os.execute=blocked('os.execute')
 io.popen=blocked('io.popen')
 local Process=require('uml.adapters.process')
-for _,name in ipairs{'run','spawn_detached','spawn_native','pwsh','start_attached','owner','owner_native','current_pid','await_exit'} do
+for _,name in ipairs{'run','spawn_detached','spawn_native','start_attached','owner','owner_native','current_pid','await_exit'} do
   Process[name]=blocked('Process.'..name)
 end
 -- Temporary-file fixture for application persistence tests. The native atomic

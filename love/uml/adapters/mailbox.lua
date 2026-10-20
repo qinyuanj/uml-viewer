@@ -4,7 +4,7 @@ local Protocol=require('uml.domain.mailbox')
 local Atomic=require('uml.adapters.atomic_file')
 local M={}
 local function mtime(path)
-  local ok,watch=pcall(function() return require('uml.adapters.platform_watch').load() end)
+  local ok,watch=pcall(function() return require('uml.adapters.platform_watch') end)
   if ok then local found,stamp=pcall(watch.mtime,path); return found and stamp or nil end
   local a=require('lfs').attributes(path)
   return a and (tostring(a.modification)..':'..a.size) or nil

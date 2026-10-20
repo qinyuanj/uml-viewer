@@ -1,19 +1,29 @@
 -- OS-owned file locks. flock() locks belong to the open file description and
--- are released when the holding process exits, so they give the same singleton
--- and gate semantics Windows sharing mode gives: the lock never relies on stale
+-- are released when the holding process exits, which is exactly the singleton
+-- and gate semantics the lifecycle needs: the lock never relies on stale
 -- lock-file contents, and no manual stale-lock cleanup is possible or needed.
-local ffi=require('ffi')
-ffi.cdef[[
+-- FFI is loaded lazily: the pure suite runs under Lua 5.4, where no FFI
+-- exists. Locks are only taken by real lifecycle processes.
+local M={}
+local ffi
+local function api()
+  if ffi then return ffi end
+  local ok,value=pcall(require,'ffi')
+  assert(ok,'OS file locks require LuaJIT FFI')
+  value.cdef[[
 int open(const char *pathname, int flags, unsigned int mode);
 int flock(int fd, int operation);
 int close(int fd);
 ]]
-local M={}
+  ffi=value
+  return ffi
+end
 local LOCK_EX=2
 local LOCK_NB=4
 local O_RDWR=2
 local O_CREAT=0x40
 function M.try_acquire(path)
+  api()
   local fd=ffi.C.open(path,bit.bor(O_RDWR,O_CREAT),420)
   if fd<0 then error('Cannot open lock file '..path,0) end
   if ffi.C.flock(fd,bit.bor(LOCK_EX,LOCK_NB))~=0 then
@@ -33,6 +43,7 @@ function M.acquire(path,options)
 end
 function M.release(handle)
   if not handle then return end
+  api()
   ffi.C.close(handle.fd)
 end
 return M

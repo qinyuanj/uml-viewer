@@ -86,6 +86,9 @@ describe('detail window adapter',function()
     local imgui=setmetatable({ImVec2_Float=vec,ImVec4_Float=function() return {} end,
       Begin=function(name) calls.begin=name; return true end,BeginChild_Str=function() return true end,
       GetCursorScreenPos=function() return vec(0,0) end,GetContentRegionAvail=function() return vec(600,600) end,
+      -- 630 window - 2*8 padding - 14 scrollbar = the 600-unit content width.
+      GetWindowWidth=function() return 630 end,
+      GetStyle=function() return {WindowPadding=vec(8,8),ScrollbarSize=14} end,
       GetWindowHeight=function() return 600 end,GetItemRectMin=function() return vec(0,0) end,GetItemRectMax=function() return vec(1,1) end,
       GetWindowDrawList=function() return list end,CalcTextSize=function(t) return vec(#t*7,13) end,
       Button=function(label) return clicked and label:find(S.close_detail,1,true)==1 end,
@@ -110,6 +113,23 @@ describe('detail window adapter',function()
     assert.is_not_nil(wash)
     assert.are.equal(0,wash.a.x); assert.are.equal(600,wash.b.x)
     assert.are.equal(18,wash.b.y-wash.a.y)
+  end)
+  it('keeps the card width independent of the vertical scrollbar',function()
+    -- The content region shrinks by the scrollbar as soon as the rows overflow.
+    -- Deriving the card width from it makes the horizontal scrollbar appear,
+    -- vanish and appear again, so the same document must paint one width.
+    local widths={}
+    for _,region in ipairs{600,586,600} do
+      local imgui=fake(false); local fills={}
+      imgui.GetContentRegionAvail=function() return {x=region,y=600} end
+      imgui.GetWindowDrawList=function() return setmetatable({AddRectFilled=function(_,a,b,color) fills[#fills+1]={a=a,b=b,color=color} end},{__index=function() return function() end end}) end
+      imgui.IsItemHovered=function() return true end
+      Adapter.new(imgui,{}).draw(s)
+      local wash
+      for _,fill in ipairs(fills) do if fill.color==T.pack(T.colors.gold,T.alpha.row_wash) then wash=fill end end
+      widths[#widths+1]=assert(wash,'hovered row not painted').b.x
+    end
+    assert.are.same({600,600,600},widths)
   end)
   it('draws nothing while no detail target is open',function()
     local imgui,calls=fake(false); local n={}; for k,v in pairs(s) do n[k]=v end; n.detail_id=nil

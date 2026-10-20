@@ -3,32 +3,6 @@ local Herdr=require('uml.adapters.herdr')
 local H=require('uml.domain.herdr')
 local lfs=require('lfs')
 
-local alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-local function decode_base64(text)
-  local out={}
-  local buffer,count=0,0
-  for i=1,#text do
-    local char=text:sub(i,i)
-    if char=='=' then break end
-    local value=alphabet:find(char,1,true)
-    if value then
-      buffer=buffer*64+(value-1); count=count+6
-      if count>=8 then
-        count=count-8
-        out[#out+1]=string.char(math.floor(buffer/2^count)%256)
-        buffer=buffer%2^count
-      end
-    end
-  end
-  return table.concat(out)
-end
-local function decode_command(encoded)
-  local bytes=decode_base64(encoded)
-  local out={}
-  for i=1,#bytes,2 do out[#out+1]=bytes:sub(i,i) end
-  return table.concat(out)
-end
-
 local owned={backend='herdr',owner_role='companion',session='uml-viewer-A',
   socket='C:/herdr/sessions/A/herdr.sock',workspace='w1',pane='w1:p1',
   terminal_id='term_A',shell_pid=42,owner_start='shell-start',
@@ -56,7 +30,7 @@ local function fake_cli(calls,state)
       local foreground
       if state.foreground=='absent' then foreground=nil
       elseif state.foreground then foreground=state.foreground
-      else foreground=JSON.array{{pid=42,name='pwsh'}} end
+      else foreground=JSON.array{{pid=42,name='bash'}} end
       return response{result={process_info={pane_id='w1:p1',shell_pid=42,
         foreground_processes=foreground}}}
     elseif op[1]=='workspace' and op[2]=='create' then
@@ -92,7 +66,7 @@ local function fake_owner(state)
       if state.stopped then return nil end
       return {pid=41,start=state.server_start or 'server-start',name='herdr'}
     elseif tostring(pid)=='42' then
-      return {pid=42,start=state.shell_start or 'shell-start',name='pwsh'}
+      return {pid=42,start=state.shell_start or 'shell-start',name='bash'}
     end
   end
 end
@@ -101,9 +75,7 @@ local function backend(run,owner,extra)
   local overrides={}
   for key,value in pairs(extra or {}) do overrides[key]=value end
   if overrides.identity then identity=overrides.identity; overrides.identity=nil end
-  -- These fixtures exercise the Windows boundary (pwsh terminal reset,
-  -- claude.exe argv); the platform is stated, never inferred from the host.
-  local options={run=run,owner=owner,selected={path='herdr',release='0.9.3'},windows=true,
+  local options={run=run,owner=owner,selected={path='herdr',release='0.9.3'},
     canonical=function(path) return (path or ''):gsub('\\','/') end,
     clock=function() return 0 end,sleep=function() end,
     read_companion=function() return nil end,
@@ -197,11 +169,13 @@ describe('Herdr owned session backend',function()
   it('persists observed provisional identity before run and returns original argv',function()
     local calls={}; local state={empty_sessions=true}; local checkpoints={}
     local run=fake_cli(calls,state)
-    local function routed(argv)
-      if argv[1]=='pwsh.exe' then return {exit=0,out='',err=''} end
-      return run(argv)
-    end
-    local original={'claude.exe','space $ & \' 中文',''}
+    local function routed(argv) return run(argv) end
+    -- The executable is resolved once, up front, and the rest of the argv is
+    -- handed on literally: metacharacters and non-ASCII text must survive.
+    local bin=os.tmpname(); os.remove(bin); assert(lfs.mkdir(bin))
+    local exe=bin..'/claude 中文'
+    local handle=assert(io.open(exe,'w')); handle:close()
+    local original={exe,'space $ & \' 中文',''}
     local B=backend(routed,fake_owner(state),{
       identity={provisional=true},
       write_companion=function(_,record) checkpoints[#checkpoints+1]=record; return record end,
@@ -213,6 +187,7 @@ describe('Herdr owned session backend',function()
     local ok,identity=pcall(B.create,'uml-viewer-A',root,original)
     os.remove(root..'/.uml-viewer/uml-viewer-A-runner.edn.launch.edn')
     lfs.rmdir(root..'/.uml-viewer'); lfs.rmdir(root)
+    os.remove(exe); lfs.rmdir(bin)
     assert.is_true(ok,identity)
     assert.are.same(original,identity.command)
     assert.is_nil(identity.provisional)
@@ -230,6 +205,12 @@ describe('Herdr owned session backend',function()
     assert.is_not_nil(state.run_text)
     assert.is_not_nil(state.recovery)
     assert.is_nil(state.recovery.provisional)
+  end)
+  it('refuses a companion command that is not resolvable',function()
+    local calls={}; local state={empty_sessions=true}
+    local B=backend(fake_cli(calls,state),fake_owner(state),{identity={provisional=true}})
+    local err=error_of(function() B.create('uml-viewer-A',os.tmpname(),{'definitely-not-on-path-106'}) end)
+    assert.is_truthy(tostring(err):find('not found on PATH',1,true))
   end)
   it('resumes cleanup after workspace closure only under the same server identity',function()
     local calls={}; local state={fail={'session','stop'}}; local checkpoint
@@ -295,15 +276,20 @@ describe('Herdr recovery relaunch',function()
 
   local function launch(calls,state,extra)
     local run=fake_cli(calls,state)
+    -- The POSIX reset writes its escape sequence by running printf inside the
+    -- pane; a failure there must stop the relaunch before it submits.
+    local function is_reset(argv)
+      local text=argv[7] or ''
+      return argv[4]=='pane' and argv[5]=='run' and text:find('printf',1,true)~=nil
+    end
     local routed=function(argv)
-      if argv[1]=='pwsh.exe' then
-        calls[#calls+1]=argv
-        if #argv>3 then state.reset_script=decode_command(argv[4]) end
-        return {exit=(state.reset_exit or 0),out='',err=''}
+      calls[#calls+1]=argv
+      if is_reset(argv) and state.reset_fail then
+        return {exit=4,out='',err='nonexistent directory'}
       end
       return run(argv)
     end
-    local options={run=routed,owner=fake_owner(state),selected={path='herdr',release='0.9.3'},windows=true,
+    local options={run=routed,owner=fake_owner(state),selected={path='herdr',release='0.9.3'},
       canonical=function(p) return p end,clock=function() return 0 end,sleep=function() end,
       runner={executable='love',argv={'love','C:/love','companion-runner'}},
       read_companion=function() return nil end,write_companion=function(_,r) return r end}
@@ -319,44 +305,37 @@ describe('Herdr recovery relaunch',function()
     launch(calls,state)
     local reset_index,keys_index,run_index
     for index,argv in ipairs(calls) do
-      if argv[1]=='pwsh.exe' then reset_index=index
+      if op_of(argv)=='pane run' and (argv[7] or ''):find('printf',1,true) then reset_index=index
       elseif op_of(argv)=='pane send-keys' then keys_index=index
       elseif op_of(argv)=='pane run' then run_index=index end
     end
     assert.is_not_nil(reset_index); assert.is_not_nil(keys_index); assert.is_not_nil(run_index)
     assert.is_true(reset_index<keys_index and keys_index<run_index)
-    local script=state.reset_script
-    assert.is_not_nil(script)
-    assert.is_truthy(script:find('AttachConsole(42)',1,true))
-    assert.is_truthy(script:find('CreateFile("CONOUT$"',1,true))
-    assert.is_truthy(script:find('[?1049l',1,true))
-    assert.is_truthy(script:find('[?2004l',1,true))
-    assert.is_truthy(script:find('[<u',1,true))
+    local script=table.concat(calls[reset_index],' ')
+    for _,mode in ipairs{'[?1049l','[?2004l','[<u'} do
+      assert.is_truthy(script:find(mode,1,true),'reset must clear '..mode)
+    end
     -- Mouse tracking left on by a killed TUI feeds SGR reports to the
     -- replacement agent as keystrokes; every enabled mode must be reset.
     for _,mode in ipairs{'[?1000l','[?1002l','[?1003l','[?1006l'} do
-      assert.is_truthy(script:find(mode,1,true))
+      assert.is_truthy(script:find(mode,1,true),'reset must clear '..mode)
     end
     local text=state.run_text
-    assert.is_true(text:sub(1,2)=='& ')
     assert.is_truthy(text:find("'companion-runner'",1,true))
   end)
   it('fails closed without submitting when the terminal reset fails',function()
-    local calls={}; local state={reset_exit=3}
+    local calls={}; local state={reset_fail=true}
     assert.is_truthy(error_of(function() launch(calls,state) end))
     for _,argv in ipairs(calls) do
-      assert.are_not.equal('pane run',op_of(argv))
       assert.are_not.equal('pane send-keys',op_of(argv))
     end
   end)
   it('refuses submission when the pane foreground is unknown or occupied',function()
-    for _,foreground in ipairs{'absent', JSON.array{{pid=42,name='pwsh'},{pid=7,name='claude'}}} do
+    for _,foreground in ipairs{'absent', JSON.array{{pid=42,name='bash'},{pid=7,name='claude'}}} do
       local calls={}; local state={foreground=foreground}
       assert.is_truthy(error_of(function() launch(calls,state) end))
-      for _,argv in ipairs(calls) do
-        assert.are_not.equal('pwsh.exe',argv[1])
-        assert.are_not.equal('pane run',op_of(argv))
-      end
+      -- The reset may run, but the replacement command must never be submitted.
+      assert.is_nil(state.run_text)
     end
   end)
   it('retries only canonical-mode pane run rejections within the deadline',function()
@@ -365,20 +344,36 @@ describe('Herdr recovery relaunch',function()
     local attempts=0
     local B=Herdr.new(relaunch_identity,{
       run=function(argv)
-        if argv[1]=='pwsh.exe' then return {exit=0,out='',err=''} end
         if op_of(argv)=='pane run' then
+          -- The terminal reset is a pane run too, but retrying it is not the
+          -- behaviour under test; only the submitted command is counted.
+          if (argv[7] or ''):find('printf',1,true) then return {exit=0,out='{}',err=''} end
           attempts=attempts+1
           if attempts<3 then return {exit=1,out='',err='pane_send_failed: input exceeds the canonical mode limit'} end
           return {exit=0,out='{}',err=''}
         end
         return run(argv)
       end,
-      owner=fake_owner(state),selected={path='herdr',release='0.9.3'},windows=true,
+      owner=fake_owner(state),selected={path='herdr',release='0.9.3'},
       canonical=function(p) return p end,clock=function() return 0 end,sleep=function() end,
       runner={executable='love',argv={'runner'}},
       read_companion=function() return nil end,write_companion=function(_,r) return r end})
     B.relaunch(relaunch_identity)
     assert.are.equal(3,attempts)
+  end)
+end)
+
+describe('Herdr socket path budget',function()
+  it('refuses a session whose socket path cannot fit before creating anything',function()
+    local calls={}
+    -- The limit is an option so the test does not depend on the host's config
+    -- root: any real path exceeds a one-byte budget.
+    local B=backend(function(argv) calls[#calls+1]=argv; error('CLI reached',0) end,
+      function() return nil end,{max_socket_bytes=1})
+    local ok,err=pcall(B.create,'uml-viewer-fixture','/tmp',{'claude'})
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find('Unix socket limit',1,true),tostring(err))
+    assert.are.equal(0,#calls)
   end)
 end)
 

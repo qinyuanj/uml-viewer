@@ -43,7 +43,7 @@ def main():
                XDG_CONFIG_HOME=str(runtime / 'config'), XDG_DATA_HOME=str(runtime / 'data'),
                XDG_CACHE_HOME=str(runtime / 'cache'), XDG_STATE_HOME=str(runtime / 'state'),
                UML_VIEWER_TOOL_ROOT=str(REPO), UML_VIEWER_EVIDENCE=str(evidence),
-               UML_VIEWER_TEST_SECONDS='180', CLAUDE_BIN=str(project / 'companion-placeholder'),
+               UML_VIEWER_TEST_SECONDS='75', CLAUDE_BIN=str(project / 'companion-placeholder'),
                UML_COMPANION_NO_ATTACH='1')
     for variable in ('UML_CIMGUI_DIRECTORY', 'UML_VIEWER_PROJECT_ROOT'):
         env.pop(variable, None)
@@ -94,6 +94,16 @@ def main():
         # The new viewer restores the same companion, so it does not create one.
         assert session_before in ownership.read_text(), 'restart replaced its companion ownership'
         checks.append(('companion retained', session_before))
+
+        # The restarted viewer is a real process: it must also exit on its own
+        # schedule and release only this project's resources. Waiting for that
+        # is what keeps the harness from leaking a viewer, a companion and a
+        # Herdr session into the machine after the test passes.
+        wait_for(lambda: not Path(f'/proc/{new_launcher}').exists(), 120, message='restarted viewer exit')
+        checks.append(('restarted viewer exited', str(new_launcher)))
+        wait_for(lambda: (project / '.uml-viewer/companion.edn').read_text().strip() == '{}',
+                 90, message='companion cleanup after restart')
+        checks.append(('shutdown released ownership', '{}'))
         result['ok'] = True
     except AssertionError as error:
         result['ok'] = False

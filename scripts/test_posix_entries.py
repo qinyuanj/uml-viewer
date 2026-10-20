@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -231,6 +232,58 @@ class PosixEntries(unittest.TestCase):
         (self.root / 'src/a.lua').write_text('local M={}\nfunction M.hello() return "hello" end\nreturn M\n')
         (self.root / 'policy.edn').write_text(self.policy)
 
+    def test_installer_provisions_the_pinned_font_and_refuses_a_mismatch(self):
+        """The font pin is enforced by hash, not by trusting the download.
+
+        A stand-in extractor keeps the test independent of 7z: what is under
+        test is the pin (archive hash, face hash, destination, idempotence) and
+        the refusal, not py7zr itself.
+        """
+        import hashlib
+        import importlib.util
+        specification = importlib.util.spec_from_file_location(
+            'uml_posix', REPO / 'scripts/uml_posix.py')
+        installer = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(installer)
+
+        face = self.root / 'face.ttf'
+        face.write_bytes(b'pinned sarasa face')
+        face_hash = hashlib.sha256(face.read_bytes()).hexdigest()
+        archive = self.root / 'fixture.7z'
+        archive.write_bytes(b'archive bytes')
+        archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+        extractor = self.root / 'extractor'
+        # Shell sees $1=-I $2=-c $3=script $4=archive $5=target $6=face.
+        extractor.write_text('#!/bin/sh\n'
+                             'mkdir -p "$5"\n'
+                             f'cp "{face}" "$5/SarasaMonoSC-Regular.ttf"\n'
+                             'echo SarasaMonoSC-Regular.ttf\n')
+        extractor.chmod(0o755)
+        fonts = self.root / '.uml-viewer/fonts'
+        with unittest.mock.patch.dict(os.environ, {
+                'UML_VIEWER_FONT_URL': 'file://' + str(archive),
+                'UML_VIEWER_FONT_ARCHIVE_SHA256': archive_hash,
+                'UML_VIEWER_FONT_SHA256': face_hash,
+                'UML_VIEWER_FONT_EXTRACTOR': str(extractor)}):
+            installer.font(fonts)
+            self.assertEqual(face.read_bytes(), (fonts / 'SarasaMonoSC-Regular.ttf').read_bytes())
+            written = (fonts / 'SarasaMonoSC-Regular.ttf').stat().st_mtime_ns
+            # A second pass must keep the already verified face untouched.
+            installer.font(fonts)
+            self.assertEqual(written, (fonts / 'SarasaMonoSC-Regular.ttf').stat().st_mtime_ns)
+            # A pin that does not match the face must leave nothing behind.
+            (fonts / 'SarasaMonoSC-Regular.ttf').unlink()
+            with unittest.mock.patch.dict(os.environ, {'UML_VIEWER_FONT_SHA256': '0' * 64}):
+                with self.assertRaises(ValueError) as caught:
+                    installer.font(fonts)
+                self.assertIn('SHA256 mismatch', str(caught.exception))
+            # And a substituted archive never reaches extraction.
+            with unittest.mock.patch.dict(os.environ, {'UML_VIEWER_FONT_ARCHIVE_SHA256': '0' * 64}):
+                with self.assertRaises(ValueError) as caught:
+                    installer.font(fonts)
+                self.assertIn('archive SHA256 mismatch', str(caught.exception))
+            self.assertFalse((fonts / 'SarasaMonoSC-Regular.ttf').exists())
+
     def test_install_refuses_existing_ownership(self):
         state = self.root / '.uml-viewer'
         state.mkdir()
@@ -269,6 +322,183 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual([['-m', 'mutator', 'src/a.lua'], ['-m', 'mutator', 'src/b.lua']], calls)
         self.assertTrue(json.loads((self.root / '.uml-viewer/quality-result.json').read_text())['validResult'])
 
+
+    def stub_tool(self, tool, body='import sys\nraise SystemExit(3)\n'):
+        directory = self.root / f'.uml-viewer/{tool}/.venv/bin'
+        directory.mkdir(parents=True)
+        python = directory / 'python'
+        python.write_text('#!/usr/bin/python3\n' + body)
+        python.chmod(0o755)
+
+    def record(self):
+        return json.loads((self.root / '.uml-viewer/quality-result.json').read_text())
+
+    def test_standard_crap_requests_the_whole_business_tree(self):
+        # Ported from the retired PowerShell public-entry suite: the standard
+        # craspper invocation keeps declared scope, options and caller arguments
+        # in that order, and crapper's declared finding (exit 2) is valid.
+        self.stub_tool('crapper', 'import json,sys\nfrom pathlib import Path\n'
+                       'Path("crap-call.json").write_text(json.dumps(sys.argv[1:]))\nraise SystemExit(2)\n')
+        (self.root / 'business tree').mkdir()
+        (self.root / 'business tree/generated').mkdir()
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['business tree'], 'exclude': ['business tree/generated'],
+            'crapperOptions': ['--no-coverage']}}))
+        result = self.entry('crap')
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertEqual(['-m', 'crapper', '--full-tree', '--source-root', 'business tree',
+                          '--exclude', 'business tree/generated', '--no-coverage'],
+                         json.loads((self.root / 'crap-call.json').read_text()))
+        self.assertEqual({'version': 1, 'operation': 'crap', 'exitCode': 2, 'validResult': True,
+                          'crapScope': 'whole-tree', 'configured': False, 'tool': 'crapper',
+                          'projectRoot': str(self.root.resolve())}, self.record())
+
+    def test_standard_mutation_keeps_declared_scope_and_literal_argv(self):
+        # Ported from the retired suite: declared exclusions filter the business
+        # files while spaces and shell metacharacters reach mutator literally.
+        self.stub_tool('mutator', 'import json,sys\nfrom pathlib import Path\n'
+                       'p=Path("mutate-calls.jsonl")\n'
+                       'with p.open("a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+                       'raise SystemExit(3)\n')
+        for name in ['business/keep.lua', 'business/generated/omit.lua', 'outside.lua']:
+            file = self.root / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('return 1')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['business'], 'exclude': ['**/generated'],
+            'mutatorOptions': ['--max-workers', '2']}}))
+        result = self.entry('mutate', 'business/keep.lua', 'business/generated/omit.lua',
+                            'outside.lua', 'business/keep again.lua')
+        self.assertEqual(3, result.returncode, result.stderr)
+        calls = [json.loads(line) for line in
+                 (self.root / 'mutate-calls.jsonl').read_text().splitlines()]
+        self.assertEqual([['-m', 'mutator', '--max-workers', '2', 'business/keep.lua']], calls)
+        self.assertTrue(self.record()['validResult'])
+
+    def test_standard_mutation_never_accepts_routing_overrides_from_the_caller(self):
+        # Ported from the retired suite: scope belongs to the declaration, so a
+        # caller cannot narrow or widen it, and no tool is launched.
+        self.stub_tool('mutator')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1,
+            'standardTools': {'sourceRoots': ['src']}}))
+        for flag in ('--source-root', '--root', '--exclude'):
+            with self.subTest(flag=flag):
+                result = self.entry('mutate', flag, 'elsewhere', 'src/a.lua')
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn('standardTools', result.stderr)
+                self.assertFalse((self.root / '.uml-viewer/quality-result.json').exists())
+
+    def test_invalid_standard_scope_never_launches_or_reuses_a_result(self):
+        # Ported from the retired suite: unusable scope fails before the tool
+        # runs and must not leave an older valid record behind.
+        self.stub_tool('mutator')
+        state = self.root / '.uml-viewer'
+        for settings in ({'sourceRoots': ['missing']}, {'sourceRoots': ['..']},
+                         {'mutatorOptions': ['--mutate-all']},
+                         {'exclude': ['../outside']}):
+            with self.subTest(settings=settings):
+                (state / 'quality-result.json').write_text('{"validResult":true}')
+                (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1,
+                    'standardTools': settings}))
+                result = self.entry('mutate')
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertFalse((state / 'quality-result.json').exists())
+
+    def test_accessory_only_manifest_is_rejected_without_launching(self):
+        # Ported from the retired suite: aliasResultExitCodes died with the JVM
+        # implementation, so a manifest declaring only it cannot dispatch.
+        self.stub_tool('mutator')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1,
+            'aliasResultExitCodes': {'mutate': [0, 3]}}))
+        (self.root / '.uml-viewer/quality-result.json').write_text('{"validResult":true}')
+        result = self.entry('mutate', 'src/a.lua')
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Clojure alias 已移除', result.stderr)
+        self.assertFalse((self.root / '.uml-viewer/quality-result.json').exists())
+
+    def test_removed_runtime_option_is_refused(self):
+        # Ported from the retired suite: --runtime accepts only love.
+        for args in (('--runtime',), ('--runtime', 'invalid'), ('--runtime', 'jvm')):
+            with self.subTest(args=args):
+                result = self.entry(*args)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn('runtime', result.stderr)
+
+    def love_stub(self, preflight='herdr'):
+        """A native stand-in for LOVE: records argv, answers the preflight."""
+        stub = self.root / 'love stub'
+        record = self.root / 'love-argv.json'
+        stub.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = --version ]; then printf "LOVE 11.5 (stub)\\n"; exit 0; fi\n'
+            'for a in "$@"; do if [ "$a" = companion-preflight ]; then\n'
+            f'  printf "%s\\n" {preflight!r}\n'
+            '  exit 0\n'
+            'fi; done\n'
+            f'printf "%s\\n" "$@" > {str(record)!r}\n'
+            'sleep 30\n')
+        stub.chmod(0o755)
+        return stub, record, dict(self.env, UML_LOVE_EXECUTABLE=str(stub))
+
+    def launcher_record(self):
+        path = self.root / '.uml-viewer/viewer-process.json'
+        return json.loads(path.read_text()) if path.exists() else None
+
+    def stop_stub(self, record):
+        if not record:
+            return
+        pid = record['pid']
+        try:
+            Path(f'/proc/{pid}').exists() and os.kill(pid, 15)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def test_preflight_failure_stops_launch_without_a_viewer(self):
+        # Ported from the retired suite: an unusable preflight answer stops the
+        # launch before any viewer, launcher record or ownership exists.
+        for preflight in ('', 'tmux', 'herdr\nextra'):
+            with self.subTest(preflight=preflight):
+                _, _, env = self.love_stub(preflight=preflight)
+                result = subprocess.run([str(self.root / 'uml'), 'diagram.edn'], cwd=self.root,
+                                        env=env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn('preflight', result.stderr)
+                self.assertIsNone(self.launcher_record())
+                self.assertFalse((self.root / '.uml-viewer/companion.edn').exists())
+
+    def test_launch_records_a_real_identity_and_forwards_literal_argv(self):
+        # Ported from the retired suite: the launcher record must carry the
+        # viewer's own creation identity, and argv reaches LOVE unchanged except
+        # for the backend the preflight consumed.
+        stub, record, env = self.love_stub()
+        arguments = ['diagram with spaces.edn', 'literal;$value']
+        result = subprocess.run([str(self.root / 'uml'), *arguments], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        launcher = self.launcher_record()
+        self.addCleanup(self.stop_stub, launcher)
+        self.assertIsNotNone(launcher, result.stdout)
+        self.assertEqual('love', launcher['runtime'])
+        observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        self.assertEqual(observed, launcher['started'])
+        self.assertEqual(['viewer', '--backend', 'herdr', *arguments], launcher['argv'])
+        if record.exists():
+            # One argument per line: this asserts what LOVE itself received,
+            # not just what the launcher wrote down. The game directory leads.
+            received = record.read_text().splitlines()
+            self.assertEqual(str(REPO / 'love'), received[0])
+            self.assertEqual(['viewer', '--backend', 'herdr', *arguments], received[1:])
+
+    def test_explicit_love_runtime_is_accepted(self):
+        # Ported from the retired suite: --runtime love stays valid and is
+        # stripped before the viewer sees the arguments.
+        stub, record, env = self.love_stub()
+        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'love', 'diagram.edn'],
+                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        launcher = self.launcher_record()
+        self.addCleanup(self.stop_stub, launcher)
+        self.assertEqual(['viewer', '--backend', 'herdr', 'diagram.edn'], launcher['argv'])
 
     def test_install_defaults_to_main_and_accepts_a_fixed_commit(self):
         source = self.root / 'viewer source'

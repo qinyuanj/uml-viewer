@@ -71,9 +71,10 @@ The diagram is already on screen.
   Legacy tmux/psmux or unmarked ownership is retained and refused; before
   migration read `docs/herdr-backend-contract.md` §9.
 - Installer prerequisites are LOVE 11.5, Lua (5.1/5.4) with lfs and
-  luacov, git, Herdr >= 0.9.3, and Python 3.11+. No PowerShell is
-  required. `get-uml-viewer` provisions pinned
-  cimgui-love 1.90-1 bindings and DLL automatically into `.uml-viewer/`.
+  luacov, git, Herdr >= 0.9.3, and Python 3.11+. There is no PowerShell
+  or Windows-native path (ADR 0007). `get-uml-viewer` provisions pinned
+  cimgui-love 1.90-1 bindings and the shared library automatically into
+  `.uml-viewer/`.
   It always fetches all three quality tools — crapper, mutator and dryer —
   and provisions their project-local `.uml-viewer/<tool>/.venv` environments.
   dryer reports duplicate structure in `.metrics/dry.edn`; nothing overlays

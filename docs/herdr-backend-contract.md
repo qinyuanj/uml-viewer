@@ -4,7 +4,7 @@
 WSL2 + Ubuntu 24.04 + WSLg 与 macOS Apple Silicon；Windows 原生与 Intel Mac 不受支持。**
 文中 Java/JVM 与旧 Windows/macOS 验收记录是历史证据，不代表当前实现。当前实现是
 `love/uml/adapters/` 的 LOVE runner/controller，进程创建、等待、身份与 OS 单例 lock
-由平台 adapter 提供（Windows 与 POSIX 各一套，见 ADR 0007 的能力表），ownership、
+由 POSIX adapter 提供（平台能力表见 ADR 0007；Windows 专用实现在 spec #106 退役），ownership、
 预算、FIFO 与质量门控契约保持不变。当前身份文件与重启规则见 §9.1。#23 退役后
 Herdr 是唯一 companion 后端；`--backend herdr` 保留为兼容选项。
 
@@ -15,15 +15,17 @@ workspace/pane、runner、恢复注册、验证清理）与公共入口端到端
 分开记录；未验证项不按官网声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
 
 证据来源：
-- Windows checkpoint：#14 评论（2026-10-10，Herdr 0.9.3 / protocol 22）
-- macOS checkpoint：#14 评论（2026-10-10，Darwin 27.0.0 arm64，同上版本）
-- macOS 端到端验收：#32 / #44 验收日志（2026-10-15，Herdr 0.9.4 / protocol 22，
-  Darwin 27.0.0 arm64，acceptance-evidence/acceptance-log.md）
+- WSL 端到端验收（当前实现）：spec #106，Herdr 0.9.5 / protocol 22，
+  `acceptance-evidence/106-wsl/`
+- macOS 端到端验收（历史）：#32 / #44 验收日志（2026-10-15，Herdr 0.9.4 /
+  protocol 22，Darwin 27.0.0 arm64，acceptance-evidence/acceptance-log.md）
+- 历史 checkpoint：Windows #14（2026-10-10，0.9.3）与 macOS #14（同日同版本）
 
 ## 1. 版本预检契约
 
-**接受 Herdr >= 0.9.3 且 socket protocol 22；有验收证据的版本是 0.9.3（Windows
-部分、macOS checkpoint）与 0.9.4（macOS 端到端，spec #32）。**
+**接受 Herdr >= 0.9.3 且 socket protocol 22；当前实现有端到端证据的版本是
+0.9.5（WSL，spec #106）；0.9.4 是 macOS 历史记录（spec #32），0.9.3 是早先
+checkpoint。**
 其他更高版本只按协议门槛放行，未经验证（见 [ADR 0003](adr/0003-herdr-version-floor.md)）：
 
 - wrapper 与 JVM 共用只读预检，创建 detached Viewer、终端或 companion 前执行
@@ -42,7 +44,8 @@ workspace/pane、runner、恢复注册、验证清理）与公共入口端到端
 - fresh 默认 Herdr；`--backend herdr` 兼容，tmux/psmux 明确拒绝。
   restart、wake、close 必须具有显式 `:backend :herdr` ownership，身份核实后
   才操作；legacy、无 backend、未知或不完整记录保留并拒绝接管。
-  Linux/WSL companion 启动在创建资源前拒绝，旧 tmux 路径已退役。
+  WSL/Linux 与 macOS 均可启动；Windows 原生在创建资源前拒绝（ADR 0007），
+  旧 tmux 路径已退役。
   Herdr 创建项目独占的命名 server；预检本身仍不创建任何资源。
 
 ## 2. 身份与 ownership 契约
@@ -72,8 +75,11 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
   snapshot 中存在该 workspace/pane、`pane process-info` 的 shell_pid 与
   cwd 匹配、owner-start 一致。任一不符或含糊：失败并给诊断，不创建
   替代会话、不关闭猜测目标。
-- macOS owner-start 可用 `ps -o lstart=`；Windows 沿用 #15 的进程创建
-  时间方案。
+- POSIX owner-start 取 `/proc/<pid>/stat` 的 starttime（Linux/WSL）；macOS
+  用 `ps -o lstart=`。Windows 的进程创建时间方案随原生支持退役。
+- session 名必须让 socket 路径落在实测上限内：Herdr 0.9.5 下 101 字节可用，
+  102 字节起 `workspace create` 失败并只报 closed-channel。生成长度按
+  `XDG_CONFIG_HOME` 实算，装不下时以真实原因拒绝（ADR 0007）。
 - 双项目隔离已验证：A 的 workspace 关闭与 server 停止不影响 B。
   `cleanup!` 只作用于记录中的 session，绝不停共享/其他 session。
 
@@ -102,17 +108,17 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
 ## 4. argv 与终端连接契约
 
 - `pane run` 的命令字符串**经 shell 解析**：裸 `$HOME` 会展开。字面 argv
-  必须由项目桥接（对每个参数做 POSIX shell 引号转义后拼接；Windows 用
-  已验证的 PowerShell ArgumentList 桥）。已验证可字面保留：空格、单引号、
-  反引号、`$`、`&`、`;`、Unicode/中文、空串、尾部反斜杠。
+  必须由项目桥接（对每个参数做 POSIX shell 引号转义后拼接）。已验证可
+  字面保留：空格、单引号、反引号、`$`、`&`、`;`、Unicode/中文、空串、
+  尾部反斜杠。历史上 Windows 曾另行使用 PowerShell ArgumentList 桥，随
+  原生 Windows 支持一并退役（ADR 0007）。
 - 退出码不由 Herdr 上报，桥接器负责显式捕获（`echo EXIT=$?` 模式或
   runner 写状态文件）。已验证 exit 37/0 均可捕获。
 - 终端可见 attach：macOS 有原生 TUI（`herdr session attach <name>`；
   已人工确认 TUI 打开、中文渲染、`Ctrl+B q` detach；输入回显尚未人工确认，
   且 detach 后 pane 与会话存活；无 TTY 时干净失败 exit 1）。
-  Windows 直连终端 attach 不支持；完整 `session attach` 已输出实际 TUI 渲染流。
-  adapter 使用 Windows Terminal 打开完整客户端，只在客户端子进程清除
-  `HERDR_ENV`；人工输入、detach 与完整 Viewer 验收仍需单独记录。
+  历史上 Windows 直连终端 attach 不支持，adapter 曾用 Windows Terminal 打开
+  完整客户端；该分支随原生 Windows 支持退役（ADR 0007），本契约不再覆盖。
 - companion 的 EDN 邮箱联动不依赖 TUI：socket/CLI 控制与面板输入在
   无 TTY 下全部可用（已验证）。
 
@@ -128,14 +134,14 @@ wake 投递成功或 `pane wait-output`（socket `pane.wait_for_output`）匹配
 
 #19 实现采用以下有界政策，而不是无限重启：
 
-- **runner**：pane 内启动项目拥有的 Java runner。runner 使用 `ProcessBuilder`
-  直接启动精确 argv/cwd 并保留实际 Claude 子进程 handle；交互 stdin/stdout/
-  stderr 继承 pane（`inheritIO`），状态文件原子替换记录唯一 generation token、
-  实际 child PID/start、退出码与时间。Windows 只接受直接 native `claude.exe`
-  或 `node.exe` + 官方 `cli.js`；`.ps1`/`.cmd` wrapper 会在创建资源前拒绝，
-  因为无法证明实际 child 身份。runner 被杀死且没有匹配的最终 exit 记录时，
-  原因未知，不恢复。
-- **controller**：项目独占 detached JVM，经 OS `FileChannel` 单例 lock 注册
+- **runner**：pane 内启动项目拥有的 LOVE runner。runner 用 `posix_spawn` 传
+  精确 argv/cwd 并保留实际 Claude 子进程 handle；交互 stdin/stdout/stderr
+  继承 pane，状态文件原子替换记录唯一 generation token、实际 child PID/start、
+  退出码与时间。只接受可直接 exec 的命令：脚本 wrapper（`.ps1`/`.cmd`/
+  `.bat`）会在创建资源前拒绝，因为无法证明实际 child 身份。runner 被杀死
+  且没有匹配的最终 exit 记录时，原因未知，不恢复。上面描述的 Java runner
+  与 Windows 专属约束属历史记录。
+- **controller**（历史为 JVM `FileChannel`，现由 `adapters/lock` 的 `flock` 承担）：项目独占 detached controller，经 OS 单例 lock 注册
   UUID/PID/start。Viewer 只持久化 immutable supervisor 引用；mutable phase、
   generation、child、budget、deadline、diagnostic 位于单独 `recovery.edn`，
   controller 是唯一 writer，绝不重写 companion ownership。Viewer JVM 重启

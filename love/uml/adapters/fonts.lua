@@ -1,5 +1,5 @@
 -- Sarasa Mono SC: body/class text and native raster sizes for canvas corners.
--- Lookup: explicit path -> UML_CJK_FONT -> provisioned Sarasa -> system YaHei.
+-- Lookup: explicit path -> UML_CJK_FONT -> provisioned Sarasa -> system CJK.
 -- Messages here are stderr/assertions and stay English.
 local S=require('uml.application.strings')
 local Display=require('uml.domain.display')
@@ -11,23 +11,15 @@ local function exists(path) local f=io.open(path,'rb'); if f then f:close(); ret
 local function warn(text) io.stderr:write(text) end
 local warned=false
 -- System CJK fallbacks, in preference order, for a platform with no
--- provisioned Sarasa. Windows uses Microsoft YaHei; POSIX uses the Noto CJK
--- families shipped by Ubuntu/macOS package sets.
+-- provisioned Sarasa: the Noto CJK families shipped by Ubuntu and the PingFang
+-- collection on macOS.
 local SYSTEM_FONTS={
-  yahei={'C:/Windows/Fonts/msyh.ttc','C:/Windows/Fonts/msyh.ttf'},
-  noto={'/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-        '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
-        '/System/Library/Fonts/PingFang.ttc'},
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+  '/System/Library/Fonts/PingFang.ttc',
 }
 function M.defaults(root)
-  local windir=os.getenv('WINDIR')
-  local candidates={}
-  if windir and windir~='' then
-    candidates[#candidates+1]=(windir:gsub('\\','/')..'/Fonts/msyh.ttc')
-    candidates[#candidates+1]=(windir:gsub('\\','/')..'/Fonts/msyh.ttf')
-  end
-  for _,path in ipairs(SYSTEM_FONTS.noto) do candidates[#candidates+1]=path end
-  return {env=os.getenv('UML_CJK_FONT'),root=root,windir=windir,candidates=candidates,
+  return {env=os.getenv('UML_CJK_FONT'),root=root,candidates=SYSTEM_FONTS,
     exists=exists,warn=warn}
 end
 function M.resolve(opts)
@@ -41,13 +33,7 @@ function M.resolve(opts)
   end
   local sarasa=M.provisioned(opts.root)
   if has(sarasa) then return {path=sarasa,source='sarasa'} end
-  local fallbacks=opts.candidates
-  if not fallbacks then
-    fallbacks={}
-    local windir=opts.windir or 'C:/Windows'
-    fallbacks[1]=(windir:gsub('\\','/'))..'/Fonts/msyh.ttc'
-    for _,path in ipairs(SYSTEM_FONTS.noto) do fallbacks[#fallbacks+1]=path end
-  end
+  local fallbacks=opts.candidates or SYSTEM_FONTS
   for _,path in ipairs(fallbacks) do
     if has(path) then
       if not warned then
@@ -55,15 +41,16 @@ function M.resolve(opts)
         say('uml viewer: Sarasa Mono SC not found at '..sarasa..'; falling back to '..path
           ..'. Run get-uml-viewer to provision the font.\n')
       end
-      return {path=path,source=path:find('msyh',1,true) and 'yahei' or 'system'}
+      return {path=path,source='system'}
     end
   end
-  local yahei=fallbacks[1]
+  local system=fallbacks[1]
   if not warned then
     warned=true
-    say('uml viewer: Sarasa Mono SC not found at '..sarasa..'; falling back to Microsoft YaHei. Run get-uml-viewer to provision the font.\n')
+    say('uml viewer: Sarasa Mono SC not found at '..sarasa..'; falling back to '..system
+      ..'. Run get-uml-viewer to provision the font.\n')
   end
-  return {path=yahei,source='yahei'}
+  return {path=system,source='system'}
 end
 -- Adds each actually used raster size before imgui.love.BuildFontAtlas.
 -- The merged glyph ranges are kept on the returned table so the vector stays

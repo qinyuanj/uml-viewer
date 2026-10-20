@@ -4,8 +4,8 @@ local M={}
 local function parent(path) return path:match('^(.*)/[^/]+$') end
 function M.new(host)
   if not host then
-    local paths=require('uml.adapters.platform_path').load()
-    local watch=require('uml.adapters.platform_watch').load()
+    local paths=require('uml.adapters.platform_path')
+    local watch=require('uml.adapters.platform_watch')
     host={canonical=paths.canonical,entries=paths.entries,mtime=watch.mtime,cwd=function() return paths.canonical('.') end,
       read=function(path) local f=assert(io.open(path,'rb')); local t=f:read('*a'); f:close(); return t end}
   end

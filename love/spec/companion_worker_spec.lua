@@ -34,23 +34,26 @@ describe('isolated companion lifecycle',function()
       lock={try_acquire=function() return not locked end,release=function() calls[#calls+1]='release' end}}
     return W.run('request',services),calls,events
   end
-  it('opens the visible terminal for a fresh companion',function()
+  it('asks for the companion session on a fresh launch',function()
     local opened
     local code,_,events=fixture(false,false,false,nil,nil,nil,function(session)
-      opened=session; return {terminal='windows-terminal',session=session}
+      opened=session; return {terminal='none',session=session,attach='herdr session attach '..session}
     end)
     assert.equal(0,code); assert.equal('owned',opened)
     local ready
     for _,event in ipairs(events) do if event.phase=='ready' then ready=event end end
-    assert.is_nil(ready.message)
+    -- Nothing attaches automatically on the supported platforms, so ready must
+    -- always carry the command a person can run themselves.
+    assert.equal('Companion started; attach manually: herdr session attach owned',ready.message)
   end)
-  it('reports a manual attach command when the visible terminal fails',function()
-    local _,_,events=fixture(false,false,false,nil,nil,nil,function(session)
-      return {terminal='none',session=session,attach='herdr session attach '..session}
+  it('reports attach failure without losing the companion',function()
+    local _,_,events=fixture(false,false,false,nil,nil,nil,function()
+      error('no terminal available')
     end)
     local ready
     for _,event in ipairs(events) do if event.phase=='ready' then ready=event end end
-    assert.equal('Companion started; attach manually: herdr session attach owned',ready.message)
+    assert.is_truthy(ready.message:find('Terminal attach failed: ',1,true))
+    assert.is_truthy(ready.message:find('no terminal available',1,true))
   end)
   it('does not open a second terminal when restarting',function()
     local calls=0

@@ -1,33 +1,33 @@
 local function fresh() package.loaded['uml.adapters.fonts']=nil; return require('uml.adapters.fonts') end
 local function chain(files,env)
   local warnings={}
-  local opts={explicit=env.explicit,env=env.env,root='C:/proj',windir='C:/Windows',
+  local opts={explicit=env.explicit,env=env.env,root='/proj',
     exists=function(p) return files[p]==true end,warn=function(s) warnings[#warnings+1]=s end}
   return opts,warnings
 end
-local sarasa='C:/proj/.uml-viewer/fonts/SarasaMonoSC-Regular.ttf'
-local yahei='C:/Windows/Fonts/msyh.ttc'
+local sarasa='/proj/.uml-viewer/fonts/SarasaMonoSC-Regular.ttf'
+local system='/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
 describe('viewer font lookup chain',function()
-  it('prefers an explicit path, then UML_CJK_FONT, then provisioned Sarasa, then YaHei',function()
+  it('prefers an explicit path, then UML_CJK_FONT, then provisioned Sarasa, then a system CJK font',function()
     local F=fresh()
-    local all={['C:/x.ttf']=true,['C:/env.ttf']=true,[sarasa]=true,[yahei]=true}
-    local opts,warnings=chain(all,{explicit='C:/x.ttf',env='C:/env.ttf'})
-    assert.are.same({path='C:/x.ttf',source='explicit'},F.resolve(opts))
-    opts=chain(all,{env='C:/env.ttf'}); assert.are.same({path='C:/env.ttf',source='env'},F.resolve(opts))
+    local all={['/x.ttf']=true,['/env.ttf']=true,[sarasa]=true,[system]=true}
+    local opts,warnings=chain(all,{explicit='/x.ttf',env='/env.ttf'})
+    assert.are.same({path='/x.ttf',source='explicit'},F.resolve(opts))
+    opts=chain(all,{env='/env.ttf'}); assert.are.same({path='/env.ttf',source='env'},F.resolve(opts))
     opts=chain(all,{}); assert.are.same({path=sarasa,source='sarasa'},F.resolve(opts))
     assert.are.equal(0,#warnings)
   end)
-  it('falls back to YaHei with one stderr warning that names get-uml-viewer',function()
+  it('falls back to a system CJK font with one stderr warning that names get-uml-viewer',function()
     local F=fresh()
-    local opts,warnings=chain({[yahei]=true},{})
-    assert.are.same({path=yahei,source='yahei'},F.resolve(opts))
+    local opts,warnings=chain({[system]=true},{})
+    assert.are.same({path=system,source='system'},F.resolve(opts))
     F.resolve(opts)
     assert.are.equal(1,#warnings)
     assert.is_truthy(warnings[1]:find('get-uml-viewer',1,true)); assert.is_truthy(warnings[1]:find('Sarasa',1,true))
   end)
   it('reports a missing override and continues down the chain',function()
     local F=fresh()
-    local opts,warnings=chain({[sarasa]=true},{env='C:/gone.ttf'})
+    local opts,warnings=chain({[sarasa]=true},{env='/gone.ttf'})
     assert.are.same({path=sarasa,source='sarasa'},F.resolve(opts))
     assert.are.equal(1,#warnings); assert.is_truthy(warnings[1]:find('UML_CJK_FONT',1,true))
   end)
@@ -77,6 +77,6 @@ describe('viewer font lookup chain',function()
     local atlas={GetGlyphRangesDefault=function() end,GetGlyphRangesGreek=function() end,GetGlyphRangesChineseSimplifiedCommon=function() end,AddFontFromFileTTF=function() return nil end}
     local imgui={GetIO=function() return {Fonts=atlas} end,ImFontGlyphRangesBuilder=function() return {AddRanges=function() end,AddText=function() end,BuildRanges=function() return {} end} end}
     local opts=chain({},{})
-    assert.has_error(function() F.load(imgui,opts) end,'CJK font could not be loaded: '..yahei)
+    assert.has_error(function() F.load(imgui,opts) end,'CJK font could not be loaded: '..system)
   end)
 end)

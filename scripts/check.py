@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """One guardrail command: the checks that are safe to run at any time.
 
-Replaces `scripts/check.ps1`. Stops at the first failure so the printed label
-names the actual cause. The quality gate (`./uml crap` / `./uml mutate`) is
+This is the only guardrail command; the earlier `check.ps1` was retired with
+Windows native support (ADR 0007). Stops at the first failure so the printed
+label names the actual cause. The quality gate (`./uml crap` / `./uml mutate`) is
 deliberately absent: it needs serialized, declared-scope runs against a real
 project, so it cannot be a default check. Native LOVE checks open windows, so
 they need the explicit `--native` opt-in.
@@ -70,6 +71,10 @@ def native_driver(name, timeout):
     if not interpreter(os.environ.get('UML_LOVE_EXECUTABLE', 'love')):
         return 'skipped', 0, 'LOVE not on PATH'
     code, output = run([python, '-I', str(REPO / 'scripts/run_love_driver.py'), name], timeout=timeout)
+    if code == 0 and output.strip().startswith('SKIP'):
+        # A driver whose precondition is absent (e.g. a font the installer has
+        # not provisioned) verified nothing; it must not read as a pass.
+        return 'skipped', code, output.strip()
     return ('executed' if code == 0 else 'failed'), code, output
 
 

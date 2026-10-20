@@ -9,15 +9,15 @@ function M.default_probe(path)
   local file=io.open(path,'rb')
   if not file then return nil end
   file:close()
-  -- Native Windows candidates are herdr.exe; a readable executable file is
-  -- enough. Canonical spelling is supplied by the filesystem boundary.
+  -- A readable file is enough to offer as a candidate; the version and schema
+  -- probes decide whether it is really Herdr.
   local canonical=path:gsub('\\','/')
   return {executable=true,canonical=canonical}
 end
 
+-- LOVE reports "OS X" for macOS; WSL reports Linux like any other Linux host.
 function M.host_os()
   local name=love and love.system and love.system.getOS()
-  if name=='Windows' then return 'Windows' end
   if name=='OS X' then return 'Mac' end
   return 'Linux'
 end
@@ -28,7 +28,7 @@ function M.select(root,args,options)
   local selection=C.selection_args(args)
   local record=Ownership.read(root)
   C.preflight_checks(record,{root=root,requested=selection.backend,restart=options.restart,
-    os=platform,canonical=options.canonical or function(path) return path:gsub('\\','/') end})
+    os=platform,canonical=options.canonical or function(path) return path end})
   local candidates=C.herdr_candidates(platform,options.path or os.getenv('PATH') or '',
     options.probe or M.default_probe)
   local selected=C.select_herdr(candidates,options.run or Process.run)

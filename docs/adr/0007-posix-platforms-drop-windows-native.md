@@ -19,19 +19,22 @@ Python 质量工具都可复用，不需要重写核心。
 
 ## 平台边界
 
-平台差异只允许出现在 adapter 层，且**一次选择、长期固定**：
+平台差异只允许出现在 adapter 层，且**一次选择、长期固定**。spec #106 之后只剩
+POSIX 实现，facade 直接转发，不再按宿主分支：
 
-| 能力 | 选择点 | Windows | POSIX |
+| 能力 | 选择点 | POSIX 实现（唯一） | 已退役 |
 |---|---|---|---|
-| 路径身份与目录枚举 | `adapters/platform_path` | `windows_path` | `posix_path`（`realpath`） |
-| 文件 mtime | `adapters/platform_watch` | FILETIME 两段 | `statx` 纳秒 |
-| 进程边界 | `adapters/process` | `windows_process`（FFI/PowerShell） | `posix_process`（`posix_spawn`） |
-| OS 锁 | `adapters/lock` | 共享模式 0 | `flock` |
-| DPI | `adapters/dpi` | `user32` 查询 | 由合成器与 LOVE 帧缓冲缩放提供 |
+| 路径身份与目录枚举 | `adapters/platform_path` | `posix_path`（`realpath`） | `windows_path` |
+| 文件 mtime | `adapters/platform_watch` | `posix_watch`（`statx` 纳秒） | `file_watch` |
+| 进程边界 | `adapters/process` | `posix_process`（`posix_spawn`） | `windows_process` |
+| OS 锁 | `adapters/lock` | `posix_lock`（`flock`） | `os_lock` |
+| DPI | `adapters/dpi` | 合成器与 LOVE 帧缓冲缩放 | `user32` 查询 |
+| 原子替换 | `adapters/atomic_file` | `rename` | `pwsh` `File.Move` |
+| 终端 attach | `adapters/companion_lifecycle` | 只报告 `herdr session attach` 命令 | Windows Terminal 标签 |
 
 调用方（domain/application）不感知平台。进程创建身份对调用方是**不透明文本**，
-只做精确相等比较：Windows 用 FILETIME，POSIX 用 `/proc/<pid>/stat` 的 starttime。
-禁止把 Win32 的表示（ticks、毫秒）强加给 POSIX，也禁止引入时间窗口容差。
+只做精确相等比较：POSIX 用 `/proc/<pid>/stat` 的 starttime，macOS 用 `ps -o lstart=`。
+禁止引入时间窗口容差，也禁止把已退役平台的表示带进 POSIX 契约。
 
 ## POSIX 进程契约
 
@@ -39,8 +42,10 @@ Python 质量工具都可复用，不需要重写核心。
 - 每次 spawn 都显式传环境：`envp = NULL` 在 glibc 下不是"继承"，子进程会得到空环境。
 - 已退出但未被回收的僵尸不算存活；detached 子进程没有 waiter，这是设计而非泄漏。
 - 超时只终止本次调用自己派生的子进程。
-- Herdr 的 Unix socket 路径受 `sockaddr_un` 102 字节限制，过长的 root 必须在启动前
-  以真实原因拒绝，而不是让 server 报不透明错误。
+- Herdr 的 Unix socket 路径受 `sockaddr_un` 限制。对照 Herdr 0.9.5 实测：101
+  字节可正常建 workspace，102 字节起 `workspace create` 失败且只报 closed-channel。
+  生成的 session 名按 `XDG_CONFIG_HOME` 实算长度收缩；根本装不下时在启动前以
+  真实原因拒绝，而不是让 server 报不透明错误。
 
 ## 安装与入口
 

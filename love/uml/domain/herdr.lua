@@ -21,17 +21,12 @@ function M.session_valid(session)
   return type(session)=='string' and session:match('^uml%-viewer%-[%w_%-]+$')~=nil
 end
 
-function M.ps_word(text) return Text.ps_word(text) end
 function M.shell_word(text) return Text.shell_word(text) end
 
 function M.pane_command(command,shell_name)
   local name=tostring(shell_name or ''):match('[^/\\]+$') or ''
   name=name:lower():gsub('^%-','')
   local out={}
-  if name=='pwsh' or name=='pwsh.exe' or name=='powershell' or name=='powershell.exe' then
-    for _,value in ipairs(command) do out[#out+1]=Text.ps_word(value) end
-    return '& '..table.concat(out,' ')
-  end
   if name=='sh' or name=='bash' or name=='zsh' or name=='dash' then
     for _,value in ipairs(command) do out[#out+1]=Text.shell_word(value) end
     return table.concat(out,' ')

@@ -9,35 +9,10 @@ local R=require('uml.domain.recovery')
 local M={}
 
 -- Existence is checked without opening: an absent journal must not spend the
--- lock budget, while a present-but-locked file must retry. POSIX needs no FFI
--- for this (a successful open is proof). On Windows LuaFileSystem's C module
--- cannot be loaded inside LOVE — it crashes the process rather than raising —
--- so existence there asks kernel32.
-local windows=package.config:sub(1,1)=='\\'
-local ffi_file_api
-local function file_attributes()
-  if ffi_file_api~=nil then return ffi_file_api or nil end
-  local ok,ffi=pcall(require,'ffi')
-  ffi_file_api=false
-  if not ok then return nil end
-  ffi.cdef[[
-    int MultiByteToWideChar(unsigned int,unsigned long,const char*,int,wchar_t*,int);
-    unsigned long GetFileAttributesW(const wchar_t*);
-  ]]
-  ffi_file_api=ffi; return ffi
-end
+-- lock budget, while a present-but-locked file must retry. On POSIX a
+-- successful open is proof.
 local function exists(path)
-  if not windows then
-    local file=io.open(path,'rb'); if file then file:close(); return true end; return false
-  end
-  local ffi=file_attributes()
-  if not ffi then
-    local file=io.open(path,'rb'); if file then file:close(); return true end; return false
-  end
-  local count=ffi.C.MultiByteToWideChar(65001,0,path,-1,nil,0)
-  local wide=ffi.new('wchar_t[?]',count)
-  ffi.C.MultiByteToWideChar(65001,0,path,-1,wide,count)
-  return tonumber(ffi.C.GetFileAttributesW(wide))~=4294967295
+  local file=io.open(path,'rb'); if file then file:close(); return true end; return false
 end
 
 local KEYWORD_VALUES={phase=true,cleanup_phase=true,backend=true,owner_role=true}

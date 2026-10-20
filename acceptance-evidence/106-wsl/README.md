@@ -18,12 +18,15 @@
 
 | 检查 | 结果 | 命令 |
 |---|---|---|
-| 双解释器纯逻辑 | 673 / 673 通过（Lua 5.4 与 LuaJIT） | `lua5.4|luajit scripts/run_busted.lua` |
+| 双解释器纯逻辑 | 679 / 679 通过（Lua 5.4、LuaJIT；`lua` 5.1 亦通过） | `lua5.4|luajit scripts/run_busted.lua` |
+| 全量 POSIX 检查 | 4 / 4 通过 | `python3 -I scripts/check.py` |
 | POSIX 原生进程行为 | 12 / 12 通过 | `luajit scripts/run_posix_native_busted.lua` |
 | 公共入口（安装/IR/质量） | 14 / 14 通过 | `python3 -I scripts/test_posix_entries.py` |
 | restart 拒绝规则 | 4 / 4 通过 | `python3 -I scripts/test_posix_restart_entries.py` |
 | viewer 渲染与重载 | 通过，含亚秒编辑重载 | `python3 -I scripts/test_posix_viewer.py` |
 | 公共入口端到端 | 通过 | `python3 -I scripts/test_posix_e2e.py` |
+| restart 端到端 | 通过（旧进程退出→session 保存→新进程→companion 保留→正常关闭） | `python3 -I scripts/test_posix_restart_e2e.py` |
+| GUI driver（真实窗口） | navigation、class_boxes、search、source_window、source_jump、review_fixes、mail、metrics、inspector、detail_scroll、fonts 全部通过 | `python3 -I scripts/run_love_driver.py <name>` |
 
 端到端覆盖：公共 `./uml` 启动 → companion ownership 写入 → worker `:ready` →
 场景发布 → FIFO 出队 → 正常关闭 → ownership 清空 → Herdr 会话删除。
@@ -38,6 +41,13 @@
 **待用户确认**：中文输入法组合输入（需宿主机 IME 会话，见
 `wsl-ime-platform-investigation.md`）、剪贴板往返、窗口缩放的实际手感、
 Herdr 终端 attach 的可读性。
+
+## 本轮修复
+
+- **CJK 字体供给**：#82 的 Sarasa 供给原先只在已退役的 PowerShell 安装器中
+  存在。POSIX 安装器现在补上同一步骤：下载钉住的 TTF 7z、校验归档与
+  `SarasaMonoSC-Regular.ttf` 的 SHA256（沿用 #82 的 pin），用
+  `.uml-viewer/installer/.venv` 里的 `py7zr` 解出该字重；任一失败即非零退出。
 
 ## 未执行/阻塞
 

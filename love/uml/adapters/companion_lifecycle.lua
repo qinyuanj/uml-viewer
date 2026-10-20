@@ -8,7 +8,6 @@ local Preflight=require('uml.adapters.companion_preflight')
 local Recovery=require('uml.adapters.recovery')
 local Herdr=require('uml.adapters.herdr')
 local Claude=require('uml.adapters.claude')
-local Process=require('uml.adapters.process')
 local Text=require('uml.domain.text')
 local M={}
 
@@ -25,19 +24,35 @@ local function game_directory()
   return '.'
 end
 
--- Herdr derives its API socket from XDG_CONFIG_HOME + session name, and a
--- sockaddr_un path is limited to 108 bytes. Keep the generated name short
--- enough that any reasonable config root still fits.
-local BASE_LIMIT=10
-function M.session_name(root,uuid)
+-- Herdr derives its API socket from XDG_CONFIG_HOME + session name. Measured
+-- against Herdr 0.9.5: the server starts at 101 bytes but workspace creation
+-- fails from 102 bytes, and that failure surfaces as an opaque closed-channel
+-- error. The generated name therefore shrinks to whatever the config root
+-- leaves, instead of assuming a fixed project-name budget.
+M.MAX_SOCKET_BYTES=101
+M.MAX_NAME_BYTES=64
+function M.config_root()
+  local root=os.getenv('XDG_CONFIG_HOME')
+  if not root or root=='' then root=(os.getenv('HOME') or '')..'/.config' end
+  return (root:gsub('/+$',''))
+end
+function M.session_name(root,uuid,config_root)
   local base=(root:gsub('\\','/'):match('([^/]+)/*$') or 'project'):gsub('[^%w_%-]','-')
-  base=base:sub(1,BASE_LIMIT)
   local hash=0
   for index=1,#root do hash=(hash*31+root:byte(index))%4294967296 end
-  local suffix=(uuid or ''):gsub('%-',''):sub(1,8)
-  return ('uml-viewer-%s-%x-%s'):format(base,hash,suffix)
+  -- Fixed parts: the grammar prefix, the project hash and the launch suffix.
+  -- The project name is the only part that may shrink.
+  local fixed=('uml-viewer-%%s-%08x-%s'):format(hash,(uuid or ''):gsub('%-',''):sub(1,8))
+  local socket_prefix=(config_root or M.config_root())..'/herdr/sessions/'
+  -- %%s is a two-byte placeholder for the name itself.
+  local room=math.min(M.MAX_SOCKET_BYTES-#socket_prefix-#'/herdr.sock',M.MAX_NAME_BYTES) - (#fixed-2)
+  if room<1 then
+    error('Herdr session name cannot fit: '..socket_prefix..fixed:gsub('%%s','<project>')
+      ..'/herdr.sock exceeds the '..M.MAX_SOCKET_BYTES..'-byte Unix socket path;'
+      ..' set a shorter XDG_CONFIG_HOME',0)
+  end
+  return fixed:format(base:sub(1,room))
 end
-
 function M.load(root,options)
   options=options or {}
   local value=Ownership.read(root)
@@ -76,24 +91,14 @@ function M.select(root,options)
   return Preflight.select(root,{'--backend','herdr'},preflight).selected
 end
 
--- Windows has no direct terminal attach: open the full session client in a new
--- Windows Terminal tab. Nesting variables are removed only for that child and
--- cleared inside its PowerShell script; this process's environment is untouched.
+-- No supported platform opens a terminal for the companion: WSLg has no
+-- launcher shim, and macOS attach is unverified (#49). The caller reports the
+-- command a person can run themselves.
 function M.open_window(session,options)
   options=options or {}
-  local windows=options.windows
-  if windows==nil then windows=Process.windows() end
   local herdr=options.herdr or 'herdr'
-  local attach=(windows and '& ' or '')..Text.shell_word(herdr)..' session attach '..Text.shell_word(session)
-  if not windows then return {terminal='none',session=session,attach=attach} end
-  local script='$env:HERDR_ENV=$null;$env:NO_COLOR=$null;& '..Text.ps_word(herdr)
-    ..' session attach '..Text.ps_word(session)..';exit $LASTEXITCODE'
-  local run=options.run or Process.run
-  local result=run({'wt.exe','-w','new','new-tab','--title',session,
-    'pwsh.exe','-NoProfile','-EncodedCommand',Text.encoded(script)},
-    10000,{'HERDR_ENV','NO_COLOR'})
-  local ok=type(result)=='table' and result.exit==0
-  return {terminal=ok and 'windows-terminal' or 'none',session=session,attach=attach}
+  return {terminal='none',session=session,
+    attach=Text.shell_word(herdr)..' session attach '..Text.shell_word(session)}
 end
 
 function M.create(root,options)
@@ -118,7 +123,6 @@ function M.create(root,options)
   B.identity=owned
   return owned,B
 end
-
 function M.restart(root,options)
   options=options or {}
   local plain=M.load(root,options)

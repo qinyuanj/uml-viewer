@@ -30,8 +30,8 @@ end
 local function probe(path) return {executable=true,canonical=path:gsub('\\','/')} end
 local function select(root,args,options)
   options=options or {}
-  options.os=options.os or 'Windows'
-  options.path=options.path or 'C:/tools'
+  options.os=options.os or 'Linux'
+  options.path=options.path or '/tools'
   options.probe=options.probe or probe
   options.run=options.run or installed(options.calls or {})
   return Preflight.select(root,args,options)
@@ -49,8 +49,8 @@ describe('read-only companion preflight adapter',function()
     local result=select(root,{'--backend','herdr','diagram with spaces.edn'},{calls=calls})
     assert.are.equal('herdr',result.backend)
     assert.are.same({'diagram with spaces.edn'},result.args)
-    assert.are.equal('C:/tools/herdr.exe',result.selected.path)
-    assert.are.same({{'C:/tools/herdr.exe','--version'},{'C:/tools/herdr.exe','api','schema','--json'}},calls)
+    assert.are.equal('/tools/herdr',result.selected.path)
+    assert.are.same({{'/tools/herdr','--version'},{'/tools/herdr','api','schema','--json'}},calls)
     assert.is_false(Ownership.exists(root))
     remove_root(root)
   end)
@@ -93,15 +93,22 @@ describe('read-only companion preflight adapter',function()
     assert.is_truthy(tostring(missing):find('ownership is missing',1,true))
     remove_root(root)
   end)
-  it('selects Herdr on WSL/Linux as well as Windows and macOS',function()
+  it('selects Herdr on WSL/Linux and macOS',function()
     local root=temp_root()
-    for _,platform in ipairs{'Linux','Mac','Windows'} do
+    for _,platform in ipairs{'Linux','Mac'} do
       local calls={}
-      local result=select(root,{'--backend','herdr'},{os=platform,calls=calls,
-        path=platform=='Windows' and 'C:/tools' or '/usr/bin'})
+      local result=select(root,{'--backend','herdr'},{os=platform,calls=calls,path='/usr/bin'})
       assert.are.equal('herdr',result.backend)
       assert.are.equal('herdr',result.selected.release and 'herdr' or nil)
     end
+    remove_root(root)
+  end)
+  it('refuses Windows native before touching PATH',function()
+    local root=temp_root()
+    local calls={}
+    local err=failure(root,{}, {os='Windows',calls=calls})
+    assert.is_truthy(tostring(err):find('not a supported platform',1,true))
+    assert.are.equal(0,#calls)
     remove_root(root)
   end)
 
@@ -116,14 +123,14 @@ describe('read-only companion preflight adapter',function()
   it('reports every incompatible PATH candidate',function()
     local root=temp_root()
     local calls={}
-    local err=failure(root,{}, {calls=calls,path='C:/a;C:/b',run=function(argv)
+    local err=failure(root,{}, {calls=calls,path='/a:/b',run=function(argv)
       calls[#calls+1]=argv
       if argv[2]=='--version' then return {exit=0,out=(argv[1]:find('/a/') and 'herdr 0.9.2' or 'herdr 0.10.0')} end
       return {exit=0,out='{"$schema":"fixture","protocol":23,"schema_version":1}'}
     end})
     assert.is_truthy(tostring(err):find('Candidates on PATH',1,true))
-    assert.is_truthy(tostring(err):find('C:/a/herdr.exe (unknown: not a herdr X.Y.Z >= 0.9.3)',1,true))
-    assert.is_truthy(tostring(err):find('C:/b/herdr.exe (0.10.0: bundled schema is not protocol 22)',1,true))
+    assert.is_truthy(tostring(err):find('/a/herdr (unknown: not a herdr X.Y.Z >= 0.9.3)',1,true))
+    assert.is_truthy(tostring(err):find('/b/herdr (0.10.0: bundled schema is not protocol 22)',1,true))
     remove_root(root)
   end)
 end)

@@ -27,7 +27,6 @@ function M.new(identity,options)
   B.clock=options.clock or Clock.monotonic_ms
   B.sleep=options.sleep or Clock.sleep
   B.canonical=options.canonical or function(path) return (path or ''):gsub('\\','/') end
-  if options.windows~=nil then B.windows=options.windows else B.windows=Process.windows() end
   B.selected=options.selected
   B.write_companion=options.write_companion or function(root,record)
     return Ownership.write(root,Recovery.to_edn(record))
@@ -172,17 +171,10 @@ function M.new(identity,options)
   end
 
   -- The runner must exec the agent directly so its recorded identity is the
-  -- agent's own process. Windows additionally needs a real executable: a
-  -- .cmd/.bat wrapper re-parses argv and cannot prove child identity.
+  -- agent's own process, never a shell that re-parses argv.
   function B.require_direct_command(command)
     local first=tostring(command[1] or '')
     if first=='' then B.fail('Herdr command must be a nonempty argv vector') end
-    if B.windows then
-      if not first:lower():match('%.exe$') then
-        B.fail('Herdr requires direct native claude.exe (or node.exe + official cli.js); wrapper child identity is unsupported')
-      end
-      return first
-    end
     local resolved=first
     if not resolved:find('/',1,true) then
       for directory in (os.getenv('PATH') or ''):gmatch('[^:]+') do
@@ -199,9 +191,7 @@ function M.new(identity,options)
 
   function B.runner_command(record,command)
     local first=B.require_direct_command(command)
-    if not B.windows and first~=command[1] then
-      command=H.copy(command); command[1]=first
-    end
+    if first~=command[1] then command=H.copy(command); command[1]=first end
     local manifest=record.runner_state..'.launch.edn'
     local copy=H.copy(record); copy.command=H.copy(command)
     Recovery.write_state(manifest,copy)
@@ -234,40 +224,10 @@ function M.new(identity,options)
   local RESET_SEQUENCE='\27[?1003l\27[?1002l\27[?1006l\27[?1000l'
     ..'\27[?1049l\27[?2004l\27[<u\27[<u\27[<u\27[?25h'
 
-  function B.terminal_reset_posix(record)
+  function B.terminal_reset(record)
     -- No console handle exists on POSIX; write the sequence to the pane's own
     -- terminal by running printf inside that pane.
     B.pane_run(record.session,record.pane,'printf %s '..Text.shell_word(RESET_SEQUENCE))
-    B.sleep(250)
-    checked({B.herdr(),'--session',record.session,'pane','send-keys',record.pane,'ctrl+c'})
-    B.sleep(150)
-  end
-
-  function B.terminal_reset(record)
-    if not B.windows then return B.terminal_reset_posix(record) end
-    local shell_pid=tostring(record.shell_pid)
-    local script="$ErrorActionPreference='Stop';"
-      .."Add-Type -Namespace K -Name W -MemberDefinition '"
-      ..'[DllImport("kernel32.dll",SetLastError=true)] public static extern bool FreeConsole();'
-      ..'[DllImport("kernel32.dll",SetLastError=true)] public static extern bool AttachConsole(uint dwProcessId);'
-      ..'[DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern System.IntPtr CreateFile(string n, uint a, uint s, System.IntPtr p, uint d, uint f, System.IntPtr t);'
-      ..'[DllImport("kernel32.dll",SetLastError=true)] public static extern bool WriteFile(System.IntPtr h, byte[] b, uint n, out uint w, System.IntPtr o);'
-      .."';"
-      ..'[K.W]::FreeConsole() | Out-Null;'
-      ..'if (-not [K.W]::AttachConsole('..shell_pid..')) { exit 3 };'
-      -- Reset everything the outgoing agent may have enabled. Mouse tracking
-      -- modes must be switched off first: a pane that keeps reporting SGR
-      -- mouse events delivers them to the replacement agent as keystrokes,
-      -- which renders as "<0;41;10m<5;41;5M" garbage on its prompt line.
-      ..'$e = [char]27;'
-      .."$seq = $e + '[?1003l' + $e + '[?1002l' + $e + '[?1006l' + $e + '[?1000l'"
-      .." + $e + '[?1049l' + $e + '[?2004l' + $e + '[<u' + $e + '[<u' + $e + '[<u' + $e + '[?25h';"
-      ..'$bytes = [Text.Encoding]::UTF8.GetBytes($seq);'
-      ..'$h = [K.W]::CreateFile("CONOUT$", 1073741824, 3, [System.IntPtr]::Zero, 3, 0, [System.IntPtr]::Zero);'
-      ..'if ($h -eq [System.IntPtr](-1)) { exit 4 };'
-      ..'$written = 0;'
-      ..'if (-not [K.W]::WriteFile($h, $bytes, $bytes.Length, [ref]$written, [System.IntPtr]::Zero)) { exit 4 }'
-    checked({'pwsh.exe','-NoProfile','-EncodedCommand',Text.encoded(script)})
     B.sleep(250)
     checked({B.herdr(),'--session',record.session,'pane','send-keys',record.pane,'ctrl+c'})
     B.sleep(150)
@@ -294,16 +254,18 @@ function M.new(identity,options)
     if record.supervisor then return Recovery.status(record) end
   end
 
-  -- A sockaddr_un path is 108 bytes including the terminator. Herdr derives its
-  -- API socket from XDG_CONFIG_HOME and the session name; an overlong root makes
-  -- the server fail with an opaque EINVAL, so refuse with the actual cause.
+  -- Herdr derives its API socket from XDG_CONFIG_HOME and the session name.
+  -- Measured against 0.9.5: a 101-byte path works and 102 fails, and the
+  -- failure surfaces only later as a closed-channel error on workspace create,
+  -- so refuse up front with the actual cause.
   function B.socket_check(session)
     local root=os.getenv('XDG_CONFIG_HOME')
     if not root or root=='' then root=(os.getenv('HOME') or '')..'/.config' end
     local path=('%s/herdr/sessions/%s/herdr.sock'):format(root:gsub('/+$',''),session)
-    if #path+1>108 then
-      B.fail('Herdr socket path is too long for a Unix socket ('..#path..' > 107): '..path
-        ..'; set a shorter XDG_CONFIG_HOME or project path')
+    local limit=B.options.max_socket_bytes or 101
+    if #path>limit then
+      B.fail('Herdr socket path exceeds the Unix socket limit ('..#path..' > '..limit..'): '
+        ..path..'; set a shorter XDG_CONFIG_HOME or project path')
     end
   end
 
