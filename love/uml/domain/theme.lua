@@ -23,7 +23,28 @@ M.colors={
 }
 -- Alphas (0-255) for washes and the lighter namespace frame.
 M.alpha={package_fill=80,package_stroke=170,sidebar=255,row_wash=48,stripe=255,stripe_odd=0}
+-- Relationship highlighting (#85): a hovered class lifts its edges slightly
+-- (below the selection's hot width); a selection's connected classes take the
+-- related ink and everything unrelated fades to the dim alpha.
+M.widths.edge_warm=2.1
+M.colors.edge_warm={200,214,204}
+M.colors.edge_violating_warm={220,56,44}
+M.colors.related={200,170,80}
+M.colors.child_wash={232,196,72}
+M.colors.port_fill={42,56,52}
+M.colors.port_fill_on={74,96,78}
+M.colors.popup_bg={18,22,24}
+M.alpha.dimmed=70
+M.alpha.child_wash=55
+M.alpha.popup=240
+M.widths.port=1
+M.widths.port_on=2.2
+M.widths.port_link=1.3
 function M.pack(c,a) return (a or 255)*16777216+(c[3] or 0)*65536+(c[2] or 0)*256+(c[1] or 0) end
+-- Scale a packed color's alpha by the dim alpha; hue is untouched.
+function M.fade(packed)
+  local a=math.floor(packed/16777216); return math.floor(a*M.alpha.dimmed/255)*16777216+packed%16777216
+end
 function M.band_color(band) return M.pack(M.colors.band[band] or M.colors.band.red) end
 local function mix(a,b,t) local out={}; for i=1,3 do out[i]=math.floor(a[i]+t*(b[i]-a[i])+.5) end; return out end
 local function ramp(g,none,red,mid,green)

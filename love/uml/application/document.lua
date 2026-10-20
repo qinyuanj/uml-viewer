@@ -95,6 +95,7 @@ function M.restore_session(state,snap)
   E.assoc(extra,E.keyword('open-layer'),layer or E.nil_value)
   s.focus=focus; s.extra=extra; s.scene=M.compile_view(s.document,s.snapshots,focus,extra)
   s.cam_x=snap.cam_x or 0; s.cam_y=snap.cam_y or 0; s.zoom=snap.zoom or 1
+  s.fit_pending=nil; s.drag=nil; s.hover=nil; s.pointer=nil
   s.selected=snap.selected; s.detail_id=snap.detail_id; s.discussion_context=snap.discussion_context
   return M.drop_missing_detail(s)
 end
@@ -107,7 +108,13 @@ function M.apply_mail(state,cmd,boundary)
     local path=boundary.resolve(g(cmd,'path'),state.project_root)
     local loaded=boundary.load(path)
     local same=state.path and boundary.canonical(state.path)==boundary.canonical(path)
+    -- The first display after a fresh launch is a new load even for the same
+    -- path: the waiting state holds no view to retain.
+    if state.waiting then same=false end
     s=same and M.restore_session(loaded,state) or loaded
+    -- A new diagram fits the canvas once the adapter knows its size; the same
+    -- diagram keeps its retained camera, zoom and focus (ADR 0002).
+    s.fit_pending=not same or nil
     if not same then
       -- A different diagram starts at its root view; browsing state is not
       -- transferred, but declutter and a proposal that still exists are kept.
