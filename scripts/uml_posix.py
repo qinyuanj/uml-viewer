@@ -15,6 +15,17 @@ import zipfile
 CIMGUI_ARCHIVE = 'eec63e283d80961240e22e7f869b66321addc0464d20b6ef69779f1b6759c18e'
 CIMGUI_LIBRARY = '77465886fcbaa770da210062f95d236ea93f15dc9b97a50c3d1722b89db92611'
 CIMGUI_URL = 'https://github.com/apicici/cimgui-love/releases/download/1.90-1/cimgui-love-linux-x64-1.90-1.zip'
+# The viewer's only UI font (#82). These are the same archive and face hashes
+# the retired PowerShell installer pinned; only the extraction path changed.
+FONT_URL = ('https://github.com/be5invis/Sarasa-Gothic/releases/download/v1.0.42/'
+            'SarasaMonoSC-TTF-1.0.42.7z')
+FONT_FACE = 'SarasaMonoSC-Regular.ttf'
+FONT_ARCHIVE_SHA256 = 'aa2150e99eb38c5f9d3a00fe58e3f90a9d89495c795a8ac80934d1c3e6c377ee'
+FONT_SHA256 = '82e09460f6f55010296f670b85e346ddeaf91b967724840d2bf5514137f68a83'
+# Upstream ships the TTF release only as 7z, and no 7z binary is assumed on the
+# host. py7zr lives in the installer's own environment so no tool venv is
+# polluted with an unrelated dependency.
+PY7ZR = 'py7zr==1.1.4'
 
 
 def run(argv, **kwargs):
@@ -117,6 +128,77 @@ def cimgui(directory):
 PROVISIONED_DIRECTORIES = ('.venv', '__pycache__', '.pytest_cache')
 
 
+EXTRACT = """
+import pathlib, sys
+import py7zr
+archive, target, face = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
+with py7zr.SevenZipFile(archive, 'r') as bundle:
+    names = [n for n in bundle.getnames()
+             if pathlib.Path(n).name == face and not pathlib.Path(n).is_absolute()
+             and '..' not in pathlib.Path(n).parts]
+    if len(names) != 1:
+        sys.exit(f'Sarasa archive must contain exactly one {face}, found {len(names)}')
+    bundle.extract(path=target, targets=names)
+    print(names[0])
+"""
+
+
+def extractor(directory):
+    """An interpreter that can read 7z: the host's, else the installer's own.
+
+    py7zr is the only dependency the installer needs beyond the stdlib; using
+    the host interpreter when it already has the module avoids creating a venv
+    for nothing.
+    """
+    probe = subprocess.run([sys.executable, '-I', '-c', 'import py7zr'],
+                           capture_output=True, text=True)
+    if probe.returncode == 0:
+        return sys.executable
+    override = os.environ.get('UML_VIEWER_FONT_EXTRACTOR')
+    if override:
+        return override
+    environment = directory.parent / 'installer'
+    python = environment / '.venv/bin/python'
+    if not python.is_file():
+        run([sys.executable, '-I', '-m', 'venv', environment / '.venv'])
+        run([str(python), '-I', '-m', 'pip', 'install', '--disable-pip-version-check',
+             '--quiet', PY7ZR])
+    return str(python)
+
+
+def font(directory):
+    """Provision the pinned Sarasa face, verified by SHA256.
+
+    Hashes come from #82 (the archive and the face), so a substituted download
+    cannot reach the viewer. Upstream publishes the TTF release only as 7z, so
+    extraction happens in an interpreter that has py7zr. The three
+    UML_VIEWER_FONT_* variables override the pin for fixture tests, exactly as
+    the retired installer's -Pin parameter did.
+    """
+    url = os.environ.get('UML_VIEWER_FONT_URL', FONT_URL)
+    archive_hash = os.environ.get('UML_VIEWER_FONT_ARCHIVE_SHA256', FONT_ARCHIVE_SHA256)
+    face_hash = os.environ.get('UML_VIEWER_FONT_SHA256', FONT_SHA256)
+    target = directory / FONT_FACE
+    if target.is_file() and digest(target) == face_hash:
+        return
+    python = extractor(directory)
+    with tempfile.TemporaryDirectory(prefix='uml-sarasa-') as temporary:
+        base = Path(temporary)
+        archive = base / url.rsplit('/', 1)[-1]
+        urllib.request.urlretrieve(url, archive)
+        if digest(archive) != archive_hash:
+            raise ValueError('Sarasa font archive SHA256 mismatch')
+        extracted = run([python, '-I', '-c', EXTRACT, str(archive),
+                         str(base / 'expanded'), FONT_FACE], capture_output=True, text=True)
+        if extracted.returncode != 0:
+            raise ValueError(extracted.stderr.strip() or 'Sarasa font archive extraction failed')
+        face = base / 'expanded' / extracted.stdout.strip()
+        if not face.is_file() or digest(face) != face_hash:
+            raise ValueError(f'{FONT_FACE} SHA256 mismatch')
+        directory.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(face, target)
+
+
 def provisioned(path):
     name = path.rstrip('/').rsplit('/', 1)[-1]
     return name in PROVISIONED_DIRECTORIES or name.endswith('.egg-info')
@@ -190,6 +272,9 @@ def install(args):
     for tool in ('crapper', 'mutator', 'dryer'):
         versions[tool] = fetch(state / tool, tool)
     cimgui(state / 'cimgui-love-1.90-1')
+    # Provisioned after the tool environments exist: extraction uses the
+    # installer's own venv, which Python 3.12 provides without system packages.
+    font(state / 'fonts')
     for tool in ('crapper', 'mutator', 'dryer'):
         directory = state / tool
         python = directory / '.venv/bin/python'
