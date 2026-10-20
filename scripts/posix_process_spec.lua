@@ -25,6 +25,15 @@ describe('POSIX process boundary',function()
     assert.is_nil(result.exit)
   end)
 
+  it('asks a timed-out command to stop with SIGTERM so it can release resources',function()
+    local marker=os.tmpname(); os.remove(marker)
+    local result=P.run({'/bin/sh','-c','trap "echo released > \\"$0\\"; exit 0" TERM; while :; do sleep 0.05; done',marker},300)
+    assert.is_true(result.timeout)
+    local file=io.open(marker,'rb'); local text=file and file:read('*a'); if file then file:close() end
+    os.remove(marker)
+    assert.are.equal('released\n',text)
+  end)
+
   it('reads a creation identity shared by every observer',function()
     local identity=P.owner_native(P.current_pid())
     assert.are.equal(P.current_pid(),identity.pid)

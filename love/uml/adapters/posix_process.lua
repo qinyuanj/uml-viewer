@@ -11,7 +11,9 @@ local M={}
 local ffi
 local CLOCK_MONOTONIC=1
 local WNOHANG=1
-local SIGKILL=9
+local SIGTERM=15
+-- A timed-out child is asked to stop, never killed outright (#106, #113).
+local TERM_GRACE_MS=2000
 local O_WRONLY=1
 local O_CREAT=0x40
 local O_TRUNC=0x200
@@ -170,8 +172,9 @@ function M.run(argv,timeout_ms,env_remove)
     local reaped=ffi.C.waitpid(pid[0],status,WNOHANG)
     if reaped==pid[0] then break end
     if M.monotonic_ms()>=deadline then
-      ffi.C.kill(pid[0],SIGKILL)
-      ffi.C.waitpid(pid[0],status,0)
+      ffi.C.kill(pid[0],SIGTERM)
+      local grace=M.monotonic_ms()+TERM_GRACE_MS
+      while ffi.C.waitpid(pid[0],status,WNOHANG)~=pid[0] and M.monotonic_ms()<grace do M.sleep(5) end
       timed_out=true; break
     end
     M.sleep(5)
