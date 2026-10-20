@@ -244,7 +244,10 @@ recorded in [the Herdr contract](herdr-backend-contract.md); Windows native
 observations and the seven remaining gaps are recorded in
 [the #30 baseline](windows-herdr-30-baseline.md) and
 [observations](windows-herdr-30-observations.md). macOS #22 was
-cancelled, not passed, and Linux/WSL companion launch is unsupported.
+cancelled, not passed. WSL companion launch **is** supported (spec #106); its
+record is [the #106 evidence](../acceptance-evidence/106-wsl/README.md). The
+steps below still describe the retired tmux/psmux procedure; use the Herdr
+contract as the current one.
 
 Use two new projects under a short unique temporary root, for example `a5-20261006/Project A With Spaces` and `Project B With Spaces`. Never use an existing project's viewer or companion as a test resource. Record versions and fixed checkout SHA, timestamps, exit codes, project log, policy hashes, mail EDN, saved-view EDN, JVM PID/parent, and exact session/pane/Claude identities. Do not dump credentials, the environment, or unrelated sessions.
 

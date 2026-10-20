@@ -97,13 +97,16 @@ Install LOVE from https://love2d.org/. The installer downloads and verifies
 cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
 project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
 it with an existing matching binding and DLL. Set `UML_LOVE_EXECUTABLE` when
-`love` is not on PATH; use `lovec.exe` (the console build) because the entry
-reads the preflight line from stdout.
-The installer also downloads Sarasa Gothic v1.0.42, verifies the archive and
-`SarasaMonoSC-Regular.ttf` SHA256, and places the font in
-`.uml-viewer/fonts/`; any failure exits non-zero. The viewer's font lookup is
-an explicit path, then `UML_CJK_FONT`, then that provisioned Sarasa, then
-system Microsoft YaHei with a one-time stderr warning to run `get-uml-viewer`.
+`love` is not on PATH; the entry reads the preflight line from the process's
+stdout, so the binary must not detach from its console.
+The installer also provisions Sarasa Mono SC Regular v1.0.42: it downloads the
+pinned TTF release, verifies the archive and face SHA256 (the pins from #82),
+and extracts only that face into `.uml-viewer/fonts/`; any failure exits
+non-zero. Upstream ships the release only as 7z, so extraction uses `py7zr` in
+`.uml-viewer/installer/.venv` (created on first use) — no system 7z package is
+needed. The viewer's font lookup is an explicit path, then `UML_CJK_FONT`, then
+that provisioned Sarasa, then a system CJK font (Noto CJK on Ubuntu, PingFang
+on macOS) with a one-time stderr warning naming `get-uml-viewer`.
 Install Herdr >= 0.9.3 from
 https://github.com/herdrdev/herdr/releases. The installer preserves existing
 policies and proposals and does not create a policy or generate a diagram
@@ -147,29 +150,25 @@ Herdr call ([ADR 0004](docs/adr/0004-herdr-executable-selection.md)). Install fr
 or [herdr.dev](https://herdr.dev), then verify the version.
 There is no download, upgrade or fallback. `--backend herdr` creates an isolated
 named session and records its server, shell, pane and process creation identities.
-Windows opens the full `herdr session attach` client in Windows Terminal;
-`herdr terminal attach` is not supported on Windows. The attach child clears
-`HERDR_ENV` so launching from an existing Herdr pane does not trigger its nesting guard.
-If the terminal cannot open, the companion and its ownership remain intact and
-the log prints an attach command to run in a separate terminal. Do not start a
-second companion to retry attachment. Herdr starts a detached project recovery
+Nothing opens a terminal automatically on the supported platforms. The ready
+event and the project log carry the `herdr session attach <session>` command to
+run in a separate terminal (terminal attach itself is unverified, #49). Do not
+start a second companion to retry attachment. Herdr starts a detached project recovery
 controller. A verified abnormal Claude exit is retried at most three times,
 after 1, 2 and 4 seconds; the count resets only after 60 seconds of verified
 continuous child uptime. A normal exit, unknown exit evidence, or lost pane
 ownership stops recovery and retains mail with a diagnostic. Closing the
 diagram revokes recovery and waits for the controller to exit before removing
-only this project's Herdr resources. Recovery needs direct native `claude.exe`
-(or `node.exe` plus the official `cli.js`); shell adapters cannot prove the
-child identity. Windows native acceptance is **partial**: real Claude recovery, namespace
-restart continuity and project isolation were recorded, with seven
-remaining native checks tracked by the
-[Windows Herdr #30 record](docs/windows-herdr-30-observations.md)
-([baseline](docs/windows-herdr-30-baseline.md)).
-Linux/WSL companion launch is unsupported after tmux retirement. Historical
-backend evidence remains in [platform acceptance](docs/platform-acceptance.md).
-A standalone downloaded
-Unix installer fetches its PS1 sibling from `UML_VIEWER_REF`; for custom hosts,
-put both files together or set `UML_VIEWER_INSTALLER_URL` explicitly.
+only this project's Herdr resources. Recovery needs an executable that can be
+`exec`ed directly (`claude`, or `node` plus the official `cli.js`); script
+wrappers cannot prove the child identity. Windows native is no longer a
+delivery platform ([ADR 0007](docs/adr/0007-posix-platforms-drop-windows-native.md));
+its earlier Herdr records stay historical in
+[the #30 baseline](docs/windows-herdr-30-baseline.md). Historical backend
+evidence remains in [platform acceptance](docs/platform-acceptance.md).
+A standalone downloaded installer script fetches its entry point from
+`UML_VIEWER_REF`; for custom hosts, keep the checkout layout or set
+`UML_VIEWER_INSTALLER_URL` explicitly.
 
 LOVE must be a native executable for the host architecture; the installer
 checks the cimgui-love dynamic library's architecture and runtime
@@ -193,26 +192,20 @@ path: `.uml-viewer/<tool>/.venv` with the tool installed editable. Failure to
 fetch any tool is fatal instead of a warning. They need Python 3.11+
 (select the interpreter with `UML_PYTHON_EXECUTABLE` when needed). Re-run
 `get-uml-viewer --install-only` to fetch updates; the editable installs use
-the updated source. Native Windows entries run each tool as
-`.venv/Scripts/python.exe -m crapper` (or `-m mutator`, `-m dryer`); sibling
-checkouts are not on `PATH` and are not used by the dispatcher. The mutator `main`
-branch includes
-argument-vector test commands and Windows process-tree timeout cleanup. For the
-standalone mutator, WSL2 with Ubuntu remains its recommended Windows setup;
-this recommendation does not apply to companion launch. Keep a WSL project in the
-Linux home directory, rather than `/mnt/c`, and install Lua/coverage
-prerequisites with mutator's `scripts/setup-ubuntu.sh`. Native Lua validation
+the updated source. Each tool runs from its own `.venv/bin/python -m <tool>`;
+sibling checkouts are not on `PATH` and are not used by the dispatcher. Keep a
+WSL project in the Linux home directory rather than `/mnt/c`, and install
+Lua/coverage prerequisites with mutator's `scripts/setup-ubuntu.sh`. Native Lua validation
 is recorded in
 [platform acceptance](docs/platform-acceptance.md#mutator-lua-接入复验--2026-10-10).
 The local default-runner fix loads `busted.runner` directly in the selected Lua
 interpreter; it does not require a native Busted executable or a custom
 `--test-command`. Use it with the matching crapper `main` checkout for LuaRocks
-module-path setup. It needs a real `lua5.4` or `lua` executable; interpreter
-`.cmd` / `.bat` shims are resolved by crapper when possible. LuaRocks
-installations also need their `bin` directory on PATH and their Lua module
-directories in `LUA_PATH` / `LUA_CPATH`; a terminal
-opened before these variables were set may need to be reopened. See
-[mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/main#windows).
+module-path setup. It needs a real `lua5.4` or `lua` executable. LuaRocks installations also need
+their `bin` directory on PATH and their Lua module directories in `LUA_PATH` /
+`LUA_CPATH`; a terminal opened before these variables were set may need to be
+reopened. See
+[mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/main).
 
 Analysis always runs from the examined project, forwards individual arguments,
 and preserves the tool's exit status. Standard crapper/mutator/dryer invocation
@@ -302,11 +295,11 @@ enumerates the matching business files and passes them explicitly, which keeps
 the same glob semantics as CRAP and mutation. An empty selection fails without
 launching dryer. Nothing in the viewer reads `dry.edn` yet.
 
-Run `python -I scripts/test_standard_quality.py` for native public-entry checks.
-The optional read-only sibling crapper check uses its installed dependencies to
-verify actual roots, exclusions, complete-tree publication and preservation on
-invalid partial refresh. They do not establish real Lua coverage/Busted or
-companion mailbox acceptance, which remains part of consumer integration.
+Run `python -I scripts/test_posix_entries.py` for the public-entry checks: real
+`./uml ir`, the four scanners, standard and configured quality scope, serial
+per-file mutation, installer idempotence and the launch/preflight contract. They
+do not establish real Lua coverage/Busted or companion mailbox acceptance, which
+remains part of consumer integration (`scripts/test_posix_e2e.py`).
 
 Public-entry acceptance on POSIX (Python 3 + git + LOVE):
 
@@ -752,18 +745,18 @@ valid snapshot); standard mutation accepts 0 (including uncovered coverage
 gaps) and 3 (survivors with published snapshots). Exit 3 is never universally
 accepted: it requires the tool contract or an explicit project operation
 declaration. Direct tool commands publish no wrapper result record.
-Noninteractive wrapper and application tests establish these boundaries;
-actual Windows Herdr right-click/FIFO/display acceptance remains pending manual
-validation. macOS is unsupported this round.
+Noninteractive wrapper and application tests establish these boundaries; the
+real-tool right-click/FIFO/display path is recorded in
+[acceptance-evidence/106-wsl](acceptance-evidence/106-wsl/README.md). macOS
+Apple Silicon awaits real-machine acceptance.
 
 Same-diagram display keeps focus, pan, zoom, proposal/open layer, declutter,
 and valid selection/detail cards. A missing focus falls back to the nearest
 remaining namespace ancestor; a missing layer returns to proposal root; a
 missing proposal returns to the namespace tree. Missing selection/card targets
 are cleared. Display preserves discussion context until another `:context`
-arrives. Automated application specs cover this refresh contract; combined
-Windows companion right-click acceptance is pending, and native macOS acceptance
-has not been run.
+arrives. Automated application specs cover this refresh contract; native macOS
+acceptance has not been run.
 
 Clicking **Real diagram** or a proposal (including **New Proposal**) writes
 `:context` and wakes Claude. Stay on that architecture until the next
