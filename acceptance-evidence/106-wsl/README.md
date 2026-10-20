@@ -18,11 +18,11 @@
 
 | 检查 | 结果 | 命令 |
 |---|---|---|
-| 双解释器纯逻辑 | 679 / 679 通过（Lua 5.4、LuaJIT；`lua` 5.1 亦通过） | `lua5.4|luajit scripts/run_busted.lua` |
+| 双解释器纯逻辑 | 681 / 681 通过（Lua 5.4、LuaJIT；`lua` 5.1 为 682 / 682） | `lua5.4|luajit scripts/run_busted.lua` |
 | 全量 POSIX 检查 | 4 / 4 通过 | `python3 -I scripts/check.py` |
 | POSIX 原生进程行为 | 12 / 12 通过 | `luajit scripts/run_posix_native_busted.lua` |
-| 公共入口（安装/IR/质量） | 14 / 14 通过 | `python3 -I scripts/test_posix_entries.py` |
-| restart 拒绝规则 | 4 / 4 通过 | `python3 -I scripts/test_posix_restart_entries.py` |
+| 公共入口（安装/IR/质量） | 29 / 29 通过 | `python3 -I scripts/test_posix_entries.py` |
+| restart 拒绝规则 | 5 / 5 通过 | `python3 -I scripts/test_posix_restart_entries.py` |
 | viewer 渲染与重载 | 通过，含亚秒编辑重载 | `python3 -I scripts/test_posix_viewer.py` |
 | 公共入口端到端 | 通过 | `python3 -I scripts/test_posix_e2e.py` |
 | restart 端到端 | 通过（旧进程退出→session 保存→新进程→companion 保留→正常关闭） | `python3 -I scripts/test_posix_restart_e2e.py` |
@@ -32,6 +32,24 @@
 场景发布 → FIFO 出队 → 正常关闭 → ownership 清空 → Herdr 会话删除。
 证据见 `e2e-result.json`、`viewer.log`。渲染像素见 `viewer-window.png`、
 `viewer-scene.png`。
+
+## 质量工具（公共 `./uml` 分派，串行）
+
+每次调用前删除 `.uml-viewer/quality-result.json`，调用后核对新写出的
+version-1 记录（operation、项目根、实际退出码一致，`validResult: true`）。
+
+- `./uml crap`：exit 0，`.metrics/crap.edn` 已更新。
+- `./uml dry`：exit 0，报告 5 处重复结构（终端读取，无叠加层）。
+- `./uml mutate`：按变更源文件逐个差分运行。exit 3（存在存活变异体）的
+  文件保留快照；未覆盖变异体视为覆盖缺口，不重跑。例：herdr
+  139/71/5（66.2%）、companion_worker 73/19/16（79.3%）、mailbox 13/6/0、
+  recovery 56/31/71、domain/herdr 71/29/3、domain/companion 104/17/0。
+- 执行失败而非结论：mutator worker 池指纹在运行中被改动时报 exit 2、无快照。
+  一次是运行期间改动了工作区（静止后重跑通过）；另一次是 herdr_spec 的
+  `cwd='C:/project'` 在 POSIX 上是相对路径，绕过注入写入器的变异体把
+  `companion.edn` 写进了 worker（已改为绝对路径夹具，d1fec15）。
+- 工具自身 pytest：crapper 251 通过 / 11 跳过 / 1 失败（需 Babashka `bb`，
+  本机未安装，属环境缺口）；mutator 209 / 40 跳过；dryer 84 通过。
 
 ## 人工体验（WSLg 实机观察）
 

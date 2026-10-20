@@ -1,40 +1,22 @@
 {:candidates [
  {:score 1.0
   :language "lua"
-  :left {:file "love/uml/adapters/lock.lua", :start-line 5, :end-line 8}
-  :right {:file "love/uml/adapters/platform_path.lua", :start-line 7, :end-line 10}
-  :left-nodes 39
-  :right-nodes 39}
+  :left {:file "love/uml/adapters/posix_lock.lua", :start-line 9, :end-line 20}
+  :right {:file "love/uml/adapters/posix_path.lua", :start-line 5, :end-line 12}
+  :left-nodes 75
+  :right-nodes 75}
  {:score 1.0
   :language "lua"
-  :left {:file "love/uml/adapters/lock.lua", :start-line 5, :end-line 8}
-  :right {:file "love/uml/adapters/platform_watch.lua", :start-line 6, :end-line 9}
-  :left-nodes 39
-  :right-nodes 39}
+  :left {:file "love/uml/adapters/posix_lock.lua", :start-line 9, :end-line 20}
+  :right {:file "love/uml/adapters/posix_process.lua", :start-line 22, :end-line 44}
+  :left-nodes 75
+  :right-nodes 75}
  {:score 1.0
   :language "lua"
-  :left {:file "love/uml/adapters/os_lock.lua", :start-line 6, :end-line 17}
-  :right {:file "love/uml/adapters/recovery.lua", :start-line 20, :end-line 29}
-  :left-nodes 108
-  :right-nodes 108}
- {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/os_lock.lua", :start-line 39, :end-line 47}
-  :right {:file "love/uml/adapters/posix_lock.lua", :start-line 25, :end-line 33}
-  :left-nodes 158
-  :right-nodes 158}
- {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/platform_path.lua", :start-line 7, :end-line 10}
-  :right {:file "love/uml/adapters/platform_watch.lua", :start-line 6, :end-line 9}
-  :left-nodes 39
-  :right-nodes 39}
- {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/windows_process.lua", :start-line 145, :end-line 159}
-  :right {:file "love/uml/domain/text.lua", :start-line 48, :end-line 62}
-  :left-nodes 369
-  :right-nodes 369}
+  :left {:file "love/uml/adapters/posix_path.lua", :start-line 5, :end-line 12}
+  :right {:file "love/uml/adapters/posix_process.lua", :start-line 22, :end-line 44}
+  :left-nodes 75
+  :right-nodes 75}
  {:score 1.0
   :language "lua"
   :left {:file "love/uml/application/events.lua", :start-line 180, :end-line 184}
@@ -47,22 +29,4 @@
   :right {:file "love/uml/domain/recovery.lua", :start-line 16, :end-line 21}
   :left-nodes 152
   :right-nodes 152}
- {:score 0.930434782609
-  :language "lua"
-  :left {:file "love/uml/adapters/atomic_file.lua", :start-line 6, :end-line 18}
-  :right {:file "love/uml/domain/text.lua", :start-line 7, :end-line 18}
-  :left-nodes 569
-  :right-nodes 559}
- {:score 0.848484848485
-  :language "lua"
-  :left {:file "love/uml/adapters/os_lock.lua", :start-line 6, :end-line 17}
-  :right {:file "love/uml/adapters/windows_process.lua", :start-line 49, :end-line 64}
-  :left-nodes 108
-  :right-nodes 140}
- {:score 0.848484848485
-  :language "lua"
-  :left {:file "love/uml/adapters/recovery.lua", :start-line 20, :end-line 29}
-  :right {:file "love/uml/adapters/windows_process.lua", :start-line 49, :end-line 64}
-  :left-nodes 108
-  :right-nodes 140}
 ]}

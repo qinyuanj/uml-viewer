@@ -1,1 +1,0 @@
-{:version 1 :tested-at "2026-10-21T01:35:33+08:00" :source "love/uml/adapters/platform_watch.lua" :namespace "love.uml.adapters.platform_watch" :outcomes {} :forms [{:id "defn/M.load" :kind "defn" :file "love/uml/adapters/platform_watch.lua" :line 6 :end-line 9 :hash "e232bdb77bdda6bed472dc08e6a47a452dd1e972b298fcac3f5576c18eb8c360" :killed 0 :survived 0 :uncovered 0 :sites 0}]}
