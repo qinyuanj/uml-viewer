@@ -11,11 +11,15 @@ end
 local function screenshot(name)
   love.graphics.captureScreenshot(function(data) save(name,data:encode('png'):getString()) end)
 end
+-- The canvas receives window coordinates; the scene stores world coordinates.
+-- Convert through the live camera/zoom, as the navigation driver does.
 local function click_rect(state,presses)
   local c=G.get(state.scene,'classes')[1]
   if not c then return nil,'no class in scene' end
-  local r=G.get(c,'rect')
-  local x,y=G.get(r,'x')+10,G.get(r,'y')+10
+  local r=G.get(c,'rect'); local z=require('uml.application.events').zoom_of(state)
+  local x=(G.get(r,'x')+6-(state.cam_x or 0))*z
+  local y=(G.get(r,'y')+6-(state.cam_y or 0))*z
+  love.mousemoved(x,y)
   love.mousepressed(x,y,1,false,presses or 1)
   love.mousereleased(x,y,1)
   return c
@@ -75,7 +79,10 @@ return function(frame,state,ui)
     if p then io:AddMousePosEvent(p.x+ui.fonts.code:CalcTextSizeA(13,1e9,0,'  function',nil,nil).x,p.y+p.h/2) end
   elseif frame==28 then io:AddMouseButtonEvent(0,false)
   elseif frame==30 then
-    check(ui.source_window.viewport().selection=='function','source drag must select actual text without gutter, got '..tostring(ui.source_window.viewport().selection))
+    local v=ui.source_window.viewport()
+    if check(v~=nil,'source window must still be open with a published viewport') then
+      check(v.selection=='function','source drag must select actual text without gutter, got '..tostring(v.selection))
+    end
     screenshot('selection-chinese-tab.png')
   elseif frame==32 then
     if failed then save('source-jump-fail.txt',failed); love.event.quit(1)
