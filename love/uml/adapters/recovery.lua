@@ -9,41 +9,35 @@ local R=require('uml.domain.recovery')
 local M={}
 
 -- Existence is checked without opening: an absent journal must not spend the
--- lock budget, while a present-but-locked file must retry. The POSIX path uses
--- lfs attributes; on Windows, LuaFileSystem's C module cannot be loaded inside
--- LOVE (it crashes the process rather than raising), so existence there uses
--- kernel32.
+-- lock budget, while a present-but-locked file must retry. POSIX needs no FFI
+-- for this (a successful open is proof). On Windows LuaFileSystem's C module
+-- cannot be loaded inside LOVE — it crashes the process rather than raising —
+-- so existence there asks kernel32.
 local windows=package.config:sub(1,1)=='\\'
-local lfs_ok,lfs=false,nil
-if not windows then lfs_ok,lfs=pcall(require,'lfs') end
-local ffi_api
-local function ffi_file_api()
-  if ffi_api~=nil then return ffi_api or nil end
+local ffi_file_api
+local function file_attributes()
+  if ffi_file_api~=nil then return ffi_file_api or nil end
   local ok,ffi=pcall(require,'ffi')
-  if not ok then ffi_api=false; return nil end
+  ffi_file_api=false
+  if not ok then return nil end
   ffi.cdef[[
     int MultiByteToWideChar(unsigned int,unsigned long,const char*,int,wchar_t*,int);
     unsigned long GetFileAttributesW(const wchar_t*);
   ]]
-  ffi_api=ffi; return ffi
+  ffi_file_api=ffi; return ffi
 end
 local function exists(path)
-  if lfs_ok then return lfs.attributes(path,'mode')~=nil end
   if not windows then
-    local ffi=ffi_file_api()
-    if ffi then
-      -- POSIX existence needs no FFI: an open probe is enough for the retry gate.
-      local f=io.open(path,'rb'); if f then f:close(); return true end; return false
-    end
+    local file=io.open(path,'rb'); if file then file:close(); return true end; return false
   end
-  local ffi=ffi_file_api()
-  if ffi then
-    local count=ffi.C.MultiByteToWideChar(65001,0,path,-1,nil,0)
-    local wide=ffi.new('wchar_t[?]',count)
-    ffi.C.MultiByteToWideChar(65001,0,path,-1,wide,count)
-    return tonumber(ffi.C.GetFileAttributesW(wide))~=4294967295
+  local ffi=file_attributes()
+  if not ffi then
+    local file=io.open(path,'rb'); if file then file:close(); return true end; return false
   end
-  local file=io.open(path,'rb'); if file then file:close(); return true end; return false
+  local count=ffi.C.MultiByteToWideChar(65001,0,path,-1,nil,0)
+  local wide=ffi.new('wchar_t[?]',count)
+  ffi.C.MultiByteToWideChar(65001,0,path,-1,wide,count)
+  return tonumber(ffi.C.GetFileAttributesW(wide))~=4294967295
 end
 
 local KEYWORD_VALUES={phase=true,cleanup_phase=true,backend=true,owner_role=true}
