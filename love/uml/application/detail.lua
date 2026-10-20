@@ -1,10 +1,11 @@
 -- Public detail card model and content-space rows; no rendering dependencies.
 local E=require('uml.edn')
 local G=require('uml.domain.geom')
+local S=require('uml.application.strings')
 local M={width=640,height=700,pad=16,col_gap=10}
 local function g(t,k) if E.kind(t)=='map' then return G.get(t,k) end; return t and t[k] end
 local function named(scene,key,id) for _,c in ipairs(g(scene,key) or {}) do if E.equal(g(c,'id'),id) then return c end end end
-local phrases={inheritance={'extends','extended by'},implements={'implements','implemented by'},association={'associates with','associated from'},dependency={'depends on','used by'},aggregation={'aggregates','aggregated by'},composition={'composes','composed in'}}
+local phrases=S.phrases
 function M.model(scene,id)
   local c=named(scene,'classes',id); if not c then return nil end
   local ns=g(c,'ns') or G.name(g(c,'id'))
@@ -13,11 +14,65 @@ function M.model(scene,id)
     local outgoing=E.equal(id,g(e,'from'))
     if outgoing or E.equal(id,g(e,'to')) then
       local other_id=g(e,outgoing and 'to' or 'from'); local other=named(scene,'classes',other_id)
-      local p=phrases[G.name(g(e,'kind'))] or {'to','from'}
+      local p=phrases[G.name(g(e,'kind'))] or S.phrase_fallback
       model.rels[#model.rels+1]={id=other_id,name=g(other,'name') or G.name(other_id),kind=g(e,'kind'),label=g(e,'label'),['outgoing?']=outgoing,phrase=p[outgoing and 1 or 2]}
     end
   end
   return model
+end
+-- Merge the visible scene with the full overlaid document for independent
+-- detail windows; relationships retain their leaf identities across namespaces.
+function M.for_state(state,id)
+  local doc=state.document
+  if not doc then return M.model(state.scene,id) end
+  if state.snapshots then doc=require('uml.application.overlay').apply(doc,state.snapshots) end
+  local classes,edges=E.vector(),E.vector()
+  local seen,seen_edges={},{}
+  local function add_edges(scene)
+    for _,edge in ipairs(g(scene,'edges') or {}) do
+      local key=E.encode(E.vector{g(edge,'from'),g(edge,'to'),g(edge,'kind') or E.nil_value,g(edge,'label') or E.nil_value})
+      if not seen_edges[key] then seen_edges[key]=true; edges[#edges+1]=edge end
+    end
+  end
+  add_edges(doc)
+  local function add(c)
+    local cid=g(c,'id'); local key=E.encode(cid)
+    if not seen[key] then seen[key]=true; classes[#classes+1]=c end
+    for _,child in ipairs(g(c,'contents') or {}) do add(child) end
+  end
+  local function add_view(view)
+    add_edges(view)
+    for _,p in ipairs(g(view,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+    for _,c in ipairs(g(view,'classes') or {}) do add(c) end
+    for _,c in ipairs(g(view,'foreign') or {}) do add(c) end
+  end
+  -- Authored leaf data wins over the abbreviated contents rows of collapsed
+  -- namespace boxes. Then add root/current boxes for synthetic groups and ports.
+  for _,c in ipairs(g(doc,'classes') or {}) do add(c) end
+  for _,p in ipairs(g(doc,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do add(c) end end
+  if g(doc,'hierarchical') then
+    local hierarchy=require('uml.domain.hierarchy')
+    add_view(hierarchy.view_at(doc,E.vector()))
+    -- A reachable port can name an intermediate namespace absent from the
+    -- root/current boxes. Resolve its own parent view only when requested.
+    local parent=E.vector(); for part in G.name(id):gmatch('[^.]+') do parent[#parent+1]=E.keyword(part) end
+    table.remove(parent)
+    if #parent>0 then
+      local target_view=hierarchy.view_at(doc,parent)
+      add_view(target_view)
+      for _,p in ipairs(g(target_view,'packages') or {}) do for _,c in ipairs(g(p,'classes') or {}) do
+        if E.equal(g(c,'id'),id) and g(c,'drill?') then
+          for _,dir in ipairs{'in-deps','out-deps'} do for _,dep in ipairs(g(c,dir) or {}) do
+            add(dep)
+            add_edges({edges={G.map{from=dir=='out-deps' and id or g(dep,'id'),to=dir=='out-deps' and g(dep,'id') or id,kind=E.keyword('dependency')}}})
+          end end
+        end
+      end end
+    end
+  end
+  add_edges(state.scene)
+  for _,c in ipairs(g(state.scene,'classes') or {}) do add(c) end
+  return M.model(G.map{classes=classes,edges=edges,packages=g(state.scene,'packages') or E.vector(),diagram=g(state.scene,'diagram')},id)
 end
 function M.member_ident(model,member)
   local r={ns=g(model,'ns'),lang=g(model,'lang'),file=g(model,'file')}
@@ -33,34 +88,34 @@ local function cells(c,class)
   end
   local crap=mu(g(c,'crap')); local cov=g(c,'coverage'); local killed,survived,uncovered,sites=count('killed'),count('survived'),count('uncovered'),count('sites')
   local r={['crap-s']=crap and (num(crap)..(class and 'μ' or '')),['crap-n']=crap,['cc-s']=not class and g(c,'cc') and tostring(math.floor(g(c,'cc'))) or nil,['cov-s']=coverage(cov),coverage=cov,killed=killed,survived=survived,uncovered=uncovered,sites=sites}
-  if (killed or 0)+(survived or 0)+(uncovered or 0)==0 and (sites==nil or sites==0) then r['mut-note']='---no mutation sites---'
+  if (killed or 0)+(survived or 0)+(uncovered or 0)==0 and (sites==nil or sites==0) then r['mut-note']=S.no_mutation_sites
   else for _,k in ipairs{'killed','survived','uncovered'} do if r[k]~=nil then r[k..'-s']=tostring(math.floor(r[k])) end end end
   return r
 end
 function M.rows(model)
   if not model then return nil end
-  local c=g(model,'class'); local rows,y={},16
+  local c=g(model,'class'); local rows,y={},0
   local function emit(kind,text,extra) local r=extra or {}; r.kind=kind; r.text=text; r.y=y; r.h=r.h or 18; rows[#rows+1]=r; y=y+r.h end
   local function heading(label) y=y+12; emit('heading',label) end
-  emit('name',g(c,'name'))
-  if g(c,'level')~=nil then emit('muted','Level '..g(c,'level')) end
+  emit('name',g(c,'name'),{h=20})
+  if g(c,'level')~=nil then emit('muted',S.level..g(c,'level')) end
   if g(c,'stereotype') then emit('muted','«'..G.name(g(c,'stereotype'))..'»') end
   local file=g(model,'file'); local module=g(model,'ns'); local base=file and file:gsub('\\','/'):match('[^/]+$')
   if base and not g(c,'drill?') and base:lower():match('%.rs$') then module=base end
   if module then emit('module',module,{module=true}) end
-  emit('muted','package  '..(g(g(model,'package'),'label') or G.name(g(c,'package')) or ''))
+  emit('muted',S.package..(g(g(model,'package'),'label') or G.name(g(c,'package')) or ''))
   if g(model,'title') then emit('muted',g(model,'title')) end
   local crap=g(c,'crap')
   if crap then
-    local text=type(crap)=='number' and ('Crap '..num(crap)) or ('Crap μ '..(num(g(crap,'mu')) or '')..' max '..(num(g(crap,'max')) or '')..' σ '..(num(g(crap,'sigma')) or ''))
+    local text=type(crap)=='number' and S.crap_single:format(num(crap)) or S.crap_line:format(num(g(crap,'mu')) or '',num(g(crap,'max')) or '',num(g(crap,'sigma')) or '')
     emit('crap',text)
   end
   if #(g(c,'ops') or {})>0 or mu(crap)~=nil or g(c,'coverage')~=nil or g(c,'cc')~=nil or g(c,'killed')~=nil or g(c,'survived')~=nil then
-    y=y+12; emit('group-header',''); emit('col-header',''); emit('stats',g(c,'name'),cells(c,true))
+    y=y+6; emit('group-header',''); emit('col-header',''); emit('stats',g(c,'name'),cells(c,true))
     for _,op in ipairs(g(c,'ops') or {}) do local r=cells(op,false); r.private=g(op,'private')==true; r['op-name']=g(op,'name'); emit('stats',(r.private and '- ' or '+ ')..(g(op,'text') or ''),r) end
   end
-  if #(g(c,'fields') or {})>0 then heading('Fields'); for _,f in ipairs(g(c,'fields')) do emit('field',g(f,'text')) end end
-  if #(g(model,'rels') or {})>0 then heading('Relationships'); for _,r in ipairs(g(model,'rels')) do emit('rel',r.phrase..'  '..r.name..(r.label and '  «'..r.label..'»' or ''),{id=r.id}) end end
+  if #(g(c,'fields') or {})>0 then heading(S.fields); for _,f in ipairs(g(c,'fields')) do emit('field',g(f,'text')) end end
+  if #(g(model,'rels') or {})>0 then heading(S.relationships); for _,r in ipairs(g(model,'rels')) do emit('rel',r.phrase..'  '..r.name..(r.label and '  «'..r.label..'»' or ''),{id=r.id}) end end
   return rows
 end
 function M.content_h(rows) local last=rows and rows[#rows]; return last and last.y+last.h+16 or 32 end
@@ -88,13 +143,13 @@ local function at(rows,y,key) for _,r in ipairs(rows or {}) do if r[key] and y>=
 function M.rel_at(rows,y) for _,r in ipairs(rows or {}) do if r.kind=='rel' and y>=r.y and y<=r.y+r.h-1 then return r.id end end end
 function M.member_at(rows,y) return at(rows,y,'op-name') end
 function M.module_at(rows,y) return at(rows,y,'module')==true end
-local columns={{id='crap',label='Crap',key='crap-s',w=56,group='crap'},{id='cc',label='CC',key='cc-s',w=32,group='crap'},{id='cov',label='Cov',key='cov-s',w=44,group='crap'},{id='killed',label='killed',key='killed-s',w=52,group='mutation'},{id='survived',label='survived',key='survived-s',w=60,group='mutation'},{id='uncovered',label='uncovered',key='uncovered-s',w=78,group='mutation'}}
-function M.column_layout()
-  local out,x={},624
+local columns={{id='crap',label=S.columns.crap,key='crap-s',w=56,group='crap'},{id='cc',label=S.columns.cc,key='cc-s',w=32,group='crap'},{id='cov',label=S.columns.cov,key='cov-s',w=44,group='crap'},{id='killed',label=S.columns.killed,key='killed-s',w=52,group='mutation'},{id='survived',label=S.columns.survived,key='survived-s',w=60,group='mutation'},{id='uncovered',label=S.columns.uncovered,key='uncovered-s',w=78,group='mutation'}}
+function M.column_layout(width)
+  local out,x={},math.max(560,width or 624)
   for i=#columns,1,-1 do local c={}; for k,v in pairs(columns[i]) do c[k]=v end; c.right=x; c.left=x-c.w; out[i]=c; x=c.left-10 end
   return out
 end
-function M.group_layout()
-  local cs=M.column_layout(); return {{id='crap',label='--crap--',left=cs[1].left,right=cs[3].right},{id='mutation',label='--mutation--',left=cs[4].left,right=cs[6].right}}
+function M.group_layout(width)
+  local cs=M.column_layout(width); return {{id='crap',label=S.group_crap,left=cs[1].left,right=cs[3].right},{id='mutation',label=S.group_mutation,left=cs[4].left,right=cs[6].right}}
 end
 return M

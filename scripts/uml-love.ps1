@@ -1,5 +1,45 @@
 # Isolated LOVE viewer entry. Companion selection, identity and same-runtime
 # --restart are handled here; the Herdr preflight runs in the LOVE runtime.
+function Get-UmlShortHead($path) {
+    try {
+        $sha = & git -C $path rev-parse --short HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $sha) { return ([string]$sha).Trim() }
+    } catch { }
+    return $null
+}
+
+function Resolve-UmlToolRoot($projectRoot) {
+    $override = $env:UML_VIEWER_TOOL_ROOT
+    if ($override) {
+        $resolved = Resolve-Path -LiteralPath $override -ErrorAction SilentlyContinue
+        if (-not $resolved -or -not (Test-Path -LiteralPath (Join-Path $resolved.Path 'love/main.lua'))) {
+            throw "UML_VIEWER_TOOL_ROOT must name an uml-viewer checkout containing love/main.lua: $override"
+        }
+        $toolRoot = $resolved.Path.Replace('\', '/')
+    } else {
+        $toolRoot = (Resolve-Path -LiteralPath '.uml-viewer/uml-viewer').Path.Replace('\', '/')
+    }
+    # A pinned installed clone silently launches stale code; flag it instead of
+    # failing, and only when both roots are git checkouts that can be compared.
+    $workingTree = [IO.Path]::GetFullPath($projectRoot).TrimEnd('\', '/').Replace('\', '/')
+    if (-not [string]::Equals($toolRoot, $workingTree, [StringComparison]::OrdinalIgnoreCase)) {
+        $toolHead = Get-UmlShortHead $toolRoot
+        $treeHead = Get-UmlShortHead $workingTree
+        if ($toolHead -and $treeHead -and $toolHead -ne $treeHead) {
+            [Console]::Error.WriteLine("uml: tool root $toolRoot is at $toolHead, working tree is $treeHead; run with UML_VIEWER_TOOL_ROOT=$workingTree to use this checkout.")
+        }
+    }
+    return $toolRoot
+}
+
+function Get-UmlLoveConsoleHint($love) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($love.Source)
+    if ($name -like 'love*' -and $name -notlike 'lovec*') {
+        return "$($love.Source) emitted no stdout; a GUI-subsystem LOVE build cannot serve as the preflight source. Set UML_LOVE_EXECUTABLE to lovec.exe."
+    }
+    return ''
+}
+
 function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     if (-not $IsWindows) { throw 'LOVE viewer tracer currently supports native Windows only.' }
     if ($viewerArgs -contains '--restart') {
@@ -19,7 +59,11 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     $candidate = if ($env:UML_LOVE_EXECUTABLE) { $env:UML_LOVE_EXECUTABLE } else { 'love' }
     $love = Get-Command $candidate -ErrorAction SilentlyContinue
     if (-not $love -or $love.CommandType -notin @('Application', 'ExternalScript')) {
-        throw 'LOVE 11.5 is required. Install https://love2d.org/ and put love.exe on PATH (or set UML_LOVE_EXECUTABLE).'
+        $hint = ''
+        if ($env:UML_LOVE_EXECUTABLE) {
+            $hint = " UML_LOVE_EXECUTABLE=$($env:UML_LOVE_EXECUTABLE) could not be resolved; set it to the console build lovec.exe."
+        }
+        throw "LOVE 11.5 is required. Install https://love2d.org/ and put love.exe on PATH (or set UML_LOVE_EXECUTABLE).$hint"
     }
     if ([IO.Path]::GetExtension($love.Source).ToLowerInvariant() -in @('.cmd', '.bat')) { throw 'LOVE must be a native executable or a PowerShell script entry.' }
     if ($viewerArgs.Count -gt 0 -and $viewerArgs[0] -eq 'ir') {
@@ -53,7 +97,12 @@ function Invoke-UmlLove($projectRoot, $toolRoot, $viewerArgs) {
     if ($diagnostic) { [Console]::Error.Write($diagnostic) }
     $lines = @($checked | Where-Object { $null -ne $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
     if ($lines.Count -ne 1 -or $lines[0] -cne 'herdr') {
-        throw 'Backend preflight returned invalid output; no viewer was launched.'
+        $message = 'Backend preflight returned invalid output; no viewer was launched.'
+        if ($lines.Count -eq 0) {
+            $hint = Get-UmlLoveConsoleHint $love
+            if ($hint) { $message = "$message $hint" }
+        }
+        throw $message
     }
     # Strip only the exact option pair the preflight consumed, preserving all
     # other argv literally, then forward explicit Herdr selection to the viewer.

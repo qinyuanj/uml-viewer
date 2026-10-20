@@ -42,7 +42,7 @@ function M.reload(state,text,mtime,snapshots,metrics_stamp)
     local doc=require('uml.domain.ir').read_document(text)
     local s={}; for key,value in pairs(state) do s[key]=value end
     s.document=doc; s.mtime=mtime; s.metrics_stamp=metrics_stamp; s.snapshots=snapshots
-    s.scene=M.compile_view(doc,snapshots,s.focus,s.extra); s.revision=state.revision+1; return s
+    s=M.restore_session(s,state); s.revision=state.revision+1; return s
   end)
   if ok then return next_state,true end
   return state,false,tostring(next_state)
@@ -53,10 +53,7 @@ local function has_id(items,id)
 end
 local function scene_classes(scene) return g(scene,'classes') or V() end
 local function card_target(s,id)
-  return has_id(scene_classes(s.scene),id) or has_id(g(s.document,'classes'),id)
-    or (g(s.document,'hierarchical') and (function()
-      for _,p in ipairs(g(H.view_at(s.document,V()),'packages') or {}) do if has_id(g(p,'classes'),id) then return true end end
-    end)())
+  return require('uml.application.detail').for_state(s,id)~=nil
 end
 local function selected_target(s,sel)
   local kind=G.name(g(sel,'kind')); local id=g(sel,'id')
@@ -95,6 +92,7 @@ function M.restore_session(state,snap)
   E.assoc(extra,E.keyword('open-layer'),layer or E.nil_value)
   s.focus=focus; s.extra=extra; s.scene=M.compile_view(s.document,s.snapshots,focus,extra)
   s.cam_x=snap.cam_x or 0; s.cam_y=snap.cam_y or 0; s.zoom=snap.zoom or 1
+  s.fit_pending=nil; s.drag=nil; s.hover=nil; s.pointer=nil
   s.selected=snap.selected; s.detail_id=snap.detail_id; s.discussion_context=snap.discussion_context
   return M.drop_missing_detail(s)
 end
@@ -107,7 +105,13 @@ function M.apply_mail(state,cmd,boundary)
     local path=boundary.resolve(g(cmd,'path'),state.project_root)
     local loaded=boundary.load(path)
     local same=state.path and boundary.canonical(state.path)==boundary.canonical(path)
+    -- The first display after a fresh launch is a new load even for the same
+    -- path: the waiting state holds no view to retain.
+    if state.waiting then same=false end
     s=same and M.restore_session(loaded,state) or loaded
+    -- A new diagram fits the canvas once the adapter knows its size; the same
+    -- diagram keeps its retained camera, zoom and focus (ADR 0002).
+    s.fit_pending=not same or nil
     if not same then
       -- A different diagram starts at its root view; browsing state is not
       -- transferred, but declutter and a proposal that still exists are kept.
@@ -132,6 +136,9 @@ function M.apply_mail(state,cmd,boundary)
 end
 function M.poll_mail(state,mailbox,boundary)
   if not state.path then return state end
+  -- mail_seen is a monotonic stamp of the last handled command id, persisted for
+  -- session continuity and diagnostics. The durable queue is the authority on
+  -- what is pending: take ignores the stamp, so restored mail is never skipped.
   while true do
     local cmd=mailbox.take(state.mail_seen or 0); if not cmd then return state end
     local ok,next_state=pcall(M.apply_mail,state,cmd,boundary)

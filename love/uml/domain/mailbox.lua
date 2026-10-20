@@ -8,11 +8,18 @@ function M.normalize(raw)
   if g(raw,'op') then return G.map{['next-id']=(g(raw,'id') or 0)+1,queue=E.vector{raw}} end
   return G.map{['next-id']=1,queue=E.vector()}
 end
+-- Everything still queued, in stored order. `id` is only a stamp assigned by
+-- append; it never decides what is pending, so a caller's saved cursor cannot
+-- hide mail (a restored cursor may legitimately exceed a queued id). The second
+-- argument is the legacy cursor field (mail_seen); adapters may still pass it,
+-- but it is not consulted.
 function M.pending(box,seen)
-  local q=E.vector(); for _,cmd in ipairs(g(box,'queue')) do if g(cmd,'id')>(seen or 0) then q[#q+1]=cmd end end; return q
+  local q=E.vector(); for _,cmd in ipairs(g(box,'queue')) do q[#q+1]=cmd end; return q
 end
+-- Pops the head of :queue whenever one exists, whatever its id. The cursor is
+-- accepted for adapter compatibility and deliberately not consulted here.
 function M.take(box,seen)
-  local q=M.pending(box,seen); if #q==0 then return nil end
+  local q=M.pending(box); if #q==0 then return nil end
   local rest=E.vector(); for i=2,#q do rest[#rest+1]=q[i] end
   return q[1],G.map{['next-id']=g(box,'next-id'),queue=rest}
 end

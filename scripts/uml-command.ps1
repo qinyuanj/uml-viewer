@@ -90,7 +90,7 @@ try {
         exit $code
     }
     . "$PSScriptRoot/uml-love.ps1"
-    $toolRoot = (Resolve-Path -LiteralPath '.uml-viewer/uml-viewer').Path.Replace('\', '/')
+    $toolRoot = Resolve-UmlToolRoot $root
     Invoke-UmlLove $root $toolRoot $commandArgs
     exit $LASTEXITCODE
 } catch { [Console]::Error.WriteLine("uml: $_"); exit 1 }

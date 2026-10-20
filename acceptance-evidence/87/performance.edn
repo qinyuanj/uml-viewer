@@ -1,0 +1,19 @@
+{:ticket 87
+ :measured-revision "2766bfca47eca0d0e41ec9b7b516536cefeccd42"
+ :date "2026-10-20"
+ :hardware {:cpu "AMD Ryzen 5 5500" :cores 6 :logical-processors 12 :memory-kib 33444984 :gpu "NVIDIA GeForce GTX 1080 Ti"}
+ :runtime {:os "Windows 11 Pro Insider Preview 10.0.26220" :love "11.5.0" :lua "LuaJIT 2.1.1700008891" :renderer "OpenGL 3.3.0 NVIDIA 582.28" :font "Sarasa Mono SC Regular"}
+ :display {:window [1500 920] :highdpi true :dpi 1 :ui-scale 1 :vsync 1}
+ :method {:runner "scripts/benchmark_viewer.ps1" :driver "scripts/benchmark_viewer.lua"
+          :warmup-seconds 2 :phase-seconds 5 :quality-jobs-concurrent false
+          :input "Process-local LOVE callbacks; repeating eight-frame wheel-pan, Ctrl zoom, hover and P cycle; no desktop input; isolated ImGui ini"
+          :timing "Consecutive update probe wall-clock deltas include render/present and polling; FPS is 1000 / mean ms"
+          :limitations "One manual baseline, no thresholds. Synthetic phases have only 7/6 frames; p95 is effectively their maximum. 250ms is polling eligibility, not guaranteed refresh latency under render/load cost."}
+ :example {:path "examples/uml-viewer.edn" :source-classes 79 :source-edges 239 :visible-classes 6 :visible-edges 4
+           :idle {:frames 297 :fps 59.398083817816 :mean-ms 16.835559932660 :median-ms 16.6643 :p95-ms 21.1894 :zoom [1 1]}
+           :interaction {:frames 219 :fps 43.799851956500 :mean-ms 22.831127397260 :median-ms 16.5738 :p95-ms 78.3883 :zoom [1 1.1]}}
+ :synthetic {:generation "Independent root-level class1..class500 and dependency chain; generated only under Temp by runner; official example unchanged"
+             :source-classes 500 :source-edges 499 :visible-classes 500 :visible-edges 499
+             :idle {:frames 7 :fps 1.581945464328 :mean-ms 632.133042857143 :median-ms 624.5433 :p95-ms 689.8736 :zoom [0.1 0.1]}
+             :interaction {:frames 6 :fps 1.614505622637 :mean-ms 619.38465 :median-ms 614.1159 :p95-ms 648.6497 :zoom [0.1 0.11]}}
+ :raw-artifacts "C:/Users/Lzx_8/AppData/Local/Temp/uml-87-benchmark-f4abdfbe279441188fefa20542db4ca6"}

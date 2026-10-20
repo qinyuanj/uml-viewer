@@ -16,21 +16,25 @@ local function screenshot(name)
 end
 local proposal_count
 return function(frame,state,ui)
-  if frame==1 then love.window.requestAttention(true); love.mouse.setPosition(20,20) end
+  if frame==1 then ui.imgui.GetIO():AddMousePosEvent(20,20) end
   if not (ui and ui.inspector) then failed=failed or 'viewer did not expose the inspector adapter'; love.event.quit(1); return end
-  local ins=ui.inspector
-  local function bounds(key) return ins.bounds()[key] end
-  local function pin(key) local b=bounds(key); if b then love.mousemoved(b.x,b.y) else failed=failed or ('missing inspector row '..key) end; return b end
+  local ins=ui.detail_window
+  local function bounds(key) return ins.bounds()[key] or ui.inspector.bounds()[key] end
+  local function pin(key) local b=bounds(key); if b then ui.imgui.GetIO():AddMousePosEvent(b.x,b.y) else failed=failed or ('missing inspector row '..key) end; return b end
   local function click(button) love.mousepressed(0,0,button); love.mousereleased(0,0,button) end
   if frame==2 then
-    check(ins.empty_rendered()==true,'empty-inspector explanation was not drawn')
+    check(ui.inspector.empty_rendered()==true,'empty-inspector explanation was not drawn')
     screenshot('inspector-empty.png')
   elseif frame==3 then
     state.selected=G.map{kind=E.keyword('class'),id=E.keyword('a')}
+    state.detail_id=E.keyword('a')
     state.detail_scroll=0
   elseif frame==5 then
     local d=ins.detail(); check(d.rect~=nil,'detail card bounds missing')
-    if d.rect then love.mousemoved((d.rect.left+d.rect.right)/2,(d.rect.top+d.rect.bottom)/2) end
+    local horizontal=ins.bounds().horizontal
+    check(horizontal and horizontal.maximum<1,'default 640x700 detail with vertical overflow must fit uncovered column: '..tostring(horizontal and horizontal.maximum)..' width '..tostring(horizontal and horizontal.content_width))
+    screenshot('detail-default.png')
+    if d.rect then ui.imgui.GetIO():AddMousePosEvent((d.rect.left+d.rect.right)/2,(d.rect.top+d.rect.bottom)/2) end
   elseif frame==6 then
     check(ins.detail_hovered()==true,'pointer over the detail card was not detected')
     love.wheelmoved(0,-4)
@@ -46,7 +50,8 @@ return function(frame,state,ui)
     check(state.detail_scroll==0,'underscroll must clamp to zero')
     love.wheelmoved(0,-3)
   elseif frame==10 then
-    check(state.detail_scroll==144,'three wheel notches must restore 144px')
+    check(state.detail_scroll==144,'three wheel notches must restore 144px (actual '..tostring(state.detail_scroll)..')')
+    check(bounds('new-proposal') and bounds('new-proposal').top>=12,'detail wheel must not scroll the Inspector parent controls out of view')
     pin('member:op8')
   elseif frame==11 then
     check(ins.detail().hover=='op8','hovered operation must be published from the drawn row')
@@ -64,6 +69,18 @@ return function(frame,state,ui)
   elseif frame==20 then
     check(ui.inspector.menu_open()==true,'proposal Rename/Delete menu did not open')
   elseif frame==22 then
+    ui.imgui.SetWindowSize_Str('A###uml-detail',ui.imgui.ImVec2_Float(400,700),ui.imgui.ImGuiCond_Always)
+  elseif frame==25 then
+    local horizontal=ins.bounds().horizontal
+    check(horizontal and horizontal.maximum>150,'narrow detail must expose horizontal scroll to final metric columns')
+    screenshot('detail-narrow.png')
+  elseif frame==26 then
+    ui.imgui.SetWindowSize_Str('A###uml-detail',ui.imgui.ImVec2_Float(900,700),ui.imgui.ImGuiCond_Always)
+  elseif frame==29 then
+    local horizontal=ins.bounds().horizontal
+    check(horizontal and horizontal.content_width>800,'wide detail must anchor metrics to available content width')
+    screenshot('detail-wide.png')
+  elseif frame==31 then
     if failed then save('inspector-detail-fail.txt',failed); love.event.quit(1)
     else
       save('inspector-pass.txt','PASS empty-inspector copy, clamped detail scrolling, hovered op, New Proposal row and Rename/Delete menu\n')

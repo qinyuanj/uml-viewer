@@ -72,6 +72,7 @@ class Entries(unittest.TestCase):
                         UML72_PIP_LOG=str(self.pip_log),
                         UML72_RECORD=str(self.record),
                         PATH=str(self.tools) + os.pathsep + os.environ.get('PATH', ''))
+        self.env.pop('UML_VIEWER_TOOL_ROOT', None)
         (self.project / 'deps.edn').write_text('{:paths ["src"]}')
         (self.project / 'policy.edn').write_text('{:lang :lua :src "src" :prefix "sample" :proposals [{:id :saved :name "Saved" :layers []}]}')
         (self.project / 'src').mkdir()
@@ -173,6 +174,56 @@ class Entries(unittest.TestCase):
         self.assertTrue(self.record.exists(), result.stdout)
         received = json.loads(self.record.read_text(encoding='utf-8-sig'))
         self.assertEqual(['viewer', '--backend', 'herdr', 'diagram with spaces.edn'], received[-4:])
+        self.assertFalse((self.project / '.uml-viewer/companion.edn').exists())
+
+    def wait_for_record(self, result):
+        deadline = time.monotonic() + 10
+        while not self.record.exists() and time.monotonic() < deadline:
+            time.sleep(.05)
+        self.assertTrue(self.record.exists(), result.stdout + result.stderr)
+        return json.loads(self.record.read_text(encoding='utf-8-sig'))
+
+    def test_tool_root_override_selects_the_given_checkout(self):
+        self.assertEqual(0, self.install().returncode)
+        env = dict(self.env, UML_VIEWER_TOOL_ROOT=str(self.source))
+        result = self.run_entry(self.entry() + ['diagram.edn'], env=env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        received = self.wait_for_record(result)
+        self.assertEqual(os.path.normcase(os.path.normpath(str(self.source / 'love'))),
+                         os.path.normcase(os.path.normpath(received[0])))
+        self.assertFalse((self.project / '.uml-viewer/companion.edn').exists())
+
+    def test_tool_root_override_must_contain_the_viewer(self):
+        self.assertEqual(0, self.install().returncode)
+        missing = self.root / 'not a checkout'
+        missing.mkdir()
+        result = self.run_entry(self.entry() + ['diagram.edn'],
+                                env=dict(self.env, UML_VIEWER_TOOL_ROOT=str(missing)))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('UML_VIEWER_TOOL_ROOT', result.stderr)
+        self.assertIn('love/main.lua', result.stderr)
+        self.assertFalse(self.record.exists())
+
+    def test_unresolvable_love_executable_names_the_console_build(self):
+        self.assertEqual(0, self.install().returncode)
+        result = self.run_entry(self.entry() + ['diagram.edn'],
+                                env=dict(self.env, UML_LOVE_EXECUTABLE=str(self.root / 'missing-love.exe')))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('LOVE 11.5 is required', result.stderr)
+        self.assertIn('lovec.exe', result.stderr)
+
+    def test_silent_gui_love_build_reports_the_preflight_diagnostic(self):
+        self.assertEqual(0, self.install().returncode)
+        # Basename starts with `love` but not `lovec`, and prints nothing, like
+        # the GUI-subsystem love.exe.
+        silent = self.tools / 'love-gui.ps1'
+        silent.write_text('exit 0\n')
+        result = self.run_entry(self.entry() + ['diagram.edn'],
+                                env=dict(self.env, UML_LOVE_EXECUTABLE=str(silent)))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Backend preflight returned invalid output; no viewer was launched.', result.stderr)
+        self.assertIn('no stdout', result.stderr)
+        self.assertIn('lovec.exe', result.stderr)
         self.assertFalse((self.project / '.uml-viewer/companion.edn').exists())
 
     def test_missing_tool_venv_reports_provisioning_steps(self):

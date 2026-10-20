@@ -5,8 +5,17 @@ local G=require('uml.domain.geom')
 local H=require('uml.domain.hierarchy')
 local Events=require('uml.application.events')
 local Detail=require('uml.application.detail')
+local S=require('uml.application.strings')
 local M={}
+-- The fixed right sidebar: the canvas extent and horizontal hit tests subtract
+-- this width (adapters pass it through dims.view_w; hit.clamp ignores presses
+-- inside the sidebar). The legacy geometry constants below only describe rows
+-- inside the sidebar itself.
+M.width=280
 M.sidebar_w=280
+function M.canvas_w(window_w) return math.max(0,(window_w or 0)-M.width) end
+function M.canvas_dims(window_w,window_h) return {window_w=window_w,window_h=window_h,view_w=M.canvas_w(window_w)} end
+function M.in_canvas(x,window_w) return x>=0 and x<M.canvas_w(window_w) end
 M.inspector_pad=16
 M.inspector_row_h=22
 M.inspector_btn_h=28
@@ -14,14 +23,7 @@ M.inspector_btn_gap=8
 M.real_diagram_y=40
 M.proposals_label_y=66
 M.proposal_rows_y=82
-M.empty_message=[[Click a component for its card.
-Double-click a component to open it.
-Esc (or ←) goes up a level.
-Scroll to pan; Shift-scroll for horizontal.
-Ctrl+/− zoom 10%; Ctrl+0 resets.
-R reloads.
-Click the real diagram above Proposals,
-or a proposal to show it.]]
+M.empty_message=S.help
 -- The explanation occupies the detail area only while nothing is selected.
 function M.empty_explanation(state)
   if state==nil or state.selected==nil then return M.empty_message end
@@ -39,9 +41,15 @@ function M.in_rect(r,x,y) return r~=nil and x>=G.get(r,'x') and x<G.right(r) and
 function M.regen_hit(x,y,window_w,window_h) return M.in_rect(M.regen_button(window_w,window_h),x,y) end
 function M.commands(state)
   local active=G.get(state.extra,'proposal-id')
-  local out={{kind='real',label=G.get(state.document,'title') or 'Real diagram',active=not active}}
+  local out={{kind='real',label=G.get(state.document,'title') or S.real_diagram,active=not active}}
   for _,p in ipairs(H.named_proposals(state.document)) do local id=G.get(p,'id'); out[#out+1]={kind='proposal',id=id,label=G.get(p,'name') or G.name(id),active=E.equal(active,id)} end
   return out
+end
+-- The button names the current declutter mode, as the original does, so the
+-- user can read the active state without opening anything.
+function M.declutter_label(state)
+  local mode=G.name(G.get(state.extra,'declutter') or E.keyword('full'))
+  return S.declutter_modes[mode] or S.declutter
 end
 -- Screen-space hit test for the inspector list: proposal rows first, then the
 -- real-diagram link, New Proposal, and Declutter. Nil means no inspector hit.
@@ -70,8 +78,8 @@ function M.menu(state,id,pointer)
   for _,p in ipairs(H.named_proposals(state.document)) do if E.equal(G.get(p,'id'),id) then found=p end end
   if not found then return nil end
   local entries=E.vector()
-  entries[1]=G.map{label='Rename',op=E.keyword('rename')}
-  entries[2]=G.map{label='Delete',op=E.keyword('delete')}
+  entries[1]=G.map{label=S.rename,op=E.keyword('rename')}
+  entries[2]=G.map{label=S.delete,op=E.keyword('delete')}
   return G.map{id=id,name=G.get(found,'name'),anchor=G.map{x=pointer.x or 0,y=pointer.y or 0},entries=entries}
 end
 function M.menu_action(state,op,id,new_name,opts)
@@ -88,10 +96,26 @@ end
 -- clamping uses the rows and the viewport height reported by the adapter.
 function M.scroll(state,delta,view_h)
   local n={}; for k,v in pairs(state) do n[k]=v end
-  local id=G.get(state.selected,'id'); local model=id and Detail.model(state.scene,id)
+  local id=state.detail_id or G.get(state.selected,'id'); local model=id and Detail.for_state(state,id)
   local rows=model and Detail.rows(model)
   n.detail_scroll=Detail.scroll(rows,view_h,state.detail_scroll or 0,delta)
   return n
+end
+-- Search authored identities, never collapsed visible boxes. UTF-8 substrings
+-- remain intact; ASCII namespace matching is case insensitive.
+function M.search(state,query)
+  local out={}; query=tostring(query or ''):match('^%s*(.-)%s*$'):lower()
+  if query=='' then return out end
+  local function add(c)
+    local id=G.get(c,'id'); if not id then return end
+    local name=G.get(c,'name') or G.name(id)
+    local ns=G.get(c,'ns') or G.name(id)
+    if name:lower():find(query,1,true) or ns:lower():find(query,1,true) then out[#out+1]={id=id,name=name,ns=ns,label=name..'  ·  '..ns} end
+  end
+  for _,c in ipairs(G.get(state.document,'classes') or {}) do add(c) end
+  for _,p in ipairs(G.get(state.document,'packages') or {}) do for _,c in ipairs(G.get(p,'classes') or {}) do add(c) end end
+  table.sort(out,function(a,b) if a.ns~=b.ns then return a.ns<b.ns end; return E.encode(a.id)<E.encode(b.id) end)
+  return out
 end
 function M.choose(state,id)
   for _,c in ipairs(M.commands(state)) do if (not id and c.kind=='real') or (id and E.equal(id,c.id)) then
