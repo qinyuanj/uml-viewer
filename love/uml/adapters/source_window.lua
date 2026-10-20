@@ -15,7 +15,7 @@ local function is_file(path)
   local size=f:seek('end'); f:close()
   return size~=nil
 end
-function M.new(imgui,options)
+local function window(imgui,options,window_id)
   options=options or {}
   local fonts=options.fonts or {}
   -- options.ui (number or getter) is the display DPI factor for fixed px sizes.
@@ -59,7 +59,7 @@ function M.new(imgui,options)
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_WindowBg,c4(T.colors.source_bg))
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_ChildBg,c4(T.colors.source_bg))
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_Text,c4(T.colors.source_ink))
-    local expanded=imgui.Begin(current.title..'###uml-source',visible,imgui.ImGuiWindowFlags_HorizontalScrollbar)
+    local expanded=imgui.Begin(current.title..'###uml-source-'..window_id,visible,imgui.ImGuiWindowFlags_HorizontalScrollbar)
     if expanded then
       if imgui.Button(S.close_source..'##close-source') then visible[0]=false end
       imgui.PushStyleColor_Vec4(imgui.ImGuiCol_Text,imgui.ImVec4_Float(90/255,104/255,112/255,1))
@@ -137,6 +137,23 @@ function M.new(imgui,options)
     imgui.End()
     imgui.PopStyleColor(3)
     if not visible[0] then api.close() end
+  end
+  return api
+end
+-- Each jump owns its text, scroll, selection and native ImGui identity.
+function M.new(imgui,options)
+  local windows,serial={},0; local api={}
+  function api.open(ident)
+    serial=serial+1; local w=window(imgui,options,serial)
+    local ok,err=w.open(ident); if not ok then return nil,err end
+    windows[#windows+1]=w; return true
+  end
+  function api.windows() return windows end
+  function api.view() local w=windows[#windows]; return w and w.view() end
+  function api.viewport() local w=windows[#windows]; return w and w.viewport() end
+  function api.close(index) index=index or #windows; if windows[index] then windows[index].close(); table.remove(windows,index) end end
+  function api.draw()
+    for i=#windows,1,-1 do windows[i].draw(); if not windows[i].view() then table.remove(windows,i) end end
   end
   return api
 end

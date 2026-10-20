@@ -95,6 +95,22 @@ function M.scroll(state,delta,view_h)
   n.detail_scroll=Detail.scroll(rows,view_h,state.detail_scroll or 0,delta)
   return n
 end
+-- Search authored identities, never collapsed visible boxes. UTF-8 substrings
+-- remain intact; ASCII namespace matching is case insensitive.
+function M.search(state,query)
+  local out={}; query=tostring(query or ''):match('^%s*(.-)%s*$'):lower()
+  if query=='' then return out end
+  local function add(c)
+    local id=G.get(c,'id'); if not id then return end
+    local name=G.get(c,'name') or G.name(id)
+    local ns=G.get(c,'ns') or G.name(id)
+    if name:lower():find(query,1,true) or ns:lower():find(query,1,true) then out[#out+1]={id=id,name=name,ns=ns,label=name..'  ·  '..ns} end
+  end
+  for _,c in ipairs(G.get(state.document,'classes') or {}) do add(c) end
+  for _,p in ipairs(G.get(state.document,'packages') or {}) do for _,c in ipairs(G.get(p,'classes') or {}) do add(c) end end
+  table.sort(out,function(a,b) if a.ns~=b.ns then return a.ns<b.ns end; return E.encode(a.id)<E.encode(b.id) end)
+  return out
+end
 function M.choose(state,id)
   for _,c in ipairs(M.commands(state)) do if (not id and c.kind=='real') or (id and E.equal(id,c.id)) then
     local context=id and G.map{context=E.keyword('proposal'),['proposal-id']=id,name=c.label} or G.map{context=E.keyword('real')}

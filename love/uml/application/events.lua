@@ -175,12 +175,12 @@ function M.layer_id(hit)
   if kind=='child' then return G.get(hit,'parent') end
   if kind=='package' and H.proposal_package_id(G.get(hit,'id')) then return G.get(hit,'id') end
 end
--- The separate detail window opens for the class behind a selection: a class
--- itself, or the parent of a child row or port. Other hits open nothing.
+-- The separate detail window opens the target identity of a class, child row
+-- or dependency port. The complete card scene resolves targets outside this view.
 function M.detail_id_for(hit)
   local kind=G.name(G.get(hit,'kind'))
   if kind=='class' then return G.get(hit,'id') end
-  if kind=='child' or kind=='port' then return G.get(hit,'parent') end
+  if kind=='child' or kind=='port' then return G.get(hit,'id') end
 end
 function M.select(s,hit)
   local n=copy(s); n.selected=hit
@@ -252,6 +252,54 @@ end
 function M.escape(s)
   if G.get(s.extra,'open-layer') or #(s.focus or {})>0 then return M.back(s) end
   local n=copy(s); n.selected=nil; return n
+end
+-- Center a class using the same canvas dimensions and world coordinates as
+-- fit/zoom. Search and relationship navigation share this transition.
+function M.center(s,id,dims)
+  local c=require('uml.engine.hit').class_by_id(s.scene,id); if not c then return s end
+  dims=dims or {}; local r=G.get(c,'rect'); local n=copy(s); local z=M.zoom_of(s)
+  n.cam_x=G.get(r,'x')+G.get(r,'w')/2-(dims.view_w or dims.window_w or 1500)/(2*z)
+  n.cam_y=G.get(r,'y')+G.get(r,'h')/2-(dims.window_h or 900)/(2*z)
+  n.fit_pending=nil; return n
+end
+function M.locate(s,id,dims)
+  local present=false
+  for _,c in ipairs(G.get(s.document,'classes') or {}) do if E.equal(id,G.get(c,'id')) then present=true end end
+  for _,p in ipairs(G.get(s.document,'packages') or {}) do for _,c in ipairs(G.get(p,'classes') or {}) do if E.equal(id,G.get(c,'id')) then present=true end end end
+  if not present then return s end
+  local n=copy(s); n.extra=G.copy(s.extra); n.focus=V()
+  local hit=require('uml.engine.hit')
+  local function compile(layer)
+    E.assoc(n.extra,K('open-layer'),layer or E.nil_value)
+    n.scene=D.compile_view(n.document,n.snapshots,n.focus,n.extra)
+    local c=hit.class_by_id(n.scene,id)
+    return c and not G.get(c,'dummy?') and not G.get(c,'proposal-group?')
+  end
+  local pid=G.get(n.extra,'proposal-id'); local found=false
+  if pid then
+    found=compile(nil)
+    local function groups(xs)
+      for _,x in ipairs(xs or {}) do if not found and E.kind(x)=='map' then
+        found=compile(G.get(x,'id')); if not found then groups(G.get(x,'nses')) end
+      end end
+    end
+    if not found then
+      for _,p in ipairs(H.named_proposals(n.document)) do if E.equal(pid,G.get(p,'id')) then
+        for _,layer in ipairs(G.get(p,'layers') or {}) do
+          if not found then found=compile(K('proposal.'..G.name(G.get(layer,'id')))) end
+          if not found then groups(G.get(layer,'nses')) end
+        end
+      end end
+    end
+  else
+    local parts={}; for p in G.name(id):gmatch('[^.]+') do parts[#parts+1]=p end
+    for i=1,#parts-1 do n.focus[#n.focus+1]=K(parts[i]) end
+    found=compile(nil)
+  end
+  if not found then return s end
+  n.hover=nil; n.pointer=nil; n.drag=nil
+  n=M.open_detail(n,G.map{kind=K('class'),id=id})
+  return M.center(n,id,dims)
 end
 function M.close_detail(s) local n=copy(s); n.detail_id=nil; return n end
 return M
