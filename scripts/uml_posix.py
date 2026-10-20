@@ -110,6 +110,33 @@ def cimgui(directory):
         raise ValueError('cimgui.so 缺少运行依赖：\n' + dependencies.stdout)
 
 
+# Paths this installer creates inside a tool checkout. They must not read as
+# the user's own work, otherwise the second install would refuse its own venv.
+# Filtering happens here rather than in a git pathspec: glob semantics differ
+# between git versions and a mismatch silently reintroduces the false refusal.
+PROVISIONED_DIRECTORIES = ('.venv', '__pycache__', '.pytest_cache')
+
+
+def provisioned(path):
+    name = path.rstrip('/').rsplit('/', 1)[-1]
+    return name in PROVISIONED_DIRECTORIES or name.endswith('.egg-info')
+
+
+def local_changes(directory):
+    """The checkout's uncommitted work, excluding what this installer creates."""
+    result = run(['git', '-C', directory, 'status', '--porcelain', '-z'],
+                 capture_output=True, text=True)
+    changes = []
+    for entry in result.stdout.split('\0'):
+        if not entry:
+            continue
+        # Renames carry the original path in the following NUL-separated field.
+        if provisioned(entry[3:]):
+            continue
+        changes.append(entry)
+    return '\n'.join(changes)
+
+
 def fetch(directory, tool):
     url = os.environ.get(('UML_VIEWER' if tool == 'uml-viewer' else tool.upper()) + '_REPO_URL',
                          f'https://github.com/qinyuanj/{tool}.git')
@@ -117,7 +144,7 @@ def fetch(directory, tool):
     if directory.exists():
         if not (directory / '.git').exists():
             raise ValueError(f'拒绝替换非 Git 目录：{directory}')
-        if run(['git', '-C', directory, 'status', '--porcelain'], capture_output=True, text=True).stdout:
+        if local_changes(directory):
             raise ValueError(f'安装副本有本地修改，已保留，请先处理：{directory}')
     else:
         run(['git', 'init', '-q', directory])
@@ -157,7 +184,7 @@ def install(args):
             destination.symlink_to(source, target_is_directory=True)
         versions['uml-viewer'] = {'source': str(source), 'development': True,
             'commit': run(['git', '-C', source, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip(),
-            'dirty': bool(run(['git', '-C', source, 'status', '--porcelain'], capture_output=True, text=True).stdout)}
+            'dirty': bool(local_changes(source))}
     else:
         versions['uml-viewer'] = fetch(state / 'uml-viewer', 'uml-viewer')
     for tool in ('crapper', 'mutator', 'dryer'):

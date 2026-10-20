@@ -127,6 +127,70 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(3, result.returncode)
         self.assertFalse(json.loads((self.root / '.uml-viewer/quality-result.json').read_text())['validResult'])
 
+
+    def test_reinstall_is_idempotent_and_provisions_all_three_tools(self):
+        # A repo fixture the installer clones: the real installer path, not a
+        # stub entry. Only the remote source is redirected to the checkout.
+        source = self.root / 'viewer source'
+        shutil.copytree(REPO, source, ignore=shutil.ignore_patterns(
+            '.git', '.uml-viewer', 'target', 'coverage', '__pycache__'))
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(source)], check=True)
+        subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.org', 'commit', '-qm', 'fixture'],
+                       check=True, capture_output=True)
+        self.write_project_policy()
+        tools = {}
+        for tool in ('crapper', 'mutator', 'dryer'):
+            tools[tool] = self.tool_fixture(self.root / f'{tool} source', tool)
+        env = dict(self.env, UML_VIEWER_TOOL_ROOT='', UML_VIEWER_REPO_URL=str(source),
+                   UML_VIEWER_REF='main',
+                   **{f'{tool.upper()}_REPO_URL': str(path) for tool, path in tools.items()},
+                   **{f'{tool.upper()}_REF': 'main' for tool in tools})
+        (self.root / '.gitignore').write_text('')
+        policy = (self.root / 'policy.edn').read_bytes()
+        for _ in range(2):
+            result = subprocess.run([str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
+                                    cwd=self.root, env=env, capture_output=True, text=True, timeout=900)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertTrue((self.root / 'uml').is_file())
+            self.assertEqual(policy, (self.root / 'policy.edn').read_bytes())
+        self.assertEqual(1, (self.root / '.gitignore').read_text().count('# BEGIN UML-VIEWER'))
+        for tool in ('crapper', 'mutator', 'dryer'):
+            directory = self.root / '.uml-viewer' / tool
+            self.assertTrue((directory / '.git').exists(), tool)
+            self.assertTrue((directory / '.venv/bin/python').exists(), tool)
+        # Mutator needs a compatible crapper beside it.
+        check = subprocess.run([str(self.root / '.uml-viewer/mutator/.venv/bin/python'),
+                                '-I', '-m', 'pip', 'check'], capture_output=True, text=True)
+        self.assertEqual(0, check.returncode, check.stdout + check.stderr)
+        installed = json.loads((self.root / '.uml-viewer/install.json').read_text())
+        self.assertEqual('love', 'love' if installed['love'] else 'missing')
+        self.assertTrue(all(installed['repositories'][name]['commit'] for name in
+                            ('uml-viewer', 'crapper', 'mutator', 'dryer')))
+
+    def tool_fixture(self, directory, name):
+        """A minimal installable Python package, enough for a real venv."""
+        directory.mkdir(parents=True)
+        (directory / 'pyproject.toml').write_text(
+            f'[project]\nname = "{name}"\nversion = "0.1.0"\nrequires-python = ">=3.11"\n'
+            '[build-system]\nrequires = ["setuptools>=68"]\nbuild-backend = "setuptools.build_meta"\n')
+        package = directory / name
+        package.mkdir()
+        (package / '__init__.py').write_text('')
+        (package / '__main__.py').write_text('raise SystemExit(0)\n')
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(directory)], check=True)
+        subprocess.run(['git', '-C', str(directory), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(directory), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.org', 'commit', '-qm', 'fixture'],
+                       check=True, capture_output=True)
+        return directory
+
+    def write_project_policy(self):
+        (self.root / 'src').mkdir(exist_ok=True)
+        (self.root / 'src/a.lua').write_text('local M={}\nfunction M.hello() return "hello" end\nreturn M\n')
+        (self.root / 'policy.edn').write_text(self.policy)
+
     def test_install_refuses_existing_ownership(self):
         state = self.root / '.uml-viewer'
         state.mkdir()
