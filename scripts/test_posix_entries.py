@@ -229,6 +229,58 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual([['-m', 'mutator', 'src/a.lua'], ['-m', 'mutator', 'src/b.lua']], calls)
         self.assertTrue(json.loads((self.root / '.uml-viewer/quality-result.json').read_text())['validResult'])
 
+
+    def test_install_defaults_to_main_and_accepts_a_fixed_commit(self):
+        source = self.root / 'viewer source'
+        shutil.copytree(REPO, source, ignore=shutil.ignore_patterns(
+            '.git', '.uml-viewer', 'target', 'coverage', '__pycache__'))
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(source)], check=True)
+        subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.org', 'commit', '-qm', 'fixture'],
+                       check=True, capture_output=True)
+        first = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'],
+                               check=True, capture_output=True, text=True).stdout.strip()
+        marker = source / 'scripts/uml_posix.py'
+        marker.write_text(marker.read_text() + '\n# later revision\n')
+        subprocess.run(['git', '-C', str(source), 'add', 'scripts/uml_posix.py'], check=True)
+        subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.org', 'commit', '-qm', 'later'],
+                       check=True, capture_output=True)
+        tools = {tool: self.tool_fixture(self.root / f'{tool} source', tool)
+                 for tool in ('crapper', 'mutator', 'dryer')}
+        base = dict(self.env, UML_VIEWER_TOOL_ROOT='', UML_VIEWER_REPO_URL=str(source),
+                    **{f'{tool.upper()}_REPO_URL': str(path) for tool, path in tools.items()})
+        for name in ('UML_VIEWER_REF', 'CRAPPER_REF', 'MUTATOR_REF', 'DRYER_REF'):
+            base.pop(name, None)
+        # Default ref is main for every repository, including the tools.
+        result = subprocess.run([str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
+                                cwd=self.root, env=base, capture_output=True, text=True, timeout=900)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        installed = json.loads((self.root / '.uml-viewer/install.json').read_text())
+        self.assertEqual('main', installed['repositories']['crapper']['ref'])
+        # An explicit commit pins the viewer even when main has moved on.
+        pinned = dict(base, UML_VIEWER_REF=first)
+        result = subprocess.run([str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
+                                cwd=self.root, env=pinned, capture_output=True, text=True, timeout=900)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        installed = json.loads((self.root / '.uml-viewer/install.json').read_text())
+        self.assertEqual(first, installed['repositories']['uml-viewer']['commit'])
+        frozen = self.root / '.uml-viewer/uml-viewer/scripts/uml_posix.py'
+        self.assertNotIn('later revision', frozen.read_text())
+        commits = subprocess.run(['git', '-C', str(self.root / '.uml-viewer/uml-viewer'),
+                                  'rev-list', '--all', '--count'],
+                                 check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual('1', commits)
+
+    def test_missing_tool_venv_reports_the_provisioning_step(self):
+        state = self.root / '.uml-viewer/mutator'
+        state.mkdir(parents=True)
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {'sourceRoots': ['src']}}))
+        result = self.entry('mutate', 'src/a.lua')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('get-uml-viewer', result.stderr)
+
     def test_installer_help_and_missing_dependency(self):
         entry = str(REPO / 'scripts/get-uml-viewer')
         result = subprocess.run([entry, '--help'], capture_output=True, text=True)
