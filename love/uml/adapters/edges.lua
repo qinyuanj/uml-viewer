@@ -18,11 +18,13 @@ end
 -- `view` is {selected=hit, hover=hit}; a function is the legacy hot predicate.
 function M.commands(scene,view)
   local out={}
+  local h=type(view)=='table' and Highlight.new(scene,view) or nil
   if g(g(scene,'diagram'),'hide-edges') then
-    for _,ind in ipairs(g(scene,'dep-indicators') or {}) do out[#out+1]={kind='indicator',points=g(ind,'triangle'),violating=g(ind,'violating')} end
+    for _,ind in ipairs(g(scene,'dep-indicators') or {}) do
+      out[#out+1]={kind='indicator',id=g(ind,'id'),points=g(ind,'triangle'),violating=g(ind,'violating'),dimmed=h and h.dimmed(g(ind,'id')) or nil}
+    end
     return out
   end
-  local h=type(view)=='table' and Highlight.new(scene,view) or nil
   for _,e in ipairs(g(scene,'edges') or {}) do
     local hot,warm,dimmed
     if type(view)=='function' then hot=view(e)
@@ -44,9 +46,9 @@ function M.draw(imgui,list,scene,ox,oy,scale,selected)
     list:AddTriangle(point(a),point(b),point(c),color,width)
   end
   for _,cmd in ipairs(M.commands(scene,selected)) do
-    if cmd.dimmed then cmd.color=T.fade(cmd.color) end
+    if cmd.dimmed and cmd.color then cmd.color=T.fade(cmd.color) end
     if cmd.kind=='stroke' then for i=1,#cmd.points-1 do line(cmd.points[i],cmd.points[i+1],cmd.color,cmd.width) end
-    elseif cmd.kind=='indicator' then local p=cmd.points; local color=cmd.violating and T.pack(T.colors.band.red) or T.pack(T.colors.indicator); triangle(p[1],p[2],p[3],color,color,1)
+    elseif cmd.kind=='indicator' then local p=cmd.points; local color=cmd.violating and T.pack(T.colors.band.red) or T.pack(T.colors.indicator); if cmd.dimmed then color=T.fade(color) end; triangle(p[1],p[2],p[3],color,color,1)
     else local p,b=cmd.tip,cmd.behind; local dx,dy=p[1]-b[1],p[2]-b[2]; local len=math.sqrt(dx*dx+dy*dy); if len==0 then dx,dy,len=1,0,1 end; dx,dy=dx/len,dy/len
       local cos,sin=math.cos(math.pi/9),math.sin(math.pi/9)
       local a={p[1]-16*(dx*cos-dy*sin),p[2]-16*(dy*cos+dx*sin)}; local c={p[1]-16*(dx*cos+dy*sin),p[2]-16*(dy*cos-dx*sin)}

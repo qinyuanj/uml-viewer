@@ -61,6 +61,16 @@ describe('selection and hover highlighting',function()
     assert.is_true(class_cmd(B.commands(s,{hover=G.map{kind=k('child'),id=k('kid'),parent=k('d')}}),'d').hovered)
     assert.is_true(T.widths.edge<T.widths.edge_warm and T.widths.edge_warm<T.widths.edge_hot,'hover is a slight lift, below selection')
   end)
+  it('keeps dependency indicators in the same selection focus when edge strokes are decluttered',function()
+    local s=scene(); G.put(G.get(s,'diagram'),'hide-edges',true); G.put(s,'dep-indicators',require('uml.engine.hit').dep_indicators(s))
+    local cmds=A.commands(s,{selected=sel('a')}); local count=0
+    for _,c in ipairs(cmds) do
+      assert.are.equal('indicator',c.kind); assert.is_not_nil(c.id); count=count+1
+      if G.name(c.id)=='c' then assert.is_true(c.dimmed) end
+      if G.name(c.id)=='a' then assert.is_falsy(c.dimmed) end
+    end
+    assert.is_true(count>0)
+  end)
   it('a hovered edge is drawn hot like the original',function()
     local s=scene()
     for _,c in ipairs(edge_cmds(A.commands(s,{hover=E.parse('{:kind :edge :from :a :to :b}')}),'a','b')) do assert.are.equal(T.widths.edge_hot,c.width) end
