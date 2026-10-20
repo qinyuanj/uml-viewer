@@ -16,7 +16,7 @@ describe('mailbox polling cache',function()
   end)
   it('does not reparse unchanged commands already behind the restored cursor',function()
     local parses=0
-    local box=Mailbox.open('injected',{mtime=function() return 1 end,
+    local box=Mailbox.open('injected',{mtime=function() return 1 end,write=function() end,
       read=function() return '{:next-id 2 :queue [{:id 1 :op :context}]}' end,
       parse=function(text) parses=parses+1; return E.parse(text) end})
     assert.is_nil(box.take(1)); assert.is_nil(box.take(1)); assert.are.equal(1,parses)
