@@ -56,6 +56,22 @@ describe('viewer font lookup chain',function()
     assert.are.equal('sarasa',fonts.source); assert.are.equal(sarasa,fonts.path)
     assert.are.equal(18,F.sizes.body); assert.are.equal(18,F.sizes.title)
   end)
+  it('rasterises each size at the display DPI and undoes only the backend framebuffer scale',function()
+    local F=fresh(); local Display=require('uml.domain.display')
+    local added={}
+    local atlas={GetGlyphRangesDefault=function() end,GetGlyphRangesGreek=function() end,GetGlyphRangesChineseSimplifiedCommon=function() end,
+      AddFontFromFileTTF=function(_,path,size) local f={size=size}; added[#added+1]=f; return f end}
+    local io={Fonts=atlas}
+    local imgui={GetIO=function() return io end,ImFontGlyphRangesBuilder=function()
+      return {AddRanges=function() end,AddText=function() end,BuildRanges=function() return {Data='merged'} end} end}
+    local opts=chain({[sarasa]=true},{}); opts.display=Display.new{window_w=1500,window_h=920,os_scale=1.5}
+    F.load(imgui,opts)
+    local sizes={}; for _,font in ipairs(added) do sizes[#sizes+1]=font.size end
+    assert.are.same({13.5,16.5,18,19.5,27},sizes); assert.are.equal(1,io.FontGlobalScale)
+    added={}; opts.display=Display.new{window_w=1500,window_h=920,os_scale=2,framebuffer_scale=2}
+    F.load(imgui,opts)
+    assert.are.equal(36,added[5].size); assert.are.equal(.5,io.FontGlobalScale)
+  end)
   it('keeps the untranslated assertion when no font loads',function()
     local F=fresh()
     local atlas={GetGlyphRangesDefault=function() end,GetGlyphRangesGreek=function() end,GetGlyphRangesChineseSimplifiedCommon=function() end,AddFontFromFileTTF=function() return nil end}

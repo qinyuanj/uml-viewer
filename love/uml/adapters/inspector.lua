@@ -9,6 +9,7 @@ local Detail=require('uml.application.detail')
 local S=require('uml.application.strings')
 local T=require('uml.domain.theme')
 local C=require('uml.domain.config')
+local Display=require('uml.domain.display')
 local M={}
 local function pack(c) return T.pack(c) end
 function M.new(imgui,callbacks,fonts)
@@ -21,7 +22,6 @@ function M.new(imgui,callbacks,fonts)
   function api.bounds() return bounds end
   function api.name() return ffi.string(buffer) end
   function api.focus_name() focus=true end
-  function api.width() return I.width end
   function api.empty_rendered() return bounds['empty-help']~=nil end
   function api.menu_open() return menu_open end
   local function set_name(name)
@@ -91,16 +91,21 @@ function M.new(imgui,callbacks,fonts)
     inked(S.class_count..count,T.colors.muted)
     if crap==nil then inked(S.no_data,T.colors.band.red) end
   end
-  function api.draw(state)
-    local w,h=love.graphics.getWidth(),love.graphics.getHeight()
-    imgui.SetNextWindowPos(imgui.ImVec2_Float(w-I.width,0),imgui.ImGuiCond_Always)
-    imgui.SetNextWindowSize(imgui.ImVec2_Float(I.width,h),imgui.ImGuiCond_Always)
+  -- display (domain.display) fixes the sidebar: window px left edge, width
+  -- sidebar_px and the full window height; its style spacing scales by ui.
+  local sidebar_px
+  function api.width() return sidebar_px or I.width end
+  function api.draw(state,display)
+    display=display or Display.new{window_w=love.graphics.getWidth(),window_h=love.graphics.getHeight()}
+    local ui=display.ui; sidebar_px=display.sidebar_px
+    imgui.SetNextWindowPos(imgui.ImVec2_Float(display.canvas_px,0),imgui.ImGuiCond_Always)
+    imgui.SetNextWindowSize(imgui.ImVec2_Float(display.sidebar_px,display.window_h),imgui.ImGuiCond_Always)
     imgui.SetNextWindowBgAlpha(1)
     local bg=T.colors.sidebar
     imgui.PushStyleColor_Vec4(imgui.ImGuiCol_WindowBg,imgui.ImVec4_Float(bg[1]/255,bg[2]/255,bg[3]/255,1))
-    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_WindowPadding,imgui.ImVec2_Float(16,16))
-    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_ItemSpacing,imgui.ImVec2_Float(8,6))
-    imgui.PushStyleVar_Float(imgui.ImGuiStyleVar_FrameRounding,T.radius.button)
+    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_WindowPadding,imgui.ImVec2_Float(16*ui,16*ui))
+    imgui.PushStyleVar_Vec2(imgui.ImGuiStyleVar_ItemSpacing,imgui.ImVec2_Float(8*ui,6*ui))
+    imgui.PushStyleVar_Float(imgui.ImGuiStyleVar_FrameRounding,T.radius.button*ui)
     local flags=imgui.ImGuiWindowFlags_NoTitleBar+imgui.ImGuiWindowFlags_NoMove
       +imgui.ImGuiWindowFlags_NoResize+imgui.ImGuiWindowFlags_NoCollapse
       +imgui.ImGuiWindowFlags_NoBringToFrontOnFocus
@@ -147,7 +152,7 @@ function M.new(imgui,callbacks,fonts)
       inked(S.p_hint,T.colors.muted)
       imgui.Separator()
       local id=G.get(state.selected,'id')
-      if imgui.BeginChild_Str('summary-card',imgui.ImVec2_Float(0,-40),imgui.ImGuiChildFlags_None,0) then
+      if imgui.BeginChild_Str('summary-card',imgui.ImVec2_Float(0,-40*ui),imgui.ImGuiChildFlags_None,0) then
         local kind=G.name(G.get(state.selected,'kind'))
         local model=id and Detail.model(state.scene,id)
         if model then class_summary(model)

@@ -184,9 +184,12 @@ function M.new(imgui,fonts)
   local function vec(x,y) return imgui.ImVec2_Float(x,y) end
   local api={}
   api.draw=function(scene,width,height,view)
-    local size=G.get(scene,'size'); local scale=view and (view.zoom or 1) or math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
+    -- view.ui is the DPI factor (domain.display): world->window px multiplies
+    -- zoom by it once; strokes are screen px times ui and never zoom.
+    local ui=view and view.ui or 1
+    local size=G.get(scene,'size'); local scale=view and (view.zoom or 1)*ui or math.min(1,width/G.get(size,'w'),height/G.get(size,'h'))
     local list=imgui.GetBackgroundDrawList_Nil()
-    local W=T.widths
+    local W=T.dpi(ui)
     local function point(x,y) return vec((x-(view and view.cam_x or 0))*scale,(y-(view and view.cam_y or 0))*scale) end
     local function text(font,size,max_w,x,y,color,s,italic,bold,center)
       size=M.fit(font,size,s,max_w,bold,italic)
@@ -285,8 +288,10 @@ function M.new(imgui,fonts)
     end
   end
   -- The back label, drawn on the same draw list as the canvas.
-  api.back=function()
-    imgui.GetBackgroundDrawList_Nil():AddText_FontPtr(fonts.body,F.sizes.body,vec(12,12),0xffffffff,S.back,nil,0,nil)
+  -- Its 12px inset and body size are view units, scaled by ui to window px.
+  api.back=function(ui)
+    ui=ui or 1
+    imgui.GetBackgroundDrawList_Nil():AddText_FontPtr(fonts.body,F.sizes.body*ui,vec(12*ui,12*ui),0xffffffff,S.back,nil,0,nil)
   end
   return api
 end
