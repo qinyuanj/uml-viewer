@@ -138,9 +138,11 @@ Herdr 终端 attach 的可读性。
 | crapper / mutator / dryer | `main` 的 `34977fc` / `bcbdc42` / `0941c4b`（GitHub 浅克隆） |
 | LOVE / Herdr / Python / Lua | `/usr/bin/love` 11.5 / 0.9.5 protocol 22 / 3.12.3 / lua5.4 + 用户 LuaRocks（busted 2.3.0、luacov 0.17.0、cluacov 1.0.0、luacov-reporter-lcov 0.2） |
 
-邮件触发方式：`harness/driver.lua` 经 `UML_VIEWER_TEST_DRIVER` 加载进真实 viewer，
-收到 harness 放置的触发文件时，调用右键菜单使用的 `hooks.mail.menu_action`。
-outbox 写入与 Herdr wake 都走产品自己的路径。driver 另外每 30 帧记录 viewer 实际
+邮件触发方式（**半自动触发**）：`harness/driver.lua` 经 `UML_VIEWER_TEST_DRIVER`
+加载进真实 viewer，收到 harness 放置的触发文件时，调用右键菜单使用的
+`hooks.mail.menu_action`。之后的 outbox 写入与 Herdr wake 都走产品自己的路径，
+与真实右键相同；但下文允许/拒绝展示的邮件都不是人在窗口里右键发出的，真实右键
+归人工清单第 9 项。driver 另外每 30 帧记录 viewer 实际
 状态（`driver.log` 中的 `viewer state`），状态变化时截图（`shot-*.png`）。
 `UML_COMPANION_NO_ATTACH=1`：不经 interop 拉起 Windows Terminal，attach 留给人工清单。
 
@@ -150,22 +152,28 @@ outbox 写入与 Herdr wake 都走产品自己的路径。driver 另外每 30 �
 |---|---|---|
 | 安装 | 通过 | `install.json` |
 | 手动质量基线：`./uml crap` / `dry` / `mutate app/pricing.lua` | 都是 exit 0，version-1 记录有效 | `manual-*.log` |
-| fresh `./uml` + companion ready | 通过；worker `:ready`。**首次在新目录**，Claude 停在 workspace 信任对话框，默认选项是 “No, exit”；按用户操作选了 Yes（Herdr send-keys） | `run1-trust/pane-00-trust-dialog.txt` |
+| fresh `./uml` + companion ready | 通过；worker `:ready`。**首次在新目录**，Claude 停在 workspace 信任对话框，默认选项是 “No, exit”。**Yes 是 agent 经 Herdr send-keys 选的，不是用户确认**；真实用户在 attach 的终端里回答，见人工清单第 8 项 | `run1-trust/pane-00-trust-dialog.txt` |
 | 启动提示 | Claude 保留 policy 与 `出库提案`，`./uml ir` exit 0 后写 `:display`，viewer 消费 | `run1-trust/transcript.txt`、`run2-wake-bug/driver.log` |
 | 右键邮件 wake | **修复前全部失败**（缺陷 1） | `run2-wake-bug/driver.log`、`pane-00-launch.txt` |
+| 重载（推断） | 没有单独的重载事件记录或前后像素对比。driver 状态记录中图的 `mtime`、`metrics-stamp` 与文档 `:omit` 在 IR 写图、crap 写快照后变化；这三项只在 document 重载时一起写入（`application/document.lua`），据此推断 viewer 重新读取了图与快照。`shot-6.png` 中 pricing 隐去与之一致。重载本身的自动断言见上文 `test_posix_viewer.py`（亚秒编辑重载） | `run3-gates/driver.log` 状态 1–6 |
 | `:quit-for-restart` → `./uml --restart` | **修复前崩溃**（缺陷 2）；修复后恢复保存的图、mail cursor，companion session 与 shell PID 不变，controller PID 不变 | `run3-gates/viewer-restart-crash.log`、`restart2.log` |
-| 允许展示 A：`:refresh-crap` ×2（FIFO id 1、2） | crap exit 0 → 记录有效 → IR exit 0 → `:display` id 4、5；viewer mail-seen 3→5，metrics-stamp 更新 | `run3-gates/pane-A-allowed.txt`、`driver.log` 状态 3–5 |
-| 拒绝展示 B：spec 期望值改成错误值后 `:refresh-crap` | 真实 busted 失败 → crapper exit 1，`validResult false` → **没有 IR、没有 `:display`**；Claude 报告失败断言 `inventory_spec.lua:7`，不改源码 | `pane-B-refused.txt`；`driver.log` 在 09:57:38–09:58:33 没有状态变化 |
-| 拒绝展示 D：`uml-quality.json` 写成非法 JSON 后 `:refresh-mutate` | dispatch exit 1，**没有发布记录** → 没有 IR/display；Claude 报告 JSON 解析错误位置 | `pane-D-C.txt` |
-| 后续 FIFO C：紧随 D 的 `:omit pricing` | 加入 policy `:omit` → IR exit 0 → `:display` id 6；viewer 显示 pricing 已隐去 | `pane-D-C.txt`、`shot-6.png` |
+| 允许展示 A（半自动触发）：`:refresh-crap` ×2（FIFO id 1、2） | crap exit 0 → 记录有效 → IR exit 0 → `:display` id 4、5；viewer mail-seen 3→5，metrics-stamp 更新 | `run3-gates/pane-A-allowed.txt`、`driver.log` 状态 3–5 |
+| 拒绝展示 B（半自动触发）：spec 期望值改成错误值后 `:refresh-crap` | 真实 busted 失败 → crapper exit 1，`validResult false` → **没有 IR、没有 `:display`**；Claude 报告失败断言 `inventory_spec.lua:7`，不改源码 | `pane-B-refused.txt`；`driver.log` 在 09:57:38–09:58:33 没有状态变化 |
+| 拒绝展示 D（半自动触发）：`uml-quality.json` 写成非法 JSON 后 `:refresh-mutate` | dispatch exit 1，**没有发布记录** → 没有 IR/display；Claude 报告 JSON 解析错误位置 | `pane-D-C.txt` |
+| 后续 FIFO C（半自动触发）：紧随 D 的 `:omit pricing` | 加入 policy `:omit` → IR exit 0 → `:display` id 6；viewer 显示 pricing 已隐去 | `pane-D-C.txt`、`shot-6.png` |
 | `:context` 提案 + 允许的 `:refresh-mutate`（exit 3） | Claude 记下讨论 context；mutator exit 3 按工具契约有效 → IR → `:display` id 7；存活变异体保留为发现 | `pane-E-context-mutate.txt` |
 | recovery（SIGTERM 真实 Claude 子进程） | **修复前**：重试用 `--session-id`，Claude 每次报 “Session ID … already in use” 后 exit 1，三次后 `:failed`（缺陷 3） | `run3-gates/recovery-before-fix/`、`pane-F-recovery-failed.txt` |
 | recovery（修复后，run 4） | exit 143 → 1.04 s 后第 1 次重试；子进程为 `claude --resume <同一 session>`；恢复提示排空上一轮遗留的邮件 id 8（crap → 门控 → IR → `:display`）；之后新的右键 wake 也正常（mail-seen 10） | `run4-recovery/` |
 | 正常关闭（SIGTERM viewer，四轮都做） | ownership `{}`、Herdr session 删除、journal `:cancelled`（run 3 为既有的 `:failed`）、controller 与 pane shell 退出 | 本节与各 run 记录 |
 | 隔离 | 用户主工作区 `uml-viewer-uml-viewer-7e504677-ac364c68`、`default` Herdr session 与运行本 agent 的 Claude 都存活；没有用 SIGKILL。基线中另一个 Claude PID 934176 在期间自行退出：没有向它发信号，主工作区 companion 在本次开始前（16:50）已 `:cancelled` | — |
 
-“陈旧记录”没有单独构造：dispatch 在每次调用开始时先删旧记录，companion 也先删，
-所以 D 实测的“缺失”就是陈旧记录在该契约下唯一可能的样子。
+“陈旧记录”与“不一致记录”都没有在真实会话中单独构造：dispatch 在每次调用开始时先删旧记录，companion 也先删，
+所以 D 实测的“缺失”就是陈旧记录在该契约下唯一可能的样子。operation、项目根或实际
+exit 与调用不一致的记录要由 companion 按常驻规则拒绝；没有代码侧消费者，自动测试
+只覆盖两端：`companion_spec` 逐字断言规则文本，`test_posix_entries.py` 的
+`test_record_matches_operation_canonical_root_and_actual_exit` 断言发布的记录与
+调用的 operation、规范化项目根（含经符号链接调用）和实际 exit（含逐文件 mutation
+退出码不同）一致。
 
 ### 本轮修复的产品缺陷（TDD，红→绿）
 
@@ -197,6 +205,20 @@ session 11/4/0（exit 3）、viewer 0/0/187（exit 0，GUI 适配器无覆盖，
 - 测试证据 `scene-N.edn` 只在文件重载时写出，mail `:display` 不会写；本次改用 driver 的状态记录观察。
 - `./uml mutate --help` 报“没有业务 mutation 目标”，而不是输出用法。
 - recovery 命令的 argv[0] 是裸 `claude`，launch 命令是解析后的绝对路径；实测可以运行。
+
+## 仍未验证
+
+以下各项没有真实会话证据；部分有自动测试覆盖的已注明：
+
+- **陈旧/不一致质量记录**：真实 companion 只遇到过“缺失”（D）。operation / 项目根 /
+  exit 不一致的记录没有在真实会话中出现过；发布端由 `test_posix_entries.py` 覆盖，拒绝端
+  只有规则文本断言（见上文）。
+- **真实右键**：允许/拒绝展示的邮件都由 driver 半自动触发（人工清单第 9 项）。
+- **首次信任对话框由用户回答**：本轮由 agent 经 send-keys 选 Yes（人工清单第 8 项）。
+- **重载**：真实会话只有由状态字段推断的证据（见上表）。
+- **WSLg 窗口关闭按钮**：关闭一律用 SIGTERM 模拟（人工清单第 1 项）。
+- **Windows Terminal attach**：设置了 `UML_COMPANION_NO_ATTACH=1`，未经 interop 打开
+  （人工清单第 8 项，#114）。
 
 ## 未执行/阻塞
 
