@@ -75,7 +75,7 @@ function M.required(root,options)
 end
 
 local function factory(options,selected,identity)
-  if options and options.backend then return options.backend(selected) end
+  if options and options.backend then return options.backend(selected,identity) end
   local executable=love_executable()
   local game=game_directory()
   return Herdr.new(identity,{
@@ -135,10 +135,13 @@ function M.create(root,options)
   local recovery_command={claude,'--dangerously-skip-permissions','--resume',uuid,
     '--append-system-prompt',C.standing_rules,C.recovery_prompt}
   local canonical=options.canonical or function(path) return (path or ''):gsub('\\','/') end
-  Ownership.write(root,Recovery.to_edn{backend='herdr',owner_role='companion',
+  local provisional={backend='herdr',owner_role='companion',
     cwd=canonical(root),session=session,command=command,recovery_command=recovery_command,
-    claude_session=uuid,provisional=true})
-  local B=factory(options,selected,nil)
+    claude_session=uuid,provisional=true}
+  Ownership.write(root,Recovery.to_edn(provisional))
+  -- The backend builds every later record on this identity, so the committed
+  -- ownership keeps the --resume recovery command and the Claude session id.
+  local B=factory(options,selected,provisional)
   local owned=B.create(session,canonical(root),command)
   B.identity=owned
   return owned,B

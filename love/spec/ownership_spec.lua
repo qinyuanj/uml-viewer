@@ -119,6 +119,30 @@ describe('companion lifecycle ownership',function()
       and E.get(record,E.keyword('backend')).name or nil)
     remove_root(root)
   end)
+  it('commits ownership that recovers the same Claude session with --resume',function()
+    -- Like the Herdr adapter, the backend commits a record built on the identity
+    -- it was constructed with. Recovery relaunches :recovery-command; relaunching
+    -- the --session-id launch command makes Claude refuse the session in use.
+    local Recovery=require('uml.adapters.recovery')
+    local root=temp_root()
+    local opts=options()
+    opts.backend=function(_,identity)
+      return {create=function(session,cwd,command)
+        local owned={}; for k,v in pairs(identity or {}) do owned[k]=v end
+        owned.backend='herdr'; owned.owner_role='companion'; owned.session=session; owned.cwd=cwd
+        owned.command=command; owned.pane='w1:p1'; owned.socket='/s'; owned.workspace='w1'
+        owned.terminal_id='t'; owned.shell_pid=1; owned.owner_start='o'; owned.server_pid='2'
+        owned.server_start='r'; owned.provisional=nil
+        Ownership.write(root,Recovery.to_edn(owned)); return owned
+      end}
+    end
+    Lifecycle.create(root,opts)
+    local committed=Recovery.from_edn(Ownership.read(root))
+    remove_root(root)
+    assert.are.same({'/Tools/claude','--dangerously-skip-permissions','--resume','12345678-uuid'},
+      {table.unpack(committed.recovery_command or {},1,4)})
+    assert.are.equal('12345678-uuid',committed.claude_session)
+  end)
   it('retains missing, unknown, foreign and wrong-role ownership without mailbox changes',function()
     local cases={
       nil,
