@@ -401,6 +401,26 @@ describe('Herdr socket path budget',function()
   end)
 end)
 
+describe('Herdr ownership record',function()
+  it('builds the provisional record on the constructed identity',function()
+    local identity={recovery_command={'claude','--resume','u'},claude_session='u',provisional=true}
+    local command={'claude','--session-id','u'}
+    local base=H.ownership_base(identity,'uml-viewer-a','/project',command)
+    assert.are.same({backend='herdr',owner_role='companion',session='uml-viewer-a',cwd='/project',
+      command={'claude','--session-id','u'},recovery_command={'claude','--resume','u'},
+      claude_session='u',provisional=true},base)
+    base.recovery_command[1]='changed'; base.command[1]='changed'
+    assert.are.equal('claude',identity.recovery_command[1]); assert.are.equal('claude',command[1])
+    assert.are.same({backend='herdr',owner_role='companion',session='s',cwd='/p',command={'x'},
+      provisional=true},H.ownership_base(nil,'s','/p',{'x'}))
+  end)
+  it('commits a copy without the provisional mark',function()
+    local base={session='s',provisional=true}
+    assert.are.same({session='s'},H.committed(base))
+    assert.is_true(base.provisional)
+  end)
+end)
+
 describe('Herdr pane command shell detection',function()
   it('accepts login shells whose argv0 carries a leading dash',function()
     for _,shell in ipairs{'-zsh','-bash','-sh','/bin/-zsh'} do

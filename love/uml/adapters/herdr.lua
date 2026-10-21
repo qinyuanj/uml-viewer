@@ -282,9 +282,7 @@ function M.new(identity,options)
     local sessions=B.cli(session,'session','list','--json').sessions
     if type(sessions)~='table' then B.fail('Ambiguous session inventory') end
     for _,entry in ipairs(sessions) do if entry.name==session then B.fail('Herdr named session already exists') end end
-    local base=H.copy(B.identity or {})
-    base.backend='herdr'; base.owner_role='companion'; base.session=session
-    base.cwd=B.canonical(cwd); base.command=H.copy(command); base.provisional=true
+    local base=H.ownership_base(B.identity,session,B.canonical(cwd),command)
     B.write_companion(base.cwd,base)
     if B.options.progress then B.options.progress('server') end
     local owner=B.launch_server(session,base.cwd)
@@ -323,7 +321,7 @@ function M.new(identity,options)
       B.fail('Herdr runner failed during startup')
     end
     B.observe(base,session,base.pane)
-    local owned=H.copy(base); owned.provisional=nil
+    local owned=H.committed(base)
     B.write_companion(owned.cwd,owned)
     if B.options.progress then B.options.progress('recovery') end
     local start=B.options.start_recovery or Recovery.start

@@ -34,6 +34,19 @@ function M.pane_command(command,shell_name)
   M.fail('Unsupported Herdr pane shell; command was not sent')
 end
 
+-- Ownership is built on the identity the backend was constructed with, so
+-- lifecycle fields such as the --resume recovery command survive the commit.
+function M.ownership_base(identity,session,cwd,command)
+  local base=M.copy(identity or {})
+  base.backend='herdr'; base.owner_role='companion'; base.session=session
+  base.cwd=cwd; base.command=M.copy(command); base.provisional=true
+  return base
+end
+
+function M.committed(record)
+  local owned=M.copy(record); owned.provisional=nil; return owned
+end
+
 local FIELDS={'socket','workspace','pane','terminal_id','shell_pid','owner_start','server_pid','server_start','cwd','command'}
 function M.complete(identity)
   if not M.session_valid(identity and identity.session) then
