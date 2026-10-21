@@ -122,7 +122,7 @@ Do not commit or push unless asked.
   it('ports the recovery prompt and installation guidance verbatim',function()
     assert.are.equal('Recovery: do not scan sources or rewrite policy. Read the current .uml-viewer/to-agent.edn queue; pop and handle commands oldest first, preserving the latest context and existing proposals. Apply the standing quality-result gate to each refresh; only valid results followed by successful IR permit :display. A failed refresh stops that request\'s IR/display, reports its cause, and leaves later FIFO mail runnable. If there is no pending refresh, restore :display from .uml-viewer/view.edn; never issue an unconditional recovery display after a failed refresh. Then wait for directives.',C.recovery_prompt)
     assert.are.equal('tmux/psmux companions are retired. Ownership and resources were retained; no takeover or cleanup was attempted. Finish the old viewer/session using the old release, verify that this project\'s legacy resources have exited, then archive .uml-viewer/companion.edn and start ./uml fresh with Herdr. Do not use --restart to migrate; retain session.edn and mailbox queues.',C.legacy_guidance)
-    assert.are.equal('Herdr 0.9.3 or newer (protocol 22) is required. Install a release from https://github.com/herdrdev/herdr/releases (https://herdr.dev). No automatic download, upgrade or fallback. WSL/Linux is the delivered platform (spec #106); macOS Apple Silicon is implemented but awaits real-machine acceptance; Windows native is unsupported (ADR 0007). Terminal attach is unverified (#49).',C.herdr_guidance)
+    assert.are.equal('Herdr 0.9.3 or newer (protocol 22) is required. Install a release from https://github.com/herdrdev/herdr/releases (https://herdr.dev). No automatic download, upgrade or fallback. WSL2 + WSLg is the delivered platform; Windows native is unsupported and macOS is not committed (ADR 0007). Terminal attach is unverified (#49).',C.herdr_guidance)
   end)
 end)
 
@@ -175,7 +175,7 @@ describe('selected Herdr among several installed releases',function()
       return {executable=true,canonical=path}
     end
     assert.are.same({'/b/herdr','/a/herdr'},C.herdr_candidates('Linux','/b:/none::/a:/b',fs))
-    assert.are.same({},C.herdr_candidates('Mac OS X','/a:/b',function() return nil end))
+    assert.are.same({},C.herdr_candidates('Linux','/a:/b',function() return nil end))
   end)
 end)
 
@@ -253,11 +253,12 @@ describe('read-only companion preflight',function()
     end
     local unsupported=error_of(function() preflight(nil,{os='Plan9'}) end)
     assert.is_truthy(unsupported.message:find('Unsupported companion platform',1,true))
-    for _,platform in ipairs{'Linux','Mac'} do
-      assert.are.equal('herdr',preflight(nil,{os=platform}))
-    end
+    assert.are.equal('herdr',preflight(nil,{os='Linux'}))
     local native=error_of(function() preflight(nil,{os='Windows'}) end)
     assert.is_truthy(native.message:find('not a supported platform',1,true))
+    assert.is_falsy(native.message:find('macOS',1,true))
+    local mac=error_of(function() preflight(nil,{os='OS X'}) end)
+    assert.is_truthy(mac.message:find('Unsupported companion platform: OS X',1,true))
   end)
   it('rejects missing restart, corrupt records and incomplete or foreign ownership',function()
     local missing=error_of(function() preflight(nil,{restart=true}) end)

@@ -22,8 +22,7 @@ function M.run(args)
     else local n=positional[1] and 2 or 1; assert(not positional[n],'usage: ir [policy [output]] [--root directory]'); positional[n]=a end
     i=i+1
   end
-  local os_name=love.system.getOS()
-  assert(os_name=='Linux' or os_name=='OS X','IR requires WSL or macOS Apple Silicon')
+  assert(love.system.getOS()=='Linux','IR requires WSL2 (ADR 0007)')
   local paths=require('uml.adapters.platform_path'); root=paths.canonical(root)
   local files=Files.new(root,paths)
   for lang,module in pairs(scanners) do

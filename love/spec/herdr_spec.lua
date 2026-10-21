@@ -402,7 +402,7 @@ describe('Herdr socket path budget',function()
 end)
 
 describe('Herdr pane command shell detection',function()
-  it('accepts macOS login shells whose argv0 carries a leading dash',function()
+  it('accepts login shells whose argv0 carries a leading dash',function()
     for _,shell in ipairs{'-zsh','-bash','-sh','/bin/-zsh'} do
       assert.are.equal("'echo' 'hi there'",H.pane_command({'echo','hi there'},shell))
     end

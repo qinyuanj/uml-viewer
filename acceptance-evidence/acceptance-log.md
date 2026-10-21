@@ -1,5 +1,7 @@
 # macOS Herdr native acceptance — spec #32
 
+> **Historical (JVM era).** This macOS record is not evidence for the current implementation; macOS is not committed (ADR 0007). Current evidence: [106-wsl](106-wsl/README.md).
+
 Status: **final — PASS** (consolidated by ticket #44, 2026-10-15). All
 executable criteria passed: #33, #34 (after three companion fixes landed
 during acceptance: 0b6f1ea sun_path, 6355aa4 login shells, 5e4407e

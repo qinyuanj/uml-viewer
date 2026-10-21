@@ -15,11 +15,11 @@ function M.default_probe(path)
   return {executable=true,canonical=canonical}
 end
 
--- LOVE reports "OS X" for macOS; WSL reports Linux like any other Linux host.
-function M.host_os()
-  local name=love and love.system and love.system.getOS()
-  if name=='OS X' then return 'Mac' end
-  return 'Linux'
+-- The host as LOVE names it (WSL reports Linux); the pure preflight decides
+-- which names are delivered. Without LOVE the POSIX entry is the caller.
+function M.host_os(system)
+  system=system or (love and love.system)
+  return system and system.getOS() or 'Linux'
 end
 
 function M.select(root,args,options)

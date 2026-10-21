@@ -1,5 +1,7 @@
 # Issue #49 Terminal attach runtime evidence
 
+> **Historical (JVM era).** This macOS record is not evidence for the current implementation; macOS is not committed (ADR 0007). Current evidence: [106-wsl](106-wsl/README.md).
+
 Recorded 2026-10-16, macOS 27.0.1 / Darwin 27.0.0 arm64. Source fixes remain uncommitted. No real viewer was started. Quality tools are run separately by the coordinator; this investigation did not run CRAP, mutation, or IR. Commands below use `<repo>` and `<probe-root>` instead of personal filesystem paths. No credentials are included.
 
 ## Root causes and fixes

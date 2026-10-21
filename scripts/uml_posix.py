@@ -35,7 +35,7 @@ def run(argv, **kwargs):
 
 def host():
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise ValueError('此阶段仅支持 WSL x86_64；macOS Apple Silicon 安装尚待后续实现。')
+        raise ValueError('仅支持 WSL2 x86_64（ADR 0007），请在 Ubuntu 24.04 WSL2 中运行。')
     if 'microsoft' not in platform.release().lower():
         raise ValueError('Linux 执行路径仅交付 WSL2，请在 Ubuntu 24.04 WSL2 中运行。')
 
