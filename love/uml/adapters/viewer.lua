@@ -45,26 +45,6 @@ local function parse_args(args)
   end
   return path,restart==true,backend
 end
--- Default diagram when the user names none: the project's own generated
--- diagram first, then the project-named policy output, then any example.
-local function default_diagram(project_root)
-  local root=(project_root or '.'):gsub('\\','/'):gsub('/$','')
-  local function present(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
-  local candidates={root..'/diagram.edn'}
-  local name=root:match('([^/]+)$')
-  if name then candidates[#candidates+1]=root..'/examples/'..name..'.edn' end
-  candidates[#candidates+1]=root..'/examples/uml-viewer.edn'
-  for _,path in ipairs(candidates) do if present(path) then return path end end
-  local listed
-  local lfs_ok,lfs=pcall(require,'lfs')
-  if lfs_ok then
-    for entry in lfs.dir(root..'/examples') do
-      if entry:match('%.edn$') then listed=listed or root..'/examples/'..entry end
-    end
-  end
-  return listed or candidates[1]
-end
-
 function M.run(args,services)
   services=services or {}
   local explicit_path,restart,backend=parse_args(args)
@@ -72,7 +52,7 @@ function M.run(args,services)
   -- install copy, discovered from the project root, never from the host OS.
   local project_root_env=os.getenv('UML_VIEWER_PROJECT_ROOT')
   local base=project_root_env and #project_root_env>0 and project_root_env or '.'
-  local path=explicit_path or default_diagram(base)
+  local path=explicit_path or SessionFile.default_diagram(base)
   local dependencies=os.getenv('UML_CIMGUI_DIRECTORY')
   if not dependencies then
     local discovered=base:gsub('\\','/'):gsub('/$','')..'/.uml-viewer/cimgui-love-1.90-1'
