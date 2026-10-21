@@ -358,6 +358,29 @@ class PosixEntries(unittest.TestCase):
     def record(self):
         return json.loads((self.root / '.uml-viewer/quality-result.json').read_text())
 
+    def test_record_matches_operation_canonical_root_and_actual_exit(self):
+        # The companion rejects a record whose operation, projectRoot or exitCode
+        # differs from the call it made; the published record must carry exactly
+        # those three values, even through a symlinked project path and when
+        # per-file mutation exits differ.
+        self.stub_tool('mutator', 'import sys\nraise SystemExit(3 if sys.argv[-1].endswith("a.lua") else 0)\n')
+        self.stub_tool('dryer', 'raise SystemExit(0)\n')
+        (self.root / 'src/b.lua').write_text('return {}')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {'sourceRoots': ['src']}}))
+        alias = Path(tempfile.mkdtemp(prefix='uml link ')) / 'project'
+        self.addCleanup(shutil.rmtree, alias.parent)
+        alias.symlink_to(self.root, target_is_directory=True)
+        cases = [('mutate', ['src/a.lua', 'src/b.lua'], 3), ('mutate', ['src/b.lua', 'src/a.lua'], 3),
+                 ('mutate', ['src/b.lua'], 0), ('dry', [], 0)]
+        for operation, args, expected in cases:
+            with self.subTest(operation=operation, args=args):
+                result = subprocess.run([str(alias / 'uml'), operation, *args], cwd=alias, env=self.env,
+                                        text=True, capture_output=True, timeout=30)
+                self.assertEqual(expected, result.returncode, result.stderr)
+                record = self.record()
+                self.assertEqual((operation, str(self.root.resolve()), result.returncode),
+                                 (record['operation'], record['projectRoot'], record['exitCode']))
+
     def test_standard_crap_requests_the_whole_business_tree(self):
         # Ported from the retired PowerShell public-entry suite: the standard
         # craspper invocation keeps declared scope, options and caller arguments
