@@ -10,6 +10,7 @@ local Text=require('uml.domain.text')
 local H=require('uml.domain.herdr')
 local C=require('uml.domain.companion')
 local M={}
+local BOOTSTRAP_MS=60000
 
 local function clean(value)
   if value==JSON.null then return nil end
@@ -40,8 +41,8 @@ function M.new(identity,options)
 
   function B.fail(message) error(message,0) end
 
-  local function checked(argv)
-    local result=B.run(argv)
+  local function checked(argv,timeout_ms)
+    local result=B.run(argv,timeout_ms)
     if result.timeout or result.exit~=0 then
       B.fail('Companion command failed: '..tostring(argv[1])..': '..tostring(result.err or ''))
     end
@@ -56,12 +57,13 @@ function M.new(identity,options)
     return value
   end
 
-  function B.cli(session,...)
-    local extra={...}
+  local function cli_within(timeout_ms,session,...)
     local argv={B.herdr(),'--session',session}
-    for _,value in ipairs(extra) do argv[#argv+1]=value end
-    return parse(checked(argv))
+    for _,value in ipairs({...}) do argv[#argv+1]=value end
+    return parse(checked(argv,timeout_ms))
   end
+
+  function B.cli(session,...) return cli_within(nil,session,...) end
 
   function B.session_check(session)
     if not H.session_valid(session) then
@@ -295,7 +297,10 @@ function M.new(identity,options)
     base.socket=status.socket
     B.write_companion(base.cwd,base)
     if B.options.progress then B.options.progress('workspace') end
-    local created=B.cli(session,'workspace','create','--cwd',base.cwd,'--no-focus').result
+    -- Herdr answers status once its socket listens but holds the first
+    -- workspace create until bootstrap ends; on WSL a PATH carrying many
+    -- /mnt/c entries stretches that past the ordinary command bound.
+    local created=cli_within(BOOTSTRAP_MS,session,'workspace','create','--cwd',base.cwd,'--no-focus').result
     local pane=created.root_pane
     base.workspace=created.workspace.workspace_id; base.pane=pane.pane_id; base.terminal_id=pane.terminal_id
     B.write_companion(base.cwd,base)

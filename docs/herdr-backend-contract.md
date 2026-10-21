@@ -165,8 +165,17 @@ wake 投递成功或 `pane wait-output`（socket `pane.wait_for_output`）匹配
   身份变化或含糊时失败，不影响其他项目或共享 Herdr 服务。
 
 Windows 已记录真实 Claude 异常恢复、namespace JVM 重启与身份连续性等部分
-原生结果，详见 `windows-herdr-21-acceptance.md`。预算耗尽、正常退出不恢复、
-待重试取消和部分 GUI 恢复仍未原生验证；macOS 端到端验收由 spec #32 完成（见 §8）。
+原生结果，详见 `windows-herdr-21-acceptance.md`（历史）。WSL 上由
+`scripts/test_posix_recovery_e2e.py` 经公共 `./uml` 实测 1/2/4 秒恢复、恢复后
+FIFO、退避期间关闭取消、预算耗尽、正常退出不恢复，以及另一项目与无关 Herdr
+会话不受影响；companion 为占位进程，证据见
+`acceptance-evidence/106-wsl/recovery/`。真实 Claude 的恢复仍归 #114 验收。
+macOS 历史验收见 §8，当前不承诺支持（ADR 0007）。
+
+Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace create`
+要等 bootstrap 结束才返回；WSL interop 追加的 `/mnt/c` PATH 项使 bootstrap
+实测 5.7 秒（空闲）至 10.2 秒（另一项目并存），因此该请求使用 60 秒上限，
+其他 CLI 请求仍为 10 秒。
 
 ### Herdr 原生证据边界（#14）
 

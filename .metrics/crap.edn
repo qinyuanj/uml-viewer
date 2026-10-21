@@ -6,7 +6,7 @@
   {:name "M.run_child", :namespace "love.uml.adapters.recovery", :complexity 17, :coverage 3.2258, :crap 278.9248}
   {:name "M.run", :namespace "love.uml.main.ir_generator", :complexity 16, :coverage 0.0, :crap 272.0}
   {:name "M.controller_loop", :namespace "love.uml.adapters.recovery", :complexity 14, :coverage 4.1667, :crap 186.5065}
-  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 166, :coverage 94.2857, :crap 171.1417}
+  {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 166, :coverage 94.2675, :crap 171.191}
   {:name "M.run", :namespace "love.uml.adapters.posix_process", :complexity 13, :coverage 3.125, :crap 166.6462}
   {:name "M.cancel", :namespace "love.uml.adapters.recovery", :complexity 13, :coverage 5.2632, :crap 156.6954}
   {:name "default_diagram", :namespace "love.uml.adapters.viewer", :complexity 11, :coverage 0.0, :crap 132.0}

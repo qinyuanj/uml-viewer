@@ -206,6 +206,30 @@ describe('Herdr owned session backend',function()
     assert.is_not_nil(state.recovery)
     assert.is_nil(state.recovery.provisional)
   end)
+  it('waits for a Herdr server bootstrap that outlasts an ordinary command bound',function()
+    -- A 12 second bootstrap: an unbounded or ordinary-bound call times out.
+    local calls={}; local state={empty_sessions=true}
+    local run=fake_cli(calls,state)
+    local function slow(argv,timeout_ms)
+      if argv[4]=='workspace' and argv[5]=='create' and (timeout_ms==nil or timeout_ms<=12000) then
+        return {exit=nil,out='',err='process timed out',timeout=true}
+      end
+      return run(argv)
+    end
+    local B=backend(slow,fake_owner(state),{
+      identity={provisional=true},
+      spawn_server=function() return {pid=41,start='server-start',name='herdr'} end,
+      runner={executable='love',argv={'love','/opt/uml-viewer/love','companion-runner'}},
+      runner_state=function(record) return {token=record.runner_token,phase='started'} end,
+      start_recovery=function() end})
+    local root=os.tmpname(); os.remove(root); assert(lfs.mkdir(root)); state.cwd=root
+    local exe=root..'/claude'; local handle=assert(io.open(exe,'w')); handle:close()
+    local ok,identity=pcall(B.create,'uml-viewer-A',root,{exe})
+    os.remove(root..'/.uml-viewer/uml-viewer-A-runner.edn.launch.edn')
+    lfs.rmdir(root..'/.uml-viewer'); os.remove(exe); lfs.rmdir(root)
+    assert.is_true(ok,identity)
+    assert.are.equal('w1:p1',identity.pane)
+  end)
   it('refuses a companion command that is not resolvable',function()
     local calls={}; local state={empty_sessions=true}
     local B=backend(fake_cli(calls,state),fake_owner(state),{identity={provisional=true}})

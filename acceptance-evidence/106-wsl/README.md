@@ -18,7 +18,7 @@
 
 | 检查 | 结果 | 命令 |
 |---|---|---|
-| 双解释器纯逻辑 | 681 / 681 通过（Lua 5.4、LuaJIT；`lua` 5.1 为 682 / 682） | `lua5.4|luajit scripts/run_busted.lua` |
+| 双解释器纯逻辑 | 695 / 695 通过（Lua 5.4、LuaJIT、`lua` 5.1） | `lua5.4|luajit scripts/run_busted.lua` |
 | 全量 POSIX 检查 | 4 / 4 通过 | `python3 -I scripts/check.py` |
 | POSIX 原生进程行为 | 12 / 12 通过 | `luajit scripts/run_posix_native_busted.lua` |
 | 公共入口（安装/IR/质量） | 29 / 29 通过 | `python3 -I scripts/test_posix_entries.py` |
@@ -26,12 +26,48 @@
 | viewer 渲染与重载 | 通过，含亚秒编辑重载 | `python3 -I scripts/test_posix_viewer.py` |
 | 公共入口端到端 | 通过 | `python3 -I scripts/test_posix_e2e.py` |
 | restart 端到端 | 通过（旧进程退出→session 保存→新进程→companion 保留→正常关闭） | `python3 -I scripts/test_posix_restart_e2e.py` |
+| durable recovery 端到端 | 4 个场景 + 旁观项目全部通过（见下） | `python3 -I scripts/test_posix_recovery_e2e.py` |
 | GUI driver（真实窗口） | navigation、class_boxes、search、source_window、source_jump、review_fixes、mail、metrics、inspector、detail_scroll、fonts 全部通过 | `python3 -I scripts/run_love_driver.py <name>` |
 
 端到端覆盖：公共 `./uml` 启动 → companion ownership 写入 → worker `:ready` →
 场景发布 → FIFO 出队 → 正常关闭 → ownership 清空 → Herdr 会话删除。
 证据见 `e2e-result.json`、`viewer.log`。渲染像素见 `viewer-window.png`、
 `viewer-scene.png`。
+
+## durable recovery（#113）
+
+公共 `./uml` 在隔离的 XDG runtime 中启动，companion 是一个按指令以指定退出码
+退出的占位进程。一个旁观项目全程运行，同一 runtime 中另有无关 Herdr 会话
+`bystander` 和一个无关 `sleep` 进程。每个场景结束后都核对这三者存活且未被
+改动。证据位于 `recovery/<场景>/`（`starts.log` 记录每个子进程的实际启动
+时刻，另有 `recovery.edn`、recovery 日志和 `viewer.log`），汇总见
+`recovery/result.json`。
+
+| 场景 | 结果 |
+|---|---|
+| cancel | 两次异常退出后，journal 记录的重试时刻与 runner 记录的退出时刻分别相差 1.02 s、2.07 s（预算 1/2 s），子进程分别在 1.92 s、2.63 s 后重启；恢复后邮件按 FIFO 出队且无拒绝；第三次退出进入 4 s 退避后关闭 viewer，journal 为 `:cancelled`，controller 退出，超过预算后也没有复活 |
+| exhausted | 三次恢复的调度时间为 1.05、2.09、4.10 s；第四次退出后 journal 为 `:failed "Recovery exhausted after three retries"`，没有第五个子进程 |
+| normal | exit 0 后 journal 为 `:normal`，不重启 |
+| unknown | runner 收到 SIGHUP 时还没记录退出，之后子进程消失；journal 为 `:failed "Runner child disappeared without a matching exit; recovery unsupported"`，不重启 |
+
+本 e2e 未覆盖的部分：
+- 关闭用 SIGTERM 模拟，它与窗口管理器的退出请求走同一条 `love.quit`
+  路径；真实 WSLg 窗口关闭按钮未自动化。
+- 「关闭恰好发生在 relaunch 进行中」的竞态、ownership 的 unknown/legacy
+  状态以及 PID 复用，只由单元测试和 native harness 覆盖。
+- 旁观进程中不包含另一个真实 Claude 会话；真实 Claude 的恢复证据归 #114。
+- `:context` 邮件只验证了出队，没有验证 viewer 应用了它（应用逻辑由
+  mailbox 单元测试覆盖）。
+
+### 发现：Herdr server bootstrap 慢
+
+第二个项目启动时首次 `workspace create` 超过了普通命令的上限。原因是 server
+的 socket 一开始监听，`status` 就返回成功，而首个 `workspace create` 要等
+bootstrap 完成。bootstrap 期间会遍历 PATH，WSL 在 PATH 中追加的 64 个
+`/mnt/c` 项都要经 9P 访问。实测 bootstrap 在空闲时为 5.7 s，有另一个项目
+并存时为 10.2 s；去掉这些 PATH 项后为 0.17 s。现在 `workspace create` 单独
+使用 60 s 的上限，其余命令的上限不变（`love/uml/adapters/herdr.lua`，见
+`docs/herdr-backend-contract.md`）。
 
 ## 质量工具（公共 `./uml` 分派，串行）
 
