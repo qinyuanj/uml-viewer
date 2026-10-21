@@ -164,12 +164,39 @@ describe('companion lifecycle ownership',function()
 end)
 
 describe('companion terminal attach',function()
-  it('reports a manual attach command instead of opening a terminal',function()
-    local calls=0
-    local opened=Lifecycle.open_window('uml-viewer-owned',{run=function() calls=calls+1 end})
+  local function wsl(run,found)
+    return {herdr='/home/u/.local/bin/herdr',run=run,
+      env=function(name) return ({WSL_DISTRO_NAME='Ubuntu-24.04'})[name] end,
+      which=function(name) if found~=false and name=='wt.exe' then return '/mnt/c/WindowsApps/wt.exe' end end}
+  end
+  it('opens Windows Terminal on WSL and attaches with the selected Herdr',function()
+    local seen
+    local opened=Lifecycle.open_window('uml-viewer-owned',wsl(function(argv) seen=argv; return {exit=0,out='',err=''} end))
+    assert.are.same({'/mnt/c/WindowsApps/wt.exe','-w','new','new-tab','--title','uml-viewer-owned',
+      'wsl.exe','-d','Ubuntu-24.04','--exec','/home/u/.local/bin/herdr','session','attach','uml-viewer-owned'},seen)
+    assert.are.equal('windows-terminal',opened.terminal)
+    assert.are.equal("'/home/u/.local/bin/herdr' session attach 'uml-viewer-owned'",opened.attach)
+  end)
+  it('keeps a custom Herdr config root in the attached terminal',function()
+    local seen
+    local options=wsl(function(argv) seen=argv; return {exit=0} end)
+    options.env=function(name) return ({WSL_DISTRO_NAME='Ubuntu-24.04',XDG_CONFIG_HOME='/tmp/x y'})[name] end
+    Lifecycle.open_window('s',options)
+    assert.are.same({'--exec','/usr/bin/env','XDG_CONFIG_HOME=/tmp/x y','/home/u/.local/bin/herdr','session','attach','s'},
+      {table.unpack(seen,10)})
+  end)
+  it('falls back to the manual command when the terminal does not start',function()
+    local opened=Lifecycle.open_window('s',wsl(function() return {exit=1,out='',err='denied'} end))
     assert.are.equal('none',opened.terminal)
-    assert.are.equal('uml-viewer-owned',opened.session)
-    assert.are.equal("'herdr' session attach 'uml-viewer-owned'",opened.attach)
+    assert.are.equal("'/home/u/.local/bin/herdr' session attach 's'",opened.attach)
+  end)
+  it('reports the manual command without running anything outside WSL or without wt.exe',function()
+    local calls=0
+    local function run() calls=calls+1 end
+    local plain=Lifecycle.open_window('uml-viewer-owned',{run=run,env=function() end,which=function() return '/x/wt.exe' end})
+    assert.are.equal('none',plain.terminal)
+    assert.are.equal("'herdr' session attach 'uml-viewer-owned'",plain.attach)
+    assert.are.equal('none',Lifecycle.open_window('s',wsl(run,false)).terminal)
     assert.are.equal(0,calls)
   end)
 end)

@@ -117,8 +117,10 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
 - 终端可见 attach：`herdr session attach <name>` 打开原生 TUI；历史 macOS 证据
   （JVM 时代）已人工确认 TUI 打开、中文渲染、`Ctrl+B q` detach；输入回显尚未人工确认，
   且 detach 后 pane 与会话存活；无 TTY 时干净失败 exit 1。
-  历史上 Windows 直连终端 attach 不支持，adapter 曾用 Windows Terminal 打开
-  完整客户端；该分支随原生 Windows 支持退役（ADR 0007），本契约不再覆盖。
+  WSL 上 adapter 经 interop 调用 `wt.exe -w new new-tab … wsl.exe -d <distro> --exec
+  herdr session attach <name>`（自定义 `XDG_CONFIG_HOME` 经 `/usr/bin/env` 传入）；
+  不在 WSL、没有 `wt.exe` 或启动非 0 时只报告 attach 命令，不重试、不另起 companion。
+  原生 Windows 的 Windows Terminal 分支随原生支持退役（ADR 0007）。
 - companion 的 EDN 邮箱联动不依赖 TUI：socket/CLI 控制与面板输入在
   无 TTY 下全部可用（已验证）。
 

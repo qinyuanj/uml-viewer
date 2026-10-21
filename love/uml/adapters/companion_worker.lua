@@ -111,12 +111,12 @@ function M.run(request_path,services)
     if not stop then
       local failure
       if not request.restart and services.open_window then
-        local opened,failed=pcall(services.open_window,record.session)
+        local opened,failed=pcall(services.open_window,record.session,B and B.herdr and B.herdr())
         if not opened then
           failure='Terminal attach failed: '..tostring(failed)
-        else
-          -- Nothing attaches automatically on the supported platforms; the
-          -- ready event carries the command a person can run in a terminal.
+        elseif not (type(failed)=='table' and failed.terminal and failed.terminal~='none') then
+          -- No terminal attached; the ready event carries the command a person
+          -- can run in a terminal.
           failure='Companion started; attach manually: '
             ..tostring(type(failed)=='table' and failed.attach or 'herdr session attach '..tostring(record.session))
         end

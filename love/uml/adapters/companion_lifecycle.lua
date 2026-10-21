@@ -9,6 +9,7 @@ local Recovery=require('uml.adapters.recovery')
 local Herdr=require('uml.adapters.herdr')
 local Claude=require('uml.adapters.claude')
 local Text=require('uml.domain.text')
+local Process=require('uml.adapters.process')
 local M={}
 
 local function love_executable()
@@ -91,14 +92,33 @@ function M.select(root,options)
   return Preflight.select(root,{'--backend','herdr'},preflight).selected
 end
 
--- No supported platform opens a terminal for the companion: WSLg has no
--- launcher shim, and macOS attach is unverified (#49). The caller reports the
--- command a person can run themselves.
+local function on_path(name)
+  for directory in (os.getenv('PATH') or ''):gmatch('[^:]+') do
+    local candidate=directory..'/'..name
+    local handle=io.open(candidate,'rb')
+    if handle then handle:close(); return candidate end
+  end
+end
+
+-- WSL reaches the host's Windows Terminal through interop; the new tab enters
+-- the same distribution and attaches with the selected Herdr's absolute path
+-- (a fresh WSL login has no ~/.local/bin on PATH). Elsewhere, or when the
+-- terminal does not start, the caller reports the command a person can run.
 function M.open_window(session,options)
   options=options or {}
+  local env=options.env or os.getenv
   local herdr=options.herdr or 'herdr'
-  return {terminal='none',session=session,
-    attach=Text.shell_word(herdr)..' session attach '..Text.shell_word(session)}
+  local attach=Text.shell_word(herdr)..' session attach '..Text.shell_word(session)
+  local distro=env('WSL_DISTRO_NAME')
+  local terminal=distro and distro~='' and (options.which or on_path)('wt.exe')
+  if not terminal then return {terminal='none',session=session,attach=attach} end
+  local argv={terminal,'-w','new','new-tab','--title',session,'wsl.exe','-d',distro,'--exec'}
+  local config=env('XDG_CONFIG_HOME')
+  if config and config~='' then argv[#argv+1]='/usr/bin/env'; argv[#argv+1]='XDG_CONFIG_HOME='..config end
+  for _,word in ipairs{herdr,'session','attach',session} do argv[#argv+1]=word end
+  local result=(options.run or Process.run)(argv,10000)
+  local ok=type(result)=='table' and result.exit==0
+  return {terminal=ok and 'windows-terminal' or 'none',session=session,attach=attach}
 end
 
 function M.create(root,options)

@@ -149,9 +149,10 @@ Herdr call ([ADR 0004](docs/adr/0004-herdr-executable-selection.md)). Install fr
 or [herdr.dev](https://herdr.dev), then verify the version.
 There is no download, upgrade or fallback. `--backend herdr` creates an isolated
 named session and records its server, shell, pane and process creation identities.
-Nothing opens a terminal automatically on the supported platforms. The ready
-event and the project log carry the `herdr session attach <session>` command to
-run in a separate terminal (terminal attach itself is unverified, #49). Do not
+On WSL the companion opens a Windows Terminal window running
+`herdr session attach <session>` through `wt.exe` interop. Without `wt.exe`, or
+when it fails to start, the viewer's status line, the ready event and the project
+log carry that command to run in a separate terminal (#49). Do not
 start a second companion to retry attachment. Herdr starts a detached project recovery
 controller. A verified abnormal Claude exit is retried at most three times,
 after 1, 2 and 4 seconds; the count resets only after 60 seconds of verified

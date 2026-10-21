@@ -15,7 +15,7 @@ describe('isolated companion lifecycle',function()
       end
       if fail then error('startup failure') end
       if cancel then stop() end
-      return {session='owned'},{}
+      return {session='owned'},{herdr=function() return '/opt/herdr' end}
     end
     lifecycle.create=start; lifecycle.restart=start
     lifecycle.shutdown=function() calls[#calls+1]='shutdown' end
@@ -42,9 +42,18 @@ describe('isolated companion lifecycle',function()
     assert.equal(0,code); assert.equal('owned',opened)
     local ready
     for _,event in ipairs(events) do if event.phase=='ready' then ready=event end end
-    -- Nothing attaches automatically on the supported platforms, so ready must
-    -- always carry the command a person can run themselves.
+    -- Without an attached terminal, ready carries the command a person can run.
     assert.equal('Companion started; attach manually: herdr session attach owned',ready.message)
+  end)
+  it('reports nothing to do by hand once a terminal is attached',function()
+    local herdr
+    local _,_,events=fixture(false,false,false,nil,nil,nil,function(session,path)
+      herdr=path; return {terminal='windows-terminal',session=session,attach='x'}
+    end)
+    local ready
+    for _,event in ipairs(events) do if event.phase=='ready' then ready=event end end
+    assert.equal('/opt/herdr',herdr)
+    assert.is_nil(ready.message)
   end)
   it('reports attach failure without losing the companion',function()
     local _,_,events=fixture(false,false,false,nil,nil,nil,function()

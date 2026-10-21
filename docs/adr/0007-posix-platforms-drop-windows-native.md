@@ -30,7 +30,7 @@ POSIX 实现，facade 直接转发，不再按宿主分支：
 | OS 锁 | `adapters/lock` | `posix_lock`（`flock`） | `os_lock` |
 | DPI | `adapters/dpi` | 合成器与 LOVE 帧缓冲缩放 | `user32` 查询 |
 | 原子替换 | `adapters/atomic_file` | `rename` | `pwsh` `File.Move` |
-| 终端 attach | `adapters/companion_lifecycle` | 只报告 `herdr session attach` 命令 | Windows Terminal 标签 |
+| 终端 attach | `adapters/companion_lifecycle` | WSL 上经 interop 用 `wt.exe` 打开新窗口运行 `wsl.exe … herdr session attach`；无 `WSL_DISTRO_NAME`、找不到 `wt.exe` 或打开失败时只报告 attach 命令 | 原生 Windows 的 Windows Terminal 分支 |
 
 调用方（domain/application）不感知平台。进程创建身份对调用方是**不透明文本**，
 只做精确相等比较：POSIX 用 `/proc/<pid>/stat` 的 starttime。

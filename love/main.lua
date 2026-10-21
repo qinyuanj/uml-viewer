@@ -25,8 +25,8 @@ if game_args[1]=='companion-worker' then
   function love.run()
     local services={}
     if os.getenv('UML_COMPANION_NO_ATTACH')~='1' then
-      services.open_window=function(session)
-        return require('uml.adapters.companion_lifecycle').open_window(session)
+      services.open_window=function(session,herdr)
+        return require('uml.adapters.companion_lifecycle').open_window(session,{herdr=herdr})
       end
     end
     local ok,code=pcall(require('uml.adapters.companion_worker').run,game_args[2],services)
