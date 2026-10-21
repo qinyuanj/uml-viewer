@@ -24,6 +24,7 @@ POSIX 实现，facade 直接转发，不再按宿主分支：
 
 | 能力 | 选择点 | POSIX 实现（唯一） | 已退役 |
 |---|---|---|---|
+| 交付平台判定 | `adapters/platform` | LOVE 报告 `Linux`（WSL）即受支持；其余宿主返回拒绝原因，companion preflight 与 `ir` 只消费该结果 | 各调用点自行比较宿主名 |
 | 路径身份与目录枚举 | `adapters/platform_path` | `posix_path`（`realpath`） | `windows_path` |
 | 文件 mtime | `adapters/platform_watch` | `posix_watch`（`statx` 纳秒） | `file_watch` |
 | 进程边界 | `adapters/process` | `posix_process`（`posix_spawn`） | `windows_process` |

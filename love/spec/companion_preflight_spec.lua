@@ -27,10 +27,10 @@ local function installed(calls)
     return {exit=0,out='{"$schema":"fixture","protocol":22,"schema_version":1}'}
   end
 end
+local function system(name) return {getOS=function() return name end} end
 local function probe(path) return {executable=true,canonical=path:gsub('\\','/')} end
 local function select(root,args,options)
   options=options or {}
-  options.os=options.os or 'Linux'
   options.path=options.path or '/tools'
   options.probe=options.probe or probe
   options.run=options.run or installed(options.calls or {})
@@ -96,7 +96,7 @@ describe('read-only companion preflight adapter',function()
   it('selects Herdr on WSL',function()
     local root=temp_root()
     local calls={}
-    local result=select(root,{'--backend','herdr'},{os='Linux',calls=calls,path='/usr/bin'})
+    local result=select(root,{'--backend','herdr'},{system=system('Linux'),calls=calls,path='/usr/bin'})
     assert.are.equal('herdr',result.backend)
     assert.are.equal('herdr',result.selected.release and 'herdr' or nil)
     remove_root(root)
@@ -104,20 +104,15 @@ describe('read-only companion preflight adapter',function()
   it('refuses macOS, which is not committed, before touching PATH',function()
     local root=temp_root()
     local calls={}
-    local err=failure(root,{}, {os=Preflight.host_os({getOS=function() return 'OS X' end}),calls=calls})
+    local err=failure(root,{}, {system=system('OS X'),calls=calls})
     assert.is_truthy(tostring(err):find('Unsupported companion platform: OS X',1,true))
     assert.are.equal(0,#calls)
     remove_root(root)
   end)
-  it('reports the host as LOVE names it, and Linux when LOVE is absent',function()
-    assert.are.equal('Linux',Preflight.host_os({getOS=function() return 'Linux' end}))
-    assert.are.equal('Windows',Preflight.host_os({getOS=function() return 'Windows' end}))
-    assert.are.equal('Linux',Preflight.host_os(nil))
-  end)
   it('refuses Windows native before touching PATH',function()
     local root=temp_root()
     local calls={}
-    local err=failure(root,{}, {os='Windows',calls=calls})
+    local err=failure(root,{}, {system=system('Windows'),calls=calls})
     assert.is_truthy(tostring(err):find('not a supported platform',1,true))
     assert.are.equal(0,#calls)
     remove_root(root)
@@ -126,7 +121,7 @@ describe('read-only companion preflight adapter',function()
   it('refuses a platform it cannot launch a companion on',function()
     local root=temp_root()
     local calls={}
-    local err=failure(root,{}, {os='Plan9',calls=calls})
+    local err=failure(root,{}, {system=system('Plan9'),calls=calls})
     assert.is_truthy(tostring(err):find('Unsupported companion platform',1,true))
     assert.are.equal(0,#calls)
     remove_root(root)

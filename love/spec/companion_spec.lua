@@ -174,8 +174,8 @@ describe('selected Herdr among several installed releases',function()
       if not path:match('^/[ab]/herdr$') then return nil end
       return {executable=true,canonical=path}
     end
-    assert.are.same({'/b/herdr','/a/herdr'},C.herdr_candidates('Linux','/b:/none::/a:/b',fs))
-    assert.are.same({},C.herdr_candidates('Linux','/a:/b',function() return nil end))
+    assert.are.same({'/b/herdr','/a/herdr'},C.herdr_candidates('/b:/none::/a:/b',fs))
+    assert.are.same({},C.herdr_candidates('/a:/b',function() return nil end))
   end)
 end)
 
@@ -224,7 +224,7 @@ describe('read-only companion preflight',function()
   local function preflight(record,opts)
     opts=opts or {}
     return C.preflight_checks(record,{root=opts.root or 'C:/project',requested=opts.requested,
-      restart=opts.restart,os=opts.os or 'Linux',canonical=function(p) return p end})
+      restart=opts.restart,platform=opts.platform or {supported=true},canonical=function(p) return p end})
   end
   it('accepts a fresh launch and a complete verified Herdr ownership',function()
     assert.are.equal('herdr',preflight(nil))
@@ -251,14 +251,10 @@ describe('read-only companion preflight',function()
       local err=error_of(function() preflight(nil,{requested=backend}) end)
       assert.is_truthy(err.message:find('companions are retired',1,true))
     end
-    local unsupported=error_of(function() preflight(nil,{os='Plan9'}) end)
-    assert.is_truthy(unsupported.message:find('Unsupported companion platform',1,true))
-    assert.are.equal('herdr',preflight(nil,{os='Linux'}))
-    local native=error_of(function() preflight(nil,{os='Windows'}) end)
-    assert.is_truthy(native.message:find('not a supported platform',1,true))
-    assert.is_falsy(native.message:find('macOS',1,true))
-    local mac=error_of(function() preflight(nil,{os='OS X'}) end)
-    assert.is_truthy(mac.message:find('Unsupported companion platform: OS X',1,true))
+    assert.are.equal('herdr',preflight(nil,{platform={supported=true}}))
+    local refused=error_of(function() preflight(nil,{platform={supported=false,reason='Host refused'}}) end)
+    assert.are.equal('Host refused; ownership and queues are retained.',refused.message)
+    assert.are.equal('failure',refused.data.status)
   end)
   it('rejects missing restart, corrupt records and incomplete or foreign ownership',function()
     local missing=error_of(function() preflight(nil,{restart=true}) end)

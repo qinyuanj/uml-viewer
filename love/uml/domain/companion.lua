@@ -166,7 +166,7 @@ function M.selection_args(args)
   return {args=forwarded,backend=selected}
 end
 
-function M.herdr_candidates(os,path,probe)
+function M.herdr_candidates(path,probe)
   local result,seen={},{}
   for part in (path or ''):gmatch('[^:]+') do
     part=part:gsub('"','')
@@ -261,17 +261,11 @@ function M.preflight_checks(record,opts)
   if opts.restart and not recorded then
     M.fail('Companion ownership is missing; cannot restart',{status='failure'})
   end
-  -- Herdr is the only backend and WSL2 + WSLg the only delivered platform; LOVE
-  -- reports WSL as Linux. Windows native is retired (ADR 0007), so it is
-  -- refused with that reason instead of the generic one.
-  local platform=tostring(opts.os or '')
-  if platform:sub(1,7)=='Windows' then
-    M.fail('Windows native is not a supported platform (ADR 0007). Use WSL2 + WSLg;'
-      ..' ownership and queues are retained.',{status='failure'})
-  end
-  if platform~='Linux' then
-    M.fail('Unsupported companion platform: '..platform..'. Run the viewer and Herdr'
-      ..' natively; ownership and queues are retained.',{status='failure'})
+  -- The platform adapter decides whether the host is delivered (ADR 0007);
+  -- this only refuses with its reason, keeping ownership and queues.
+  local platform=opts.platform or {}
+  if not platform.supported then
+    M.fail(tostring(platform.reason)..'; ownership and queues are retained.',{status='failure'})
   end
   return recorded or 'herdr'
 end

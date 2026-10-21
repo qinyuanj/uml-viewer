@@ -1,0 +1,23 @@
+local Platform=require('uml.adapters.platform')
+
+local function system(name) return {getOS=function() return name end} end
+
+describe('delivered platform support',function()
+  it('supports WSL, which LOVE reports as Linux',function()
+    assert.are.same({supported=true},Platform.support(system('Linux')))
+  end)
+  it('treats the POSIX entry without LOVE as WSL',function()
+    assert.are.same({supported=true},Platform.support(nil))
+  end)
+  it('refuses Windows native with the ADR 0007 reason',function()
+    local result=Platform.support(system('Windows'))
+    assert.is_false(result.supported)
+    assert.are.equal('Windows native is not a supported platform (ADR 0007). Use WSL2 + WSLg',result.reason)
+  end)
+  it('refuses macOS and other hosts by name',function()
+    local mac=Platform.support(system('OS X'))
+    assert.is_false(mac.supported)
+    assert.are.equal('Unsupported companion platform: OS X. Run the viewer and Herdr natively',mac.reason)
+    assert.is_truthy(Platform.support(system('Plan9')).reason:find('Plan9',1,true))
+  end)
+end)
