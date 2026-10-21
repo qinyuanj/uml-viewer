@@ -118,9 +118,12 @@ def main():
             shutil.copy2(project / '.uml-viewer/viewer.log', evidence / 'viewer.log') \
                 if (project / '.uml-viewer/viewer.log').exists() else None
             result['project_retained'] = str(project)
+            # A failed run may leave a live companion; its Herdr socket lives
+            # under runtime, so keep it for the normal shutdown path.
+            result['runtime_retained'] = str(runtime)
         else:
             shutil.rmtree(project, ignore_errors=True)
-        shutil.rmtree(runtime, ignore_errors=True)
+            shutil.rmtree(runtime, ignore_errors=True)
         (evidence / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     for name, detail in checks:
         print(f'PASS {name}: {detail}')
