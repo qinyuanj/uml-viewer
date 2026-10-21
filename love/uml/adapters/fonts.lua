@@ -10,13 +10,11 @@ function M.provisioned(root) return (root or '.'):gsub('\\','/')..'/.uml-viewer/
 local function exists(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
 local function warn(text) io.stderr:write(text) end
 local warned=false
--- System CJK fallbacks, in preference order, for a platform with no
--- provisioned Sarasa: the Noto CJK families shipped by Ubuntu and the PingFang
--- collection on macOS.
+-- System CJK fallbacks, in preference order, when Sarasa is not provisioned:
+-- the Noto CJK families shipped by Ubuntu.
 local SYSTEM_FONTS={
   '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
   '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
-  '/System/Library/Fonts/PingFang.ttc',
 }
 function M.defaults(root)
   return {env=os.getenv('UML_CJK_FONT'),root=root,candidates=SYSTEM_FONTS,

@@ -232,6 +232,31 @@ class PosixEntries(unittest.TestCase):
         (self.root / 'src/a.lua').write_text('local M={}\nfunction M.hello() return "hello" end\nreturn M\n')
         (self.root / 'policy.edn').write_text(self.policy)
 
+    def test_installer_refuses_hosts_other_than_wsl_x86_64(self):
+        """Only WSL2 x86_64 is delivered; macOS is not committed (ADR 0007)."""
+        import importlib.util
+        from unittest import mock
+        specification = importlib.util.spec_from_file_location(
+            'uml_posix', REPO / 'scripts/uml_posix.py')
+        installer = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(installer)
+        hosts = {('Darwin', 'arm64', '25.0.0'), ('Linux', 'aarch64', '6.6-microsoft-standard-WSL2'),
+                 ('Linux', 'x86_64', '6.8.0-generic'), ('Windows', 'AMD64', '11')}
+        for system, machine, release in sorted(hosts):
+            with self.subTest(system=system, machine=machine), \
+                    mock.patch.object(installer.platform, 'system', return_value=system), \
+                    mock.patch.object(installer.platform, 'machine', return_value=machine), \
+                    mock.patch.object(installer.platform, 'release', return_value=release):
+                with self.assertRaises(ValueError) as refused:
+                    installer.host()
+                self.assertIn('WSL2', str(refused.exception))
+                self.assertNotIn('macOS', str(refused.exception))
+        with mock.patch.object(installer.platform, 'system', return_value='Linux'), \
+                mock.patch.object(installer.platform, 'machine', return_value='x86_64'), \
+                mock.patch.object(installer.platform, 'release',
+                                  return_value='6.18.33.2-microsoft-standard-WSL2'):
+            self.assertIsNone(installer.host())
+
     def test_installer_provisions_the_pinned_font_and_refuses_a_mismatch(self):
         """The font pin is enforced by hash, not by trusting the download.
 
