@@ -7,7 +7,7 @@ local M={}
 M.sizes=require('uml.domain.theme').fonts
 M.sarasa='SarasaMonoSC-Regular.ttf'
 function M.provisioned(root) return (root or '.'):gsub('\\','/')..'/.uml-viewer/fonts/'..M.sarasa end
-local function exists(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
+local exists=require('uml.adapters.platform_path').exists
 local function warn(text) io.stderr:write(text) end
 local warned=false
 -- System CJK fallbacks, in preference order, when Sarasa is not provisioned:

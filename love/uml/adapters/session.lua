@@ -1,6 +1,7 @@
 -- Restart session file IO only; snapshot semantics stay in application.session.
 local E=require('uml.edn')
 local Atomic=require('uml.adapters.atomic_file')
+local Paths=require('uml.adapters.platform_path')
 local M={}
 local function path(root) return root:gsub('\\','/')..'/.uml-viewer/session.edn' end
 function M.read(root)
@@ -16,12 +17,11 @@ end
 -- over this default (application.session.path).
 function M.default_diagram(project_root)
   local root=(project_root or '.'):gsub('\\','/'):gsub('/$','')
-  local function present(path) local f=io.open(path,'rb'); if f then f:close(); return true end; return false end
   local candidates={root..'/diagram.edn'}
   local name=root:match('([^/]+)$')
   if name then candidates[#candidates+1]=root..'/examples/'..name..'.edn' end
   candidates[#candidates+1]=root..'/examples/uml-viewer.edn'
-  for _,path in ipairs(candidates) do if present(path) then return path end end
+  for _,path in ipairs(candidates) do if Paths.exists(path) then return path end end
   local listed
   local lfs_ok,lfs=pcall(require,'lfs')
   if lfs_ok and lfs.attributes(root..'/examples','mode')=='directory' then

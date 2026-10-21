@@ -17,6 +17,12 @@ function M.canonical(path)
   assert(resolved~=nil,'cannot canonicalize path: '..path)
   local result=ffi.string(resolved); ffi.C.free(resolved); return result
 end
+-- A file that opens for reading exists; on POSIX a successful open is proof.
+function M.exists(path)
+  local file=io.open(path,'rb')
+  if file then file:close(); return true end
+  return false
+end
 function M.entries(path)
   local result={}
   for name in lfs.dir(path) do

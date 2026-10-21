@@ -1,0 +1,11 @@
+local Paths=require('uml.adapters.platform_path')
+
+describe('platform path existence',function()
+  it('reports a readable file present and an absent path missing',function()
+    local path=os.tmpname()
+    local f=assert(io.open(path,'wb')); f:write('x'); f:close()
+    assert.is_true(Paths.exists(path))
+    os.remove(path)
+    assert.is_false(Paths.exists(path))
+  end)
+end)
