@@ -50,6 +50,18 @@ describe('POSIX process boundary',function()
     assert.has_error(function() P.owner_native('not-a-pid') end)
   end)
 
+  it('never lets a detached child inherit a lock its parent later releases',function()
+    local Lock=require('uml.adapters.posix_lock')
+    local path=os.tmpname(); local log=os.tmpname()
+    local held=assert(Lock.try_acquire(path))
+    P.spawn_detached('/bin/sleep',{'2'},'/tmp',log,log..'.err')
+    Lock.release(held)
+    local again=Lock.try_acquire(path)
+    Lock.release(again)
+    os.remove(path); os.remove(log); os.remove(log..'.err')
+    assert.is_truthy(again,'released lock must be free while the child still runs')
+  end)
+
   it('spawns a detached process and reports its identity',function()
     local log=os.tmpname()
     local error_log=log..'.err'

@@ -22,9 +22,12 @@ local LOCK_EX=2
 local LOCK_NB=4
 local O_RDWR=2
 local O_CREAT=0x40
+-- Close-on-exec: a spawned Herdr server or controller must not inherit the
+-- descriptor, or the lock outlives its holder and blocks the next owner.
+local O_CLOEXEC=0x80000
 function M.try_acquire(path)
   api()
-  local fd=ffi.C.open(path,bit.bor(O_RDWR,O_CREAT),420)
+  local fd=ffi.C.open(path,bit.bor(O_RDWR,O_CREAT,O_CLOEXEC),420)
   if fd<0 then error('Cannot open lock file '..path,0) end
   if ffi.C.flock(fd,bit.bor(LOCK_EX,LOCK_NB))~=0 then
     ffi.C.close(fd)
