@@ -150,7 +150,14 @@ end
 -- Screen-space canvas chrome: the original diagram banner, return scope and
 -- leaf-dependency popup. Uses the usable canvas dimensions, never the sidebar.
 function M.chrome(state,width,height)
-  local out={}; if state.waiting then return out end
+  local out={}
+  -- Companion and source outcomes matter most while waiting, so the status
+  -- line is the one piece of chrome a waiting canvas still shows.
+  local function status()
+    if state.mail_status then out[#out+1]={kind='status',text=state.mail_status,x=12,y=height-12-F.sizes.body,color=T.pack(T.colors.muted)} end
+    return out
+  end
+  if state.waiting then return status() end
   local diagram=G.get(state.scene,'diagram'); local title=G.get(diagram,'title')
   if G.get(diagram,'proposal') then
     local name
@@ -177,7 +184,7 @@ function M.chrome(state,width,height)
     if y+h>height then y=math.max(8,my-h-8) end
     out[#out+1]={kind='dependency-popup',x=x,y=y,w=w,h=h,rows=rows}
   end
-  return out
+  return status()
 end
 function M.new(imgui,fonts)
   fonts=fonts or {}

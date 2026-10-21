@@ -161,6 +161,12 @@ function M.run(args,services)
     end
     mail=Mail.new(state.project_root,{load=load_document,canonical=Paths.canonical,notify=notify_agent,resolve=function(p,root) p=p:gsub('\\','/'); return Paths.canonical((p:match('^%a:/') or p:sub(1,1)=='/') and p or (root..'/'..p)) end})
     if services.source then source_window=require('uml.adapters.source_window').new(imgui,{root=state.project_root,source=services.source,fonts=fonts,ui=function() return display().ui end}) end
+    -- A source that cannot be opened says why instead of doing nothing.
+    local function open_source(ident)
+      if not source_window then return end
+      local opened,reason=source_window.open(ident)
+      if not opened then state.mail_status=Strings.source_not_opened:format(tostring(reason)) end
+    end
     inspector=Inspector.new(imgui,{
       locate=function(id) state=Events.locate(state,id,Display.dims(display())); publish() end,
       choose=function(id) local next_state,context=InspectorModel.choose(state,id); state=context and mail.send_context(next_state,context) or next_state end,
@@ -172,11 +178,11 @@ function M.run(args,services)
       end,
       rename=function(id,name) state=Events.rename_proposal(state,id,name,{boundary=PolicyFile}); publish() end,
       delete=function(id) state=Events.delete_proposal(state,id,{boundary=PolicyFile}); publish() end,
-      open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
+      open_source=open_source},fonts)
     detail_window=DetailWindow.new(imgui,{
       close=function() state=Events.close_detail(state) end,
       pick=function(id) state=Events.locate(state,id,Display.dims(display())) end,
-      open_source=function(ident) if source_window then source_window.open(ident) end end},fonts)
+      open_source=open_source},fonts)
     -- A refused or invalid startup never overwrites an existing identity.
     if not companion then ProcessIdentity.record(project_root) end
     publish()

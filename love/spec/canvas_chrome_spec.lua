@@ -42,4 +42,15 @@ describe('canvas title, navigation and dependency popup',function()
    assert.are.equal(T.pack(T.colors.violation),painted['a -> b'])
    s.hover=E.parse('{:kind :dep :deps [{:from :a :to :b}]}'); assert.are.equal('dependency-popup',B.chrome(s,1220,900)[2].kind)
  end)
+ it('shows the latest status at the bottom of the canvas, also while waiting for the companion',function()
+   local waiting=D.waiting_state('a',0); waiting.mail_status='Companion started; attach manually: herdr session attach s'
+   local cmds=B.chrome(waiting,1220,900)
+   assert.are.equal(1,#cmds); assert.are.equal('status',cmds[1].kind)
+   assert.are.equal(waiting.mail_status,cmds[1].text)
+   assert.is_true(cmds[1].y>800 and cmds[1].y<900)
+   local s=state(); s.mail_status='Source not opened: Source not found'
+   local last=B.chrome(s,1220,900); last=last[#last]
+   assert.are.equal('status',last.kind); assert.are.equal(s.mail_status,last.text)
+   assert.are.equal(0,#B.chrome(D.waiting_state('a',0),1220,900))
+ end)
 end)
