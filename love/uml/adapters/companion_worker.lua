@@ -19,6 +19,10 @@ local function read(path)
   if not ok then return nil end
   return R.from_edn(value)
 end
+-- The unique token of one mail delivery. Herdr's wake contract requires the
+-- literal prompt to carry it.
+function M.mail_token(id) return 'mail-'..tostring(id) end
+
 function M.start(root,restart)
   local token=R.new_token()
   local base=root..'/.uml-viewer/companion-worker-'..token
@@ -129,9 +133,7 @@ function M.run(request_path,services)
       commands()
       if not stop and #pending>0 then
         local id=table.remove(pending,1)
-        -- Herdr's wake contract requires the literal prompt to carry the
-        -- delivery's unique token.
-        local token='mail-'..tostring(id)
+        local token=M.mail_token(id)
         local delivered,reason=pcall(B.wake,record.pane,{'-l','Mailbox '..token},{
           token=token,timeout_ms=5000,
           acknowledged=function()

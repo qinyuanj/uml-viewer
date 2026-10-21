@@ -107,6 +107,10 @@ describe('isolated companion lifecycle',function()
     assert.equal('failed',events[#events].phase)
     assert.matches('Another companion helper',events[#events].message)
   end)
+  it('names a mail delivery by its mailbox id',function()
+    assert.equal('mail-7',W.mail_token(7))
+    assert.equal('mail-12',W.mail_token('12'))
+  end)
   it('delivers right-click mail to the companion under the Herdr wake contract',function()
     -- The backend applies the real wake contract: the literal prompt must carry
     -- the delivery's unique token, or Herdr refuses before prompting Claude.
@@ -130,6 +134,7 @@ describe('isolated companion lifecycle',function()
       lock={try_acquire=function() return true end,release=function() end}}
     assert.equal(0,W.run('request',services))
     assert.equal(1,#prompted); assert.equal('w1:p1',prompted[1].pane)
+    assert.equal('Mailbox mail-7',prompted[1].text)
     for _,event in ipairs(events) do
       assert.is_falsy(event.message and event.message:find('wake failed',1,true))
     end
