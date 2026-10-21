@@ -9,7 +9,6 @@
   {:name "M.new", :namespace "love.uml.adapters.herdr", :complexity 166, :coverage 94.2675, :crap 171.191}
   {:name "M.run", :namespace "love.uml.adapters.posix_process", :complexity 13, :coverage 3.125, :crap 166.6462}
   {:name "M.cancel", :namespace "love.uml.adapters.recovery", :complexity 13, :coverage 5.2632, :crap 156.6954}
-  {:name "default_diagram", :namespace "love.uml.adapters.viewer", :complexity 11, :coverage 0.0, :crap 132.0}
   {:name "M.spawn_detached", :namespace "love.uml.adapters.posix_process", :complexity 11, :coverage 4.5455, :crap 116.2385}
   {:name "M.start", :namespace "love.uml.adapters.recovery", :complexity 10, :coverage 4.7619, :crap 96.3838}
   {:name "M.new", :namespace "love.uml.adapters.class_boxes", :complexity 90, :coverage 96.4286, :crap 90.369}
@@ -21,9 +20,9 @@
   {:name "parse_args", :namespace "love.uml.adapters.viewer", :complexity 7, :coverage 0.0, :crap 56.0}
   {:name "M.scan", :namespace "love.uml.rust_language.graph_rust", :complexity 55, :coverage 100.0, :crap 55.0}
   {:name "M.parse", :namespace "love.uml.edn", :complexity 53, :coverage 97.3684, :crap 53.0512}
-  {:name "M.run", :namespace "love.uml.adapters.companion_worker", :complexity 47, :coverage 86.7647, :crap 52.1215}
   {:name "place", :namespace "love.uml.engine.layout", :complexity 52, :coverage 100.0, :crap 52.0}
   {:name "paint", :namespace "love.uml.application.overlay", :complexity 48, :coverage 100.0, :crap 48.0}
+  {:name "M.run", :namespace "love.uml.adapters.companion_worker", :complexity 47, :coverage 94.2857, :crap 47.4122}
   {:name "M.route", :namespace "love.uml.engine.route", :complexity 45, :coverage 100.0, :crap 45.0}
   {:name "M.spawn_native", :namespace "love.uml.adapters.posix_process", :complexity 7, :coverage 8.3333, :crap 44.7425}
   {:name "M.for_state", :namespace "love.uml.application.detail", :complexity 44, :coverage 100.0, :crap 44.0}
@@ -112,6 +111,7 @@
   {:name "M.pattern_start", :namespace "love.uml.source", :complexity 13, :coverage 100.0, :crap 13.0}
   {:name "mask", :namespace "love.uml.typescript_language.graph_typescript", :complexity 13, :coverage 100.0, :crap 13.0}
   {:name "read", :namespace "love.uml.adapters.companion_worker", :complexity 3, :coverage 0.0, :crap 12.0}
+  {:name "M.default_diagram", :namespace "love.uml.adapters.session", :complexity 12, :coverage 100.0, :crap 12.0}
   {:name "M.apply_metrics", :namespace "love.uml.application.overlay", :complexity 12, :coverage 100.0, :crap 12.0}
   {:name "M.union", :namespace "love.uml.domain.geom", :complexity 12, :coverage 100.0, :crap 12.0}
   {:name "M.apply_declutter", :namespace "love.uml.domain.hierarchy", :complexity 12, :coverage 100.0, :crap 12.0}
@@ -175,7 +175,7 @@
   {:name "M.accepts", :namespace "love.uml.python_language.graph_python", :complexity 8, :coverage 100.0, :crap 8.0}
   {:name "parse_import", :namespace "love.uml.python_language.graph_python", :complexity 8, :coverage 100.0, :crap 8.0}
   {:name "lib_name", :namespace "love.uml.rust_language.graph_rust", :complexity 8, :coverage 100.0, :crap 8.0}
-  {:name "M.create", :namespace "love.uml.adapters.companion_lifecycle", :complexity 7, :coverage 95.0, :crap 7.0061}
+  {:name "M.create", :namespace "love.uml.adapters.companion_lifecycle", :complexity 7, :coverage 95.2381, :crap 7.0053}
   {:name "M.load", :namespace "love.uml.adapters.fonts", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "M.rename_proposal", :namespace "love.uml.application.events", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "M.touches", :namespace "love.uml.application.highlight", :complexity 7, :coverage 100.0, :crap 7.0}
