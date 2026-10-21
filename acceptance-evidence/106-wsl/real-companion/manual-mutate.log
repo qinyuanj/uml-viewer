@@ -1,0 +1,19 @@
++ (/tmp/uml-114/库存 项目) lua5.4 coverage.lua && lua5.4 coverage.lua report
++++
+3 successes / 0 failures / 0 errors / 0 pending : 0.004128 seconds
+Wrote /tmp/uml-114/库存 项目/.metrics/mutate/app.pricing.edn
+KILLED    app/pricing.lua:4 >= -> >
+KILLED    app/pricing.lua:4 * -> /
+KILLED    app/pricing.lua:5 >= -> >
+KILLED    app/pricing.lua:5 * -> /
+KILLED    app/pricing.lua:8 * -> /
+Function     Namespace    Killed  Survived  Uncovered  Sites   Score
+--------------------------------------------------------------------
+M.total      app.pricing       1         0          0      1 100.0%
+M.unit_price app.pricing       4         0          0      4 100.0%
+--------------------------------------------------------------------
+Total                          5         0          0      5  100.0%
+
+real	0m0.454s
+user	0m0.419s
+sys	0m0.121s

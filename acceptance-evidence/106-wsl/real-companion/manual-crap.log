@@ -1,0 +1,23 @@
++ (/tmp/uml-114/库存 项目) lua5.4 coverage.lua && lua5.4 coverage.lua report
++++
+3 successes / 0 failures / 0 errors / 0 pending : 0.004082 seconds
+CRAP Report
+===========
+Languages: lua
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+M.unit_price                   app.pricing                            3  75.0%      3.1
+M.remove                       app.inventory.store                    3 100.0%      3.0
+M.ship                         app.inventory                          2 100.0%      2.0
+M.add                          app.inventory.store                    2 100.0%      2.0
+M.count                        app.inventory.store                    2 100.0%      2.0
+M.new                          app.inventory                          1 100.0%      1.0
+M.receive                      app.inventory                          1 100.0%      1.0
+M.new                          app.inventory.store                    1 100.0%      1.0
+M.total                        app.pricing                            1 100.0%      1.0
+Wrote /tmp/uml-114/库存 项目/.metrics/crap.edn
+
+real	0m0.244s
+user	0m0.185s
+sys	0m0.050s

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "projectRoot": "/tmp/uml-114/库存 项目",
+  "love": "/usr/bin/love",
+  "herdr": "/home/lzx/.local/bin/herdr",
+  "repositories": {
+    "uml-viewer": {
+      "source": "/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2",
+      "development": true,
+      "commit": "6c1028900c69bd0a8b8f30825ae47b316ce3c210",
+      "dirty": false
+    },
+    "crapper": {
+      "source": "https://github.com/qinyuanj/crapper.git",
+      "ref": "main",
+      "commit": "34977fc621d4d6c932288c61a90f9d548b5b5656"
+    },
+    "mutator": {
+      "source": "https://github.com/qinyuanj/mutator.git",
+      "ref": "main",
+      "commit": "bcbdc422bf836c167509d122d7dbdb4b3a098584"
+    },
+    "dryer": {
+      "source": "https://github.com/qinyuanj/dryer.git",
+      "ref": "main",
+      "commit": "0941c4b92e37f57a24eb0fa1c6f69d00ebd23998"
+    }
+  }
+}

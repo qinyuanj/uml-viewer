@@ -169,7 +169,7 @@ Windows 已记录真实 Claude 异常恢复、namespace JVM 重启与身份连�
 `scripts/test_posix_recovery_e2e.py` 经公共 `./uml` 实测 1/2/4 秒恢复、恢复后
 FIFO、退避期间关闭取消、预算耗尽、正常退出不恢复，以及另一项目与无关 Herdr
 会话不受影响；companion 为占位进程，证据见
-`acceptance-evidence/106-wsl/recovery/`。真实 Claude 的恢复仍归 #114 验收。
+`acceptance-evidence/106-wsl/recovery/`。真实 Claude 的 `--resume` 恢复与恢复后 FIFO 已由 #114 实测（`acceptance-evidence/106-wsl/real-companion/`）。
 macOS 历史验收见 §8，当前不承诺支持（ADR 0007）。
 
 Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace create`

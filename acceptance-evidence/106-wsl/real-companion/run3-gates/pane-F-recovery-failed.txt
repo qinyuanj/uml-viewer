@@ -1,0 +1,48 @@
+'/usr/bin/love-11.5' '/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2/love' 'companion-runner
+' '/tmp/uml-114/库存 项目/.uml-viewer/uml-viewer---------------c594b08c-87fe8b9f-runner.edn.launch.edn'
+
+󰕈 lzx …/库存 项目   master !?   17:43 
+❯ '/usr/bin/love-11.5' '/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2/love' 'companion-runn
+er' '/tmp/uml-114/库存 项目/.uml-viewer/uml-viewer---------------c594b08c-87fe8b9f-runner.edn.launch.edn'
+
+Resume this session with:
+claude --resume 87fe8b9f-bd3e-42df-9aed-71eee0bf75e5
+
+󰕈 lzx …/库存 项目   master !?   18:00   143  󱎫 17m29s
+❯ printf %s '?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h'
+?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h%
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯ '/usr/bin/love-11.5' '/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2/love' 'companion-runn
+er' '/tmp/uml-114/库存 项目/.uml-viewer/uml-viewer---------------c594b08c-87fe8b9f-runner-1.edn.launch.edn'
+Error: Session ID 87fe8b9f-bd3e-42df-9aed-71eee0bf75e5 is already in use.
+
+󰕈 lzx …/库存 项目   master !?   18:00   1
+❯ printf %s '?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h'
+?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h%
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯ '/usr/bin/love-11.5' '/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2/love' 'companion-runn
+er' '/tmp/uml-114/库存 项目/.uml-viewer/uml-viewer---------------c594b08c-87fe8b9f-runner-2.edn.launch.edn'
+Error: Session ID 87fe8b9f-bd3e-42df-9aed-71eee0bf75e5 is already in use.
+
+󰕈 lzx …/库存 项目   master !?   18:00   1
+❯ printf %s '?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h'
+?1003l?1002l?1006l?1000l?1049l?2004l<u<u<u?25h%
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯
+
+󰕈 lzx …/库存 项目   master !?   18:00 
+❯ '/usr/bin/love-11.5' '/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-aeb37263d408991d2/love' 'companion-runn
+er' '/tmp/uml-114/库存 项目/.uml-viewer/uml-viewer---------------c594b08c-87fe8b9f-runner-3.edn.launch.edn'
+Error: Session ID 87fe8b9f-bd3e-42df-9aed-71eee0bf75e5 is already in use.
+
+󰕈 lzx …/库存 项目   master !?   18:00   1
+❯
