@@ -1,4 +1,4 @@
-# 0007 停止 Windows 原生支持：WSL 与 macOS Apple Silicon 作为交付平台
+# 0007 停止 Windows 原生支持：WSL 作为唯一交付平台
 
 **Status**: accepted
 
@@ -8,13 +8,13 @@
 
 ## 决定
 
-交付平台为 **WSL2 + Ubuntu 24.04 LTS + WSLg**，随后 **macOS Apple Silicon**。
-不支持 Windows 原生运行，不支持 Intel Mac，也不单独交付或验收普通 Linux 发行版；
-Linux 执行路径由 WSL 承担验证。
+唯一交付平台为 **WSL2 + Ubuntu 24.04 LTS + WSLg**。不支持 Windows 原生运行，
+也不单独交付或验收普通 Linux 发行版；Linux 执行路径由 WSL 承担验证。
+macOS（Apple Silicon 与 Intel）当前不承诺：2026-10-21 维护者收窄 #106 范围，
+原 macOS 子票 #115–#119 以 not planned 关闭，恢复时从这些票重开并另行决策。
 
 理由：Windows 原生实现把进程管理、路径、文件锁与安装入口绑在 Win32 与 PowerShell 上，
-维护成本集中在平台差异而不是产品能力；开发与运行统一到 WSL 后，同一套 POSIX 适配层
-同时服务 WSL 与 macOS。LOVE 11.5 / LuaJIT、cimgui-love 1.90-1、Herdr 与三个
+维护成本集中在平台差异而不是产品能力；开发与运行统一到 WSL 后，只需维护一套 POSIX 适配层。LOVE 11.5 / LuaJIT、cimgui-love 1.90-1、Herdr 与三个
 Python 质量工具都可复用，不需要重写核心。
 
 ## 平台边界
@@ -33,7 +33,7 @@ POSIX 实现，facade 直接转发，不再按宿主分支：
 | 终端 attach | `adapters/companion_lifecycle` | 只报告 `herdr session attach` 命令 | Windows Terminal 标签 |
 
 调用方（domain/application）不感知平台。进程创建身份对调用方是**不透明文本**，
-只做精确相等比较：POSIX 用 `/proc/<pid>/stat` 的 starttime，macOS 用 `ps -o lstart=`。
+只做精确相等比较：POSIX 用 `/proc/<pid>/stat` 的 starttime。
 禁止引入时间窗口容差，也禁止把已退役平台的表示带进 POSIX 契约。
 
 ## POSIX 进程契约
@@ -57,7 +57,7 @@ POSIX 实现，facade 直接转发，不再按宿主分支：
 
 - 既有 Windows 专用测试断言改为**声明平台**的 fixture，而不是依据宿主系统推断；
   行为契约不变时保留，被新平台取代时删除。
-- 历史上 JVM 时代的 macOS 验收不作为当前证据。Apple Silicon 验收在真实硬件上执行前
-  一律标为**待验收**，不得以编译通过或上游包存在代替。
+- 历史上 JVM 时代的 macOS 验收不作为当前证据。macOS 不写"待验收"，而是明确
+  **当前不承诺**；源码中已无交付目标的 Darwin 专用分支随 #114 退役。
 - Windows 本地仓库、安装副本与专用环境的最终清理需逐项清单与单独确认，
   不属于本 ADR 的自动结果。

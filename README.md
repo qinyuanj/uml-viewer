@@ -37,9 +37,8 @@ A [LOVE 11.5](https://love2d.org/) app using
 draws UML from an EDN IR. A **policy** plus a language-specific scanner
 writes the topology; this tool displays it, routes the arrows, colors CRAP,
 and lets you click. The JVM implementation and Clojure scanning were removed
-in the LOVE cutover. Supported platforms are **WSL2 + Ubuntu 24.04 + WSLg**
-and **macOS Apple Silicon**; native Windows and Intel Mac are unsupported
-(ADR 0007).
+in the LOVE cutover. The supported platform is **WSL2 + Ubuntu 24.04 + WSLg**;
+native Windows is unsupported and macOS is not committed (ADR 0007).
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
 (CC, coverage, CRAP, killed/survived/uncovered) come from `.metrics/`
@@ -105,8 +104,7 @@ and extracts only that face into `.uml-viewer/fonts/`; any failure exits
 non-zero. Upstream ships the release only as 7z, so extraction uses `py7zr` in
 `.uml-viewer/installer/.venv` (created on first use) — no system 7z package is
 needed. The viewer's font lookup is an explicit path, then `UML_CJK_FONT`, then
-that provisioned Sarasa, then a system CJK font (Noto CJK on Ubuntu, PingFang
-on macOS) with a one-time stderr warning naming `get-uml-viewer`.
+that provisioned Sarasa, then a system CJK font (Noto CJK on Ubuntu) with a one-time stderr warning naming `get-uml-viewer`.
 Install Herdr >= 0.9.3 from
 https://github.com/herdrdev/herdr/releases. The installer preserves existing
 policies and proposals and does not create a policy or generate a diagram
@@ -135,8 +133,8 @@ one-line stderr warning with both short SHAs and never blocks the launch.
 `UML_LOVE_EXECUTABLE` selects the LOVE binary; the Herdr backend preflight
 reads one line from its stdout. The viewer launcher starts the LOVE process
 with individual arguments and writes its output to `.uml-viewer/viewer.log`.
-Fresh startup uses **Herdr as the sole companion backend** on WSL/Linux and
-macOS Apple Silicon. Historical Windows and macOS evidence remains historical.
+Fresh startup uses **Herdr as the sole companion backend** on WSL.
+Historical Windows and macOS evidence remains historical.
 `--backend herdr` remains accepted; `--backend tmux` and `--backend psmux` are
 rejected before creating resources. Restart, wake and
 close require explicit Herdr ownership and verify its recorded identities.
@@ -747,16 +745,14 @@ accepted: it requires the tool contract or an explicit project operation
 declaration. Direct tool commands publish no wrapper result record.
 Noninteractive wrapper and application tests establish these boundaries; the
 real-tool right-click/FIFO/display path is recorded in
-[acceptance-evidence/106-wsl](acceptance-evidence/106-wsl/README.md). macOS
-Apple Silicon awaits real-machine acceptance.
+[acceptance-evidence/106-wsl](acceptance-evidence/106-wsl/README.md).
 
 Same-diagram display keeps focus, pan, zoom, proposal/open layer, declutter,
 and valid selection/detail cards. A missing focus falls back to the nearest
 remaining namespace ancestor; a missing layer returns to proposal root; a
 missing proposal returns to the namespace tree. Missing selection/card targets
 are cleared. Display preserves discussion context until another `:context`
-arrives. Automated application specs cover this refresh contract; native macOS
-acceptance has not been run.
+arrives. Automated application specs cover this refresh contract.
 
 Clicking **Real diagram** or a proposal (including **New Proposal**) writes
 `:context` and wakes Claude. Stay on that architecture until the next

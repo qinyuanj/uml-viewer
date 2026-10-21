@@ -1,7 +1,7 @@
 # Herdr SessionBackend 契约 — spec #13 / issue #14 产出
 
 本文档记录 Herdr 的能力证据和生命周期契约。**平台以 ADR 0007 为准：交付目标为
-WSL2 + Ubuntu 24.04 + WSLg 与 macOS Apple Silicon；Windows 原生与 Intel Mac 不受支持。**
+WSL2 + Ubuntu 24.04 + WSLg；Windows 原生不受支持，macOS 当前不承诺。**
 文中 Java/JVM 与旧 Windows/macOS 验收记录是历史证据，不代表当前实现。当前实现是
 `love/uml/adapters/` 的 LOVE runner/controller，进程创建、等待、身份与 OS 单例 lock
 由 POSIX adapter 提供（平台能力表见 ADR 0007；Windows 专用实现在 spec #106 退役），ownership、
@@ -10,8 +10,8 @@ Herdr 是唯一 companion 后端；`--backend herdr` 保留为兼容选项。
 
 WSL 原生证据：Herdr 0.9.5 / protocol 22 下的完整生命周期（preflight、隔离 server、
 workspace/pane、runner、恢复注册、验证清理）与公共入口端到端流程；
-见 `acceptance-evidence/106-wsl/`。macOS 端到端验收仍是 spec #32 的 Herdr 0.9.4
-历史记录（见 §8），Apple Silicon 当前实现**待实机验收**。能力实验与端到端验收
+见 `acceptance-evidence/106-wsl/`。macOS 端到端验收是 spec #32 的 Herdr 0.9.4
+历史记录（见 §8），不构成当前支持。能力实验与端到端验收
 分开记录；未验证项不按官网声明或命令退出码 0 推断。旧 ownership 迁移见 §9。
 
 证据来源：
@@ -31,20 +31,20 @@ checkpoint。**
 - wrapper 与 JVM 共用只读预检，创建 detached Viewer、终端或 companion 前执行
   `herdr --version`（必须为纯数字 `herdr X.Y.Z` 且 >= 0.9.3；预发布或带后缀
   版本拒绝）及 `herdr api schema --json`
-  （bundled schema 的顶层 `protocol` 必须为 22），且平台为 macOS 或 Windows。
+  （bundled schema 的顶层 `protocol` 必须为 22），且平台为 WSL/Linux。
   PATH 上每个 `herdr` 都逐一核对，选出 selected Herdr（兼容者中版本最高，
   同版本取 PATH 靠前者），本次启动的所有 Herdr 调用都用其绝对路径
   （见 [ADR 0004](adr/0004-herdr-executable-selection.md)）。
   schema 是随 CLI 分发的本地数据；预检禁止为了协议核对创建 server。
   #17 创建已拥有的 server 后还须核对实际 endpoint 兼容性。
 - 官方来源：[Herdr releases](https://github.com/herdrdev/herdr/releases)
-  与 https://herdr.dev；macOS 可使用 Homebrew `herdr`，但安装后仍必须核对版本。
+  与 https://herdr.dev；安装后仍必须核对版本。
   低于 0.9.3、缺失依赖或协议不为 22（包括更高协议）均失败，给出安装指引；
   不自动下载、升级或静默回退；无兼容候选时列出每个候选的路径与拒绝原因。
 - fresh 默认 Herdr；`--backend herdr` 兼容，tmux/psmux 明确拒绝。
   restart、wake、close 必须具有显式 `:backend :herdr` ownership，身份核实后
   才操作；legacy、无 backend、未知或不完整记录保留并拒绝接管。
-  WSL/Linux 与 macOS 均可启动；Windows 原生在创建资源前拒绝（ADR 0007），
+  WSL/Linux 可启动；Windows 原生在创建资源前拒绝（ADR 0007），
   旧 tmux 路径已退役。
   Herdr 创建项目独占的命名 server；预检本身仍不创建任何资源。
 
@@ -75,8 +75,8 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
   snapshot 中存在该 workspace/pane、`pane process-info` 的 shell_pid 与
   cwd 匹配、owner-start 一致。任一不符或含糊：失败并给诊断，不创建
   替代会话、不关闭猜测目标。
-- POSIX owner-start 取 `/proc/<pid>/stat` 的 starttime（Linux/WSL）；macOS
-  用 `ps -o lstart=`。Windows 的进程创建时间方案随原生支持退役。
+- POSIX owner-start 取 `/proc/<pid>/stat` 的 starttime（Linux/WSL）。
+  Windows 的进程创建时间方案随原生支持退役。
 - session 名必须让 socket 路径落在实测上限内：Herdr 0.9.5 下 101 字节可用，
   102 字节起 `workspace create` 失败并只报 closed-channel。生成长度按
   `XDG_CONFIG_HOME` 实算，装不下时以真实原因拒绝（ADR 0007）。
@@ -114,9 +114,9 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
   原生 Windows 支持一并退役（ADR 0007）。
 - 退出码不由 Herdr 上报，桥接器负责显式捕获（`echo EXIT=$?` 模式或
   runner 写状态文件）。已验证 exit 37/0 均可捕获。
-- 终端可见 attach：macOS 有原生 TUI（`herdr session attach <name>`；
-  已人工确认 TUI 打开、中文渲染、`Ctrl+B q` detach；输入回显尚未人工确认，
-  且 detach 后 pane 与会话存活；无 TTY 时干净失败 exit 1）。
+- 终端可见 attach：`herdr session attach <name>` 打开原生 TUI；历史 macOS 证据
+  （JVM 时代）已人工确认 TUI 打开、中文渲染、`Ctrl+B q` detach；输入回显尚未人工确认，
+  且 detach 后 pane 与会话存活；无 TTY 时干净失败 exit 1。
   历史上 Windows 直连终端 attach 不支持，adapter 曾用 Windows Terminal 打开
   完整客户端；该分支随原生 Windows 支持退役（ADR 0007），本契约不再覆盖。
 - companion 的 EDN 邮箱联动不依赖 TUI：socket/CLI 控制与面板输入在
@@ -301,5 +301,5 @@ LOVE viewer（本轮仅 Windows 原生）通过 FFI 调用 `GetCurrentProcessId`
   `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
   独立 discussion context、视图（focus/proposal/layer/declutter/camera/
   zoom/selection/detail）与 mailbox cursor，语义与 JVM 实现一致。
-- 跨运行时拒绝规则与身份文件写入由自动化测试覆盖；本轮不包含 macOS
-  LOVE 身份与重启验收。
+- 跨运行时拒绝规则与身份文件写入由自动化测试覆盖；macOS 当前不承诺，
+  不做 LOVE 身份与重启验收。

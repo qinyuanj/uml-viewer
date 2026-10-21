@@ -66,8 +66,8 @@ The diagram is already on screen.
   times (1, 2, 4 seconds) through the durable controller; normal or unknown
   exits stop recovery. Other Claude sessions stay up.
 - Herdr is the sole companion backend on every supported platform.
-  Delivery targets are **WSL2 + Ubuntu 24.04 + WSLg** and **macOS Apple
-  Silicon**; Windows native and Intel Mac are unsupported (ADR 0007).
+  The delivery target is **WSL2 + Ubuntu 24.04 + WSLg**; Windows native is
+  unsupported and macOS is not committed (ADR 0007).
   Legacy tmux/psmux or unmarked ownership is retained and refused; before
   migration read `docs/herdr-backend-contract.md` §9.
 - Installer prerequisites are LOVE 11.5, Lua (5.1/5.4) with lfs and

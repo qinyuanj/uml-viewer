@@ -1,17 +1,16 @@
 # Platform acceptance — issue #5 / spec #1
 
 Herdr is the sole companion backend **on every supported platform** (ADR 0007).
-Delivery targets are WSL2 + Ubuntu 24.04 + WSLg and macOS Apple Silicon; native
-Windows and Intel Mac are unsupported.
+The delivery target is WSL2 + Ubuntu 24.04 + WSLg; native Windows is unsupported
+and macOS is not committed.
 
 Current status:
 
 - **WSL/Linux**: the full lifecycle runs natively and is recorded in
   [acceptance-evidence/106-wsl/](../acceptance-evidence/106-wsl/README.md)
   (Herdr 0.9.5 / protocol 22, LOVE 11.5, Lua 5.1/5.4/LuaJIT, Python 3.12).
-- **macOS Apple Silicon**: the implementation reuses the same POSIX adapters,
-  but **no real-machine acceptance has been run**. Compilation, unit tests and
-  the existence of upstream binaries are not acceptance.
+- **macOS**: not committed (spec #106 scope, 2026-10-21). No current
+  acceptance exists; the JVM-era records below are historical only.
 - **Windows native**: historical only. The records below describe earlier
   backends and are not evidence for the current implementation.
 
