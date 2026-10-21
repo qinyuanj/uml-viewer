@@ -208,6 +208,10 @@ Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace cr
 
 ## 7. Viewer 重启连续性
 
+当前实现：LOVE viewer 由 POSIX wrapper 按 §9.1 的 `/proc` 身份核实并等待旧进程
+退出后重启，companion 与 ownership 保持不变（ADR 0002，WSL 证据见
+`acceptance-evidence/106-wsl/`）。以下 JVM 措辞是该流程的历史记录，语义不变。
+
 - `:quit-for-restart` 流程不变：保存图路径、讨论 context、视图与 mailbox
   cursor → JVM 退出 → public wrapper 核实 launcher/JVM 记录并等待旧 JVM
   退出后启动新 JVM。
@@ -223,7 +227,11 @@ Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace cr
   macOS 端到端连续性已由 spec #32 #39 原生验证（三次重启循环，companion
   身份连续、视图状态与邮箱游标恢复）。
 
-## 8. 原生验收边界
+## 8. 原生验收边界（历史）
+
+本节是 Windows 原生与 JVM 时代 macOS 的历史验收记录，不代表当前支持。当前
+交付平台为 WSL2 + WSLg（ADR 0007），WSL 上的 companion 正是交付路径；下文
+"Linux/WSL companion 不受支持"一句只描述当时的状态。macOS 当前不承诺。
 
 Windows #21 已部分验收收尾；未验证的七项转由 [#30](https://github.com/qinyuanj/uml-viewer/issues/30) 跟踪：命名 proposal
 恢复、f5ceb0b detail 窗口复验、恢复预算耗尽、正常退出不恢复、待重试关闭取消、
@@ -280,7 +288,7 @@ Herdr 是唯一后端；tmux/psmux adapter、pane 恢复 hook 和旧终端桥接
 1. 用旧版本正常结束该项目的旧 Viewer/session；确认该项目的 legacy 资源已退出。
 2. 归档该项目的 `.uml-viewer/companion.edn`。保留 `session.edn`、policy/proposal
    和两个 mailbox 队列；不要把旧记录改标为 Herdr。
-3. 在原生 Windows/macOS 安装 Herdr >= 0.9.3（protocol 22），并通过 `./uml` fresh 创建新 companion。
+3. 在 WSL2 中安装原生 Linux Herdr >= 0.9.3（protocol 22），并通过 `./uml` fresh 创建新 companion。
    `--restart` 用于复用已验证的 Herdr 身份，不用于跨后端迁移。
 
 新版本不会自动清理活动 legacy 资源，也不会影响其他项目或共享 Herdr 服务。
@@ -288,29 +296,27 @@ Herdr 是唯一后端；tmux/psmux adapter、pane 恢复 hook 和旧终端桥接
 
 ### 9.1 运行时身份文件与跨运行时 `--restart`
 
-LOVE viewer（本轮仅 Windows 原生）通过 FFI 调用 `GetCurrentProcessId` /
-`GetProcessTimes`，在启动成功后写入
+LOVE viewer 经 POSIX 进程 adapter 读取自身 PID 与 `/proc/<pid>/stat` 的
+starttime（第 22 字段），在启动成功后写入
 `.uml-viewer/viewer-process-identity.json`：
 
 ```json
-{"pid":1234,"started":"134367718466930538","runtime":"love","cwd":"C:/project"}
+{"pid":1234,"started":"5381724","runtime":"love","cwd":"/home/user/project"}
 ```
 
-- `started` 是 1601 UTC 起算的 FILETIME 100ns ticks，按完整无符号 64 位十进制
-  字符串保存，避免 Lua number 精度损失；wrapper 与 .NET
-  `Process.StartTime.ToUniversalTime().Ticks`（0001 起算）逐 tick 精确比较，
-  不设毫秒截断或时间窗容差。进程名校验接受 `love` / `lovec`。
+- `started` 是不透明十进制文本，restart wrapper（`scripts/uml_launch.py`）只做
+  精确相等比较，不解释、不设时间窗容差（ADR 0007）。Windows FILETIME 表示随
+  spec #106 退役，不再写出或接受。
 - #72 切换后 JVM 实现已删除：wrapper **不再识别**
   `.uml-viewer/viewer-jvm.json`，`./uml --restart` 只验证 LOVE 记录。
-- 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 增加
-  `runtime` 字段（只允许 `love`），作为当前会话的权威来源。声明 `jvm` 的
+- 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 带
+  `runtime` 字段（只允许 `love`），作为当前会话的权威来源。声明其他运行时的
   旧记录被明确拒绝，不以 LOVE 记录猜测替代。
-- 记录缺失、PID/启动时间不符、进程名不符或身份文件无效同样拒绝；已有身份
-  文件保持原字节，不删除、不改写、不以新进程替代。`--runtime jvm` 被拒绝；
-  `--runtime love` 仅作为兼容写法保留。
+- 记录缺失、PID/starttime 不符或身份文件无效同样拒绝；已有身份文件保持原字节，
+  不删除、不改写、不以新进程替代。
 - 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。LOVE 的
   `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
   独立 discussion context、视图（focus/proposal/layer/declutter/camera/
-  zoom/selection/detail）与 mailbox cursor，语义与 JVM 实现一致。
-- 跨运行时拒绝规则与身份文件写入由自动化测试覆盖；macOS 当前不承诺，
-  不做 LOVE 身份与重启验收。
+  zoom/selection/detail）与 mailbox cursor（ADR 0002）。
+- 拒绝规则由 `scripts/test_posix_restart_entries.py` 覆盖，WSL 端到端由
+  `scripts/test_posix_restart_e2e.py` 实测；macOS 当前不承诺。
