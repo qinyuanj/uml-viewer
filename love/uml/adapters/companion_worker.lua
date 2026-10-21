@@ -129,8 +129,11 @@ function M.run(request_path,services)
       commands()
       if not stop and #pending>0 then
         local id=table.remove(pending,1)
-        local delivered,reason=pcall(B.wake,record.pane,{'-l','Mailbox mail '..tostring(id)},{
-          token='mail-'..tostring(id),timeout_ms=5000,
+        -- Herdr's wake contract requires the literal prompt to carry the
+        -- delivery's unique token.
+        local token='mail-'..tostring(id)
+        local delivered,reason=pcall(B.wake,record.pane,{'-l','Mailbox '..token},{
+          token=token,timeout_ms=5000,
           acknowledged=function()
             for _,queued in ipairs(G.get(mailbox.read(),'queue') or {}) do
               if G.get(queued,'id')==id then return false end

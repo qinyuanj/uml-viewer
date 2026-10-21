@@ -107,6 +107,33 @@ describe('isolated companion lifecycle',function()
     assert.equal('failed',events[#events].phase)
     assert.matches('Another companion helper',events[#events].message)
   end)
+  it('delivers right-click mail to the companion under the Herdr wake contract',function()
+    -- The backend applies the real wake contract: the literal prompt must carry
+    -- the delivery's unique token, or Herdr refuses before prompting Claude.
+    local H=require('uml.domain.herdr')
+    local files={request={token='generation',root='project',base='missing-directory/journal',viewer={pid=1,start='original'}},
+      ['missing-directory/journal.command-1.edn']={token='generation',operation='wake',extra={id=7}}}
+    local events,prompted={},{}
+    local backend={wake=function(pane,keys,opts)
+      H.wake_arguments(opts.token,opts.acknowledged,keys)
+      prompted[#prompted+1]={pane=pane,text=keys[2]}
+      return {status='acknowledged',token=opts.token}
+    end}
+    local lifecycle={create=function() return {session='owned',pane='w1:p1'},backend end,shutdown=function() end}
+    local services={
+      canonical=function(path) return path end,
+      read=function(path) return files[path] end,
+      write=function(path,event) events[#events+1]=event; files[path]=event end,
+      process={owner_native=function() return {pid=1,start='original'} end},
+      lifecycle=lifecycle,
+      clock={sleep=function() files['missing-directory/journal.command-2.edn']={token='generation',operation='stop',extra={keep=false}} end},
+      lock={try_acquire=function() return true end,release=function() end}}
+    assert.equal(0,W.run('request',services))
+    assert.equal(1,#prompted); assert.equal('w1:p1',prompted[1].pane)
+    for _,event in ipairs(events) do
+      assert.is_falsy(event.message and event.message:find('wake failed',1,true))
+    end
+  end)
   local function poll_fixture(events,observed)
     local worker={base='journal',token='generation',owner={pid=2,start='original'},seen=0,phase='starting'}
     local services={
