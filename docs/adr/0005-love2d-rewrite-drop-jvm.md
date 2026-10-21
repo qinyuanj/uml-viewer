@@ -22,5 +22,6 @@ LOVE/cimgui-love、LuaJIT 与 Lua 5.4 双解释器验证纯逻辑）继续有效
 ## Consequences
 
 - mutator 用原生 Lua 5.4 加载 busted，而 love 跑 LuaJIT（Lua 5.1 语义）。纯逻辑模块只用两者的公共子集，CI 在两种解释器下都跑 busted。只有 cimgui / FFI 适配层依赖 LuaJIT；适配层没有质量数据时按规则显示红色，不用 `:omit` 隐藏。
+- **修订（2026-10-21，spec #106）**：Lua 5.4 是质量工具的分析契约——被分析的 Lua 源码一律按 5.4 理解，crapper 只接受 `lua5.4` 或版本确为 5.4 的 `lua`；安装器预检同步到此要求，不再接受 5.1。LuaJIT 不是可选替代，它是 LOVE 运行时本身。覆盖率的 `cluacov` 版本由 crapper 定义（见 crapper ADR 0001，锁定 1.0.0），安装器只转述该要求。已有快照在首次带 cluacov 刷新时覆盖率口径变化一次，不做迁移。
 - love 没有进程身份 API，PID 和启动时间通过 FFI 获取，写入 `viewer-process-identity.json`。并存期 wrapper 同时识别它和 `viewer-jvm.json`。
 - 现有 Clojure 用户升级后将无法使用；需要 Clojure 支持的用户只能自行固定旧提交。

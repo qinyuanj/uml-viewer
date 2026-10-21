@@ -54,7 +54,8 @@ terminal.
 
 ## Run
 
-Needs LOVE 11.5, Lua 5.1/5.4 with `lfs` and `luacov`, git, Herdr >= 0.9.3,
+Needs LOVE 11.5, Lua 5.4 with `lfs`, `luacov` and `cluacov` 1.0.0
+(the quality tools analyze source as Lua 5.4), git, Herdr >= 0.9.3,
 and Python 3.11+. The installer provisions the pinned cimgui-love 1.90-1
 bindings for the host architecture. There is no Java, Clojure or PowerShell
 dependency.

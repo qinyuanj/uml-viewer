@@ -70,8 +70,10 @@ The diagram is already on screen.
   unsupported and macOS is not committed (ADR 0007).
   Legacy tmux/psmux or unmarked ownership is retained and refused; before
   migration read `docs/herdr-backend-contract.md` §9.
-- Installer prerequisites are LOVE 11.5, Lua (5.1/5.4) with lfs and
-  luacov, git, Herdr >= 0.9.3, and Python 3.11+. There is no PowerShell
+- Installer prerequisites are LOVE 11.5, Lua 5.4 with lfs, luacov and
+  cluacov 1.0.0, git, Herdr >= 0.9.3, and Python 3.11+. Quality tools
+  analyze Lua source as Lua 5.4 while LOVE runs LuaJIT, so pure logic
+  modules must work on both; only FFI adapters require LuaJIT. There is no PowerShell
   or Windows-native path (ADR 0007). `get-uml-viewer` provisions pinned
   cimgui-love 1.90-1 bindings and the shared library automatically into
   `.uml-viewer/`.

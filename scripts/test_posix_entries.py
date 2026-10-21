@@ -569,6 +569,21 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('lfs', result.stderr)
         self.assertIn('luacov', result.stderr)
+        self.assertIn('cluacov 1.0.0', result.stderr)
+        self.assertFalse((self.root / '.uml-viewer').exists())
+
+    def test_installer_rejects_a_lua_without_the_pinned_cluacov(self):
+        entry = str(REPO / 'scripts/get-uml-viewer')
+        fake = self.root.parent / 'lua-without-cluacov'
+        fake.write_text('#!/bin/sh\n'
+                        'case "$*" in *cluacov*) echo "Lua 5.4 "; exit 1;; esac\n'
+                        'exit 0\n', encoding='utf-8')
+        fake.chmod(0o755)
+        env = dict(self.env, UML_LUA_EXECUTABLE=str(fake))
+        result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('cluacov 1.0.0', result.stderr)
+        self.assertIn('Lua 5.4', result.stderr)
         self.assertFalse((self.root / '.uml-viewer').exists())
 
 if __name__ == '__main__':

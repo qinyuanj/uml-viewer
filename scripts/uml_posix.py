@@ -50,15 +50,30 @@ def love_command():
     return executable
 
 
+# Quality tools analyze source as Lua 5.4 and require the pinned cluacov that
+# LuaCov loads, so the preflight rejects any other interpreter or cluacov.
+LUA_PROBE = ('pcall(require, "luarocks.loader"); require("lfs"); require("luacov"); '
+             'local ok, v = pcall(require, "cluacov.version"); '
+             'if not ok then v = "" end; '
+             'io.write(_VERSION .. " " .. tostring(v)); '
+             'if _VERSION ~= "Lua 5.4" or v ~= "1.0.0" then os.exit(1) end')
+
+
 def lua_command():
     requested = os.environ.get('UML_LUA_EXECUTABLE')
-    for name in ([requested] if requested else ['lua5.4', 'lua5.1', 'lua']):
+    found = []
+    for name in ([requested] if requested else ['lua5.4', 'lua']):
         executable = shutil.which(name)
-        if executable and run([executable, '-e', 'pcall(require, "luarocks.loader"); require("lfs"); require("luacov")'],
-                              capture_output=True, text=True, check=False).returncode == 0:
+        if not executable:
+            continue
+        result = run([executable, '-e', LUA_PROBE], capture_output=True, text=True, check=False)
+        if result.returncode == 0:
             return executable
-    raise ValueError('需要 Lua 5.1/5.4 及 lfs、luacov：sudo apt install lua5.4 lua-filesystem lua-luacov，'
-                     '或设置 UML_LUA_EXECUTABLE。')
+        found.append(f'{executable}: {(result.stdout or result.stderr).strip() or "exit " + str(result.returncode)}')
+    raise ValueError('需要 Lua 5.4 及 lfs、luacov、cluacov 1.0.0（质量工具按 Lua 5.4 分析源码）：'
+                     'sudo apt install lua5.4 lua-filesystem lua-luacov && '
+                     'luarocks --local --lua-version=5.4 install cluacov 1.0.0-1，或设置 UML_LUA_EXECUTABLE。'
+                     + ('实际：' + '；'.join(found) if found else ''))
 
 
 def select_herdr():
