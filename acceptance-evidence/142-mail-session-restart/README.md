@@ -40,12 +40,19 @@ LOVE 侧证据：`love-session/` 含 `session.edn`（真实字节）、生成它
 
 `UML_RUNTIME=rust` 让现有四个测试套件走 Rust runtime，断言未改动：
 
-| 套件 | 结果 | 时间 |
+| 套件 | 结果 | 时间与备注 |
 |---|---|---|
-| `test_posix_restart_entries.py` | （见下表） | |
-| `test_posix_restart_e2e.py` | | |
-| `test_posix_e2e.py` | | |
-| `test_posix_recovery_e2e.py` | | |
+| `test_posix_restart_entries.py` | PASS（5 tests OK） | 2026-10-22 20:54，合并后首次运行 |
+| `test_posix_restart_e2e.py` | PASS | 21:03，在 runner 重提交修复后运行一次 |
+| `test_posix_e2e.py` | PASS（launch / companion / scenes / FIFO / exit / cleanup） | 20:58 |
+| `test_posix_recovery_e2e.py` | PASS（neighbour、cancel、unknown 三个场景） | 21:05，在 runner 修复与 Mesa 噪声过滤后运行一次 |
+
+首次运行曾有两处失败，原因与修复：
+
+- `test_posix_restart_e2e` / `test_posix_recovery_e2e` 的 cancel 场景等待 companion ready 超时。Herdr 0.9.5 会在 pane 已输出后仍静默丢弃第一次 `pane run`（返回 0），runner 因此没有写状态。修复：提交后 10 s 内未见 runner 状态即重提交，最多 3 次；runner 有 generation lock，重复提交只会干净退出（`crates/companion/src/herdr.rs`）。
+- cancel 场景的日志检查把 Mesa 的 `libEGL warning … failed …` 当成“邮件被拒”。修复：只忽略以 `libEGL warning` / `MESA-LOADER` 开头的行，其余断言不变。
+
+断言口径未放宽：`restart_e2e` 仍在断言旧 viewer 退出、session 保存、companion 保留、新进程替换、最终清理；`recovery_e2e` 仍断言 1 s 预算内恢复、未知退出不重试、旁观会话不受影响。
 
 ## 4. 需人工验证（未观察）
 
@@ -53,7 +60,7 @@ LOVE 侧证据：`love-session/` 含 `session.edn`（真实字节）、生成它
 - 真实窗口关闭按钮关闭 viewer 后的 companion 清理（driver/e2e 用测试时长与 SIGTERM）。
 - 系统剪贴板：driver 只断言 viewer 交给平台的文本。
 - WSLg 输入法组字输入（#140 已列，本 ticket 不涉及输入法）。
-- 修改后的 inspector fixture 下 LOVE `--runtime love` 的 inspector driver（见 §5）。
+- 修改后的 inspector fixture 下 LOVE `--runtime love` 的 inspector driver：已复检通过（`run_viewer_driver.py inspector --runtime love`，exit 0）。
 
 ## 5. 已知边界
 
