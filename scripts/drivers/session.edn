@@ -1,7 +1,7 @@
 {:version 1
- :doc "session driver 第一阶段（#142，原 test_love_dpi_window.lua 的 first 阶段）：把检查器
+ :doc "session driver 第一阶段（#142，原 Lua driver 的 first 阶段）：把检查器
        侧栏拖到 340，选中并双击打开类卡片，缩放与移动视图（不 fit），再发
-       :quit-for-restart；viewer 必须把 session.edn 写到 .uml-viewer/，与 LOVE 的 schema
+       :quit-for-restart；viewer 必须把 session.edn 写到 .uml-viewer/，与既有 session schema
        相同。dump-session 在退出前记录本 viewer 自己会保存的快照。"
  :steps [{:op :wait-frames :n 3}
          {:op :gui-point :xy [1220 400]}

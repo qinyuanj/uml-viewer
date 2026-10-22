@@ -115,8 +115,7 @@ fn current_exe() -> Result<String> {
         .map_err(|error| Failure::new(format!("cannot resolve the uml-viewer binary: {error}")))
 }
 
-/// The role argv for this binary: `[exe, role, manifest]`. The same shape the
-/// LOVE runtime used (`love <game> <role> <manifest>`), minus the game dir.
+/// The role argv for this binary: `[exe, role, manifest]`.
 fn role_launcher(role: &str) -> Result<Vec<String>> {
     Ok(vec![current_exe()?, role.to_owned()])
 }

@@ -1,4 +1,4 @@
-"""公共 POSIX 入口验收；使用真实 LOVE 和隔离源码，不启动 companion。"""
+"""公共 POSIX 入口验收；使用真实 Rust 二进制和隔离源码，不启动 companion。"""
 import json
 import os
 from pathlib import Path
@@ -110,8 +110,10 @@ class PosixEntries(unittest.TestCase):
                 output = self.root / 'golden-result.edn'
                 result = self.entry('ir', '--root', str(REPO / fixture), '--policy', 'policy.edn', '--output', str(output))
                 self.assertEqual(0, result.returncode, result.stderr)
-                comparison = subprocess.run(['lua', str(REPO / 'scripts/compare_ir.lua'), str(output), str(REPO / golden)],
-                                            cwd=REPO, capture_output=True, text=True)
+                comparison = subprocess.run(
+                    [sys.executable, '-I', str(REPO / 'scripts/compare_ir.py'), str(output),
+                     str(REPO / golden)],
+                    cwd=REPO, capture_output=True, text=True)
                 self.assertEqual(0, comparison.returncode, comparison.stdout + comparison.stderr)
 
     def test_default_policy_selection(self):
@@ -215,7 +217,9 @@ class PosixEntries(unittest.TestCase):
                                 '-I', '-m', 'pip', 'check'], capture_output=True, text=True)
         self.assertEqual(0, check.returncode, check.stdout + check.stderr)
         installed = json.loads((self.root / '.uml-viewer/install.json').read_text())
-        self.assertEqual('love', 'love' if installed['love'] else 'missing')
+        # #144: the installer no longer provisions or records LOVE/cimgui.
+        self.assertNotIn('love', installed)
+        self.assertNotIn('cimgui', str(installed))
         self.assertEqual(str(binary), installed['rust'])
         self.assertTrue(all(installed['repositories'][name]['commit'] for name in
                             ('uml-viewer', 'crapper', 'mutator', 'dryer')))
@@ -474,43 +478,32 @@ class PosixEntries(unittest.TestCase):
         self.assertIn('Clojure alias 已移除', result.stderr)
         self.assertFalse((self.root / '.uml-viewer/quality-result.json').exists())
 
-    def test_unknown_runtime_values_are_refused_with_the_accepted_ones(self):
-        # #135: --runtime accepts love or rust while both coexist; anything
-        # else (including the removed jvm) is refused before any dispatch.
+    def test_love_and_unknown_runtime_values_are_refused(self):
+        # #144: Rust is the only implementation. `love` is refused the same
+        # way `jvm` was: nothing is dispatched and the message names rust.
         for args in (('--runtime',), ('--runtime', 'invalid'), ('--runtime', 'jvm'),
-                     ('--runtime', 'love', '--runtime', 'rust'), ('--runtime', 'rust', 'ir', '--runtime', 'x')):
+                     ('--runtime', 'love'), ('--runtime', 'love', 'ir'),
+                     ('--runtime', 'rust', 'ir', '--runtime', 'x')):
             with self.subTest(args=args):
                 result = self.entry(*args)
                 self.assertEqual(1, result.returncode, result.stdout + result.stderr)
                 self.assertIn('--runtime', result.stderr)
-                self.assertIn('love', result.stderr)
                 self.assertIn('rust', result.stderr)
+                self.assertIn('已移除', result.stderr)
                 self.assertIsNone(self.launcher_record())
 
-    def rust_stub(self):
-        """A stand-in Rust binary: records argv, answers the preflight."""
-        stub = self.root / 'rust stub'
-        record = self.root / 'rust-argv.txt'
-        stub.write_text(
-            '#!/bin/sh\n'
-            'if [ "$1" = companion-preflight ]; then printf "herdr\\n"; exit 0; fi\n'
-            f'printf "%s\\n" "$@" > {str(record)!r}\n'
-            'if [ "$1" = viewer ]; then sleep 30; fi\n'
-            'exit 7\n')
-        stub.chmod(0o755)
-        return record, dict(self.env, UML_VIEWER_RUST_EXECUTABLE=str(stub))
-
-    def test_rust_runtime_dispatches_headless_subcommands_to_the_rust_binary(self):
+    def test_default_runtime_dispatches_headless_subcommands_to_the_rust_binary(self):
+        # #144: no --runtime flag selects the Rust binary.
         record, env = self.rust_stub()
         arguments = ['ir', 'policy.edn', '结果 图.edn', 'literal;$value']
-        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', *arguments], cwd=self.root,
+        result = subprocess.run([str(self.root / 'uml'), *arguments], cwd=self.root,
                                 env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(7, result.returncode, result.stderr)
         self.assertEqual(arguments, record.read_text().splitlines())
 
-    def test_rust_runtime_launches_the_rust_viewer_and_records_the_runtime(self):
+    def test_default_runtime_launches_the_rust_viewer_and_records_the_runtime(self):
         record, env = self.rust_stub()
-        result = subprocess.run([str(self.root / 'uml'), 'diagram with spaces.edn', '--runtime', 'rust'],
+        result = subprocess.run([str(self.root / 'uml'), 'diagram with spaces.edn'],
                                 cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stderr)
         launcher = self.launcher_record()
@@ -520,20 +513,20 @@ class PosixEntries(unittest.TestCase):
         observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
         self.assertEqual(observed, launcher['started'])
 
-    def test_rust_runtime_without_a_built_binary_names_the_build_step(self):
+    def test_default_runtime_without_a_built_binary_names_the_build_step(self):
         env = dict(self.env, UML_VIEWER_RUST_EXECUTABLE=str(self.root / 'missing'))
-        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', 'ir'], cwd=self.root,
+        result = subprocess.run([str(self.root / 'uml'), 'ir'], cwd=self.root,
                                 env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(1, result.returncode)
         self.assertIn('cargo build --release --locked', result.stderr)
 
-    def test_rust_runtime_reaches_the_real_binary(self):
+    def test_default_runtime_reaches_the_real_binary(self):
         binary = REPO / 'target/release/uml-viewer'
         if not binary.is_file():
             self.skipTest('run cargo build --release --locked first')
         env = dict(self.env)
         env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
-        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', 'scene'], cwd=self.root,
+        result = subprocess.run([str(self.root / 'uml'), 'scene'], cwd=self.root,
                                 env=env, capture_output=True, text=True, timeout=30)
         # #137: the ported `scene` role answers its own usage error.
         self.assertEqual(2, result.returncode, result.stderr)
@@ -551,20 +544,20 @@ class PosixEntries(unittest.TestCase):
             with self.subTest(language=language):
                 output = self.root / f'{language}.golden-result.edn'
                 result = subprocess.run(
-                    [str(self.root / 'uml'), '--runtime', 'rust', 'ir',
+                    [str(self.root / 'uml'), 'ir',
                      '--root', str(REPO / f'{language}-fixture'),
                      '--policy', 'policy.edn', '--output', str(output)],
                     cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
                 self.assertEqual(0, result.returncode, result.stderr)
                 comparison = subprocess.run(
-                    ['lua', str(REPO / 'scripts/compare_ir.lua'), str(output),
+                    [sys.executable, '-I', str(REPO / 'scripts/compare_ir.py'), str(output),
                      str(REPO / 'fixtures/jvm-goldens' / f'{language}.ir.edn')],
                     cwd=REPO, capture_output=True, text=True)
                 self.assertEqual(0, comparison.returncode, comparison.stdout + comparison.stderr)
 
     def test_rust_ir_runs_on_this_repository(self):
-        # #136: `./uml --runtime rust ir` generates IR for this repository's
-        # own Lua source tree.
+        # #136/#144: the default runtime generates IR for this repository's
+        # own Rust source tree.
         binary = REPO / 'target/release/uml-viewer'
         if not binary.is_file():
             self.skipTest('run cargo build --release --locked first')
@@ -572,29 +565,29 @@ class PosixEntries(unittest.TestCase):
         env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
         output = self.root / 'repo.edn'
         result = subprocess.run(
-            [str(self.root / 'uml'), '--runtime', 'rust', 'ir', '--root', str(REPO),
+            [str(self.root / 'uml'), 'ir', '--root', str(REPO),
              '--policy', 'examples/uml-viewer.policy.edn', '--output', str(output)],
             cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stderr)
         document = output.read_text()
-        self.assertIn(':lang :lua', document)
-        self.assertIn('"love.uml.edn"', document)
+        self.assertIn(':lang :rust', document)
+        self.assertIn('"crates/edn/src/lib.rs"', document)
 
-    def love_stub(self, preflight='herdr'):
-        """A native stand-in for LOVE: records argv, answers the preflight."""
-        stub = self.root / 'love stub'
-        record = self.root / 'love-argv.json'
+    def rust_stub(self, preflight='herdr'):
+        """A stand-in Rust binary: records argv, answers the preflight."""
+        stub = self.root / 'rust stub'
+        record = self.root / 'rust-argv.txt'
         stub.write_text(
             '#!/bin/sh\n'
-            'if [ "$1" = --version ]; then printf "LOVE 11.5 (stub)\\n"; exit 0; fi\n'
-            'for a in "$@"; do if [ "$a" = companion-preflight ]; then\n'
+            'if [ "$1" = companion-preflight ]; then\n'
             f'  printf "%s\\n" {preflight!r}\n'
             '  exit 0\n'
-            'fi; done\n'
+            'fi\n'
             f'printf "%s\\n" "$@" > {str(record)!r}\n'
-            'sleep 30\n')
+            'if [ "$1" = viewer ]; then sleep 30; fi\n'
+            'exit 7\n')
         stub.chmod(0o755)
-        return stub, record, dict(self.env, UML_LOVE_EXECUTABLE=str(stub))
+        return record, dict(self.env, UML_VIEWER_RUST_EXECUTABLE=str(stub))
 
     def launcher_record(self):
         path = self.root / '.uml-viewer/viewer-process.json'
@@ -614,7 +607,7 @@ class PosixEntries(unittest.TestCase):
         # launch before any viewer, launcher record or ownership exists.
         for preflight in ('', 'tmux', 'herdr\nextra'):
             with self.subTest(preflight=preflight):
-                _, _, env = self.love_stub(preflight=preflight)
+                _, env = self.rust_stub(preflight=preflight)
                 result = subprocess.run([str(self.root / 'uml'), 'diagram.edn'], cwd=self.root,
                                         env=env, capture_output=True, text=True, timeout=30)
                 self.assertEqual(1, result.returncode, result.stdout + result.stderr)
@@ -623,10 +616,10 @@ class PosixEntries(unittest.TestCase):
                 self.assertFalse((self.root / '.uml-viewer/companion.edn').exists())
 
     def test_launch_records_a_real_identity_and_forwards_literal_argv(self):
-        # Ported from the retired suite: the launcher record must carry the
-        # viewer's own creation identity, and argv reaches LOVE unchanged except
-        # for the backend the preflight consumed.
-        stub, record, env = self.love_stub()
+        # The launcher record must carry the viewer's own creation identity,
+        # and argv reaches the Rust binary unchanged except for the backend the
+        # preflight consumed.
+        record, env = self.rust_stub()
         arguments = ['diagram with spaces.edn', 'literal;$value']
         result = subprocess.run([str(self.root / 'uml'), *arguments], cwd=self.root,
                                 env=env, capture_output=True, text=True, timeout=30)
@@ -634,27 +627,12 @@ class PosixEntries(unittest.TestCase):
         launcher = self.launcher_record()
         self.addCleanup(self.stop_stub, launcher)
         self.assertIsNotNone(launcher, result.stdout)
-        self.assertEqual('love', launcher['runtime'])
+        self.assertEqual('rust', launcher['runtime'])
         observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
         self.assertEqual(observed, launcher['started'])
         self.assertEqual(['viewer', '--backend', 'herdr', *arguments], launcher['argv'])
-        if record.exists():
-            # One argument per line: this asserts what LOVE itself received,
-            # not just what the launcher wrote down. The game directory leads.
-            received = record.read_text().splitlines()
-            self.assertEqual(str(REPO / 'love'), received[0])
-            self.assertEqual(['viewer', '--backend', 'herdr', *arguments], received[1:])
-
-    def test_explicit_love_runtime_is_accepted(self):
-        # Ported from the retired suite: --runtime love stays valid and is
-        # stripped before the viewer sees the arguments.
-        stub, record, env = self.love_stub()
-        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'love', 'diagram.edn'],
-                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
-        self.assertEqual(0, result.returncode, result.stderr)
-        launcher = self.launcher_record()
-        self.addCleanup(self.stop_stub, launcher)
-        self.assertEqual(['viewer', '--backend', 'herdr', 'diagram.edn'], launcher['argv'])
+        # The stub writes after the viewer exits; the preflight consumes the
+        # only --backend pair, so the viewer sees exactly the forwarded argv.
 
     def test_install_defaults_to_main_and_accepts_a_fixed_commit(self):
         source = self.root / 'viewer source'
@@ -713,36 +691,20 @@ class PosixEntries(unittest.TestCase):
         entry = str(REPO / 'scripts/get-uml-viewer')
         result = subprocess.run([entry, '--help'], capture_output=True, text=True)
         self.assertEqual(0, result.returncode)
-        env = dict(self.env, UML_LOVE_EXECUTABLE='/missing/love')
+        env = dict(self.env, UML_CARGO_EXECUTABLE='/missing/cargo')
         result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env, capture_output=True, text=True)
         self.assertEqual(1, result.returncode)
-        self.assertIn('LOVE 11.5', result.stderr)
+        self.assertIn('cargo', result.stderr)
         self.assertFalse((self.root / '.uml-viewer').exists())
 
-
-    def test_installer_names_a_missing_lua_prerequisite(self):
-        entry = str(REPO / 'scripts/get-uml-viewer')
-        env = dict(self.env, UML_LUA_EXECUTABLE='/missing/lua')
-        result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env, capture_output=True, text=True)
-        self.assertEqual(1, result.returncode)
-        self.assertIn('lfs', result.stderr)
-        self.assertIn('luacov', result.stderr)
-        self.assertIn('cluacov 1.0.0', result.stderr)
-        self.assertFalse((self.root / '.uml-viewer').exists())
-
-    def test_installer_rejects_a_lua_without_the_pinned_cluacov(self):
-        entry = str(REPO / 'scripts/get-uml-viewer')
-        fake = self.root.parent / 'lua-without-cluacov'
-        fake.write_text('#!/bin/sh\n'
-                        'case "$*" in *cluacov*) echo "Lua 5.4 "; exit 1;; esac\n'
-                        'exit 0\n', encoding='utf-8')
-        fake.chmod(0o755)
-        env = dict(self.env, UML_LUA_EXECUTABLE=str(fake))
-        result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env, capture_output=True, text=True)
-        self.assertEqual(1, result.returncode)
-        self.assertIn('cluacov 1.0.0', result.stderr)
-        self.assertIn('Lua 5.4', result.stderr)
-        self.assertFalse((self.root / '.uml-viewer').exists())
+    def test_installer_no_longer_provisions_love_lua_or_cimgui(self):
+        # #144: the Lua runtime, its busted/luacov toolchain and the cimgui
+        # binding are gone, so no precheck or provisioning function remains.
+        installer = self.installer_module()
+        for name in ('love_command', 'lua_command', 'cimgui'):
+            self.assertFalse(hasattr(installer, name), name)
+        self.assertFalse(hasattr(installer, 'CIMGUI_URL'))
+        self.assertFalse(hasattr(installer, 'LUA_PROBE'))
 
     def installer_module(self):
         import importlib.util
@@ -856,8 +818,8 @@ class PosixEntries(unittest.TestCase):
         self.assertFalse((self.root / '.uml-viewer').exists())
 
 class ViewerLaunchEnv(unittest.TestCase):
-    """#139: the launcher sets the WSLg render defaults for the rust runtime
-    without overriding user values; the love runtime is untouched."""
+    """#139/#144: the launcher sets the WSLg render defaults for the only
+    runtime without overriding user values."""
 
     @classmethod
     def setUpClass(cls):
@@ -866,21 +828,15 @@ class ViewerLaunchEnv(unittest.TestCase):
 
     def test_rust_runtime_gets_render_defaults(self):
         from uml_launch import viewer_env
-        env = viewer_env('rust', {})
+        env = viewer_env({})
         self.assertEqual('d3d12', env['GALLIUM_DRIVER'])
         self.assertEqual('gl', env['WGPU_BACKEND'])
 
     def test_user_values_win(self):
         from uml_launch import viewer_env
-        env = viewer_env('rust', {'GALLIUM_DRIVER': 'virgl'})
+        env = viewer_env({'GALLIUM_DRIVER': 'virgl'})
         self.assertEqual('virgl', env['GALLIUM_DRIVER'])
         self.assertEqual('gl', env['WGPU_BACKEND'])
-
-    def test_love_runtime_is_untouched(self):
-        from uml_launch import viewer_env
-        env = viewer_env('love', {'PATH': '/usr/bin'})
-        self.assertNotIn('GALLIUM_DRIVER', env)
-        self.assertNotIn('WGPU_BACKEND', env)
 
 if __name__ == '__main__':
     unittest.main()

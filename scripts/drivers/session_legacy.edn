@@ -1,5 +1,5 @@
 {:version 1
- :doc "session 旧格式阶段（#142，原 test_love_dpi_window.lua 的 legacy 阶段）：一个没有窗口
+ :doc "session 旧格式阶段（#142，原 Lua driver 的 legacy 阶段）：一个没有窗口
        字段的旧 session.edn 以兼容的默认值打开（1500x920、检查器 280），视图（zoom 1.25、
        cam-x 7）照旧保留。fixture 在启动前写入 .uml-viewer/session.edn。"
  :steps [{:op :wait-frames :n 4}

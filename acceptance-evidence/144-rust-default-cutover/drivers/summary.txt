@@ -1,0 +1,25 @@
+viewer exit=0
+e2e exit=0
+restart_e2e exit=0
+recovery_e2e exit=1
+class_boxes exit=1
+companion_worker exit=0
+detail_scroll exit=0
+dpi_window exit=0
+font_parity exit=1
+fonts exit=0
+inspector exit=1
+lod_shots exit=0
+mail exit=0
+metrics exit=0
+navigation exit=0
+review_fixes exit=0
+search exit=0
+session exit=0
+source_jump exit=0
+source_window exit=0
+# rechecked once after aligning the driver with the Rust viewer / Rust IR
+class_boxes rerun exit=0
+inspector rerun exit=0
+font_parity rerun exit=0
+recovery_e2e rerun exit=0

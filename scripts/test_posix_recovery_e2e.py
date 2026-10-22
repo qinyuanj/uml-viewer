@@ -33,7 +33,7 @@ BACKOFF = (1.0, 2.0, 4.0)
 # The controller polls every 100 ms; its scheduled delay from the runner's
 # recorded exit to the retry deadline must be the attempt's budget within this.
 SCHEDULE_TOLERANCE = 0.5
-# A relaunch resets the pane terminal and starts a LOVE runner before the
+# A relaunch resets the pane terminal and starts a viewer runner before the
 # child exists; this bounds that overhead without fixing it as a contract.
 RELAUNCH_SLACK = 6.0
 
@@ -164,7 +164,7 @@ class Viewer:
                         UML_VIEWER_TEST_SECONDS='600',
                         CLAUDE_BIN=str(self.project / 'companion-placeholder'),
                         UML_COMPANION_NO_ATTACH='1')
-        for variable in ('UML_CIMGUI_DIRECTORY', 'UML_VIEWER_PROJECT_ROOT'):
+        for variable in ('UML_VIEWER_PROJECT_ROOT',):
             self.env.pop(variable, None)
         self.launcher = None
         self.session = None
@@ -176,7 +176,6 @@ class Viewer:
         project = self.project
         (project / '.uml-viewer').mkdir()
         shutil.copy2(REPO / 'examples/uml-viewer.edn', project / 'diagram.edn')
-        shutil.copytree(REPO / '.uml-viewer/cimgui-love-1.90-1', project / '.uml-viewer/cimgui-love-1.90-1')
         (project / 'companion-placeholder').write_text(PLACEHOLDER)
         (project / 'companion-placeholder').chmod(0o755)
         shutil.copy2(REPO / 'scripts/uml', project / 'uml')
@@ -226,7 +225,7 @@ class Viewer:
             f'{self.name}: {label}: a child started after recovery stopped ({starts(self.project)})'
 
     def close(self):
-        """A normal window close: the window manager's quit request to LOVE."""
+        """A normal window close: the window manager's quit request to the viewer."""
         os.kill(self.launcher, signal.SIGTERM)
         wait_for(lambda: not alive(self.launcher), 60, message=f'{self.name} viewer exit')
         wait_for(lambda: ownership(self.project) is None, 90, message=f'{self.name} companion cleanup')

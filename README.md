@@ -32,12 +32,12 @@ level.
 
 ## Tech
 
-A [LOVE 11.5](https://love2d.org/) app using
-[cimgui-love](https://codeberg.org/apicici/cimgui-love) that lays out and
-draws UML from an EDN IR. A **policy** plus a language-specific scanner
-writes the topology; this tool displays it, routes the arrows, colors CRAP,
-and lets you click. The JVM implementation and Clojure scanning were removed
-in the LOVE cutover. The supported platform is **WSL2 + Ubuntu 24.04 + WSLg**;
+A Rust app (egui/eframe) that lays out and draws UML from an EDN IR. A
+**policy** plus a language-specific scanner writes the topology; this tool
+displays it, routes the arrows, colors CRAP, and lets you click. One Rust
+binary runs the viewer, IR generation, the four scanners, and the companion's
+headless roles. The JVM/Clojure implementation was removed in the JVM cutover
+and the Lua/LOVE implementation in the #144 cutover (ADR 0008). The supported platform is **WSL2 + Ubuntu 24.04 + WSLg**;
 native Windows is unsupported and macOS is not committed (ADR 0007).
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
@@ -54,19 +54,18 @@ terminal.
 
 ## Run
 
-Needs LOVE 11.5, Lua 5.4 with `lfs`, `luacov` and `cluacov` 1.0.0
-(the quality tools analyze source as Lua 5.4), git, Herdr >= 0.9.3,
-and Python 3.11+. The installer provisions the pinned cimgui-love 1.90-1
-bindings for the host architecture. There is no Java, Clojure or PowerShell
-dependency.
+Needs the Rust toolchain pinned by `rust-toolchain.toml` (1.99.1 with
+`rustfmt` and `clippy`), `git`, Herdr >= 0.9.3, and Python 3.11+. There is no
+Java, Clojure, Lua, LOVE, cimgui or PowerShell dependency.
 
-From **this repo** (the viewer and IR generator are the `love/` tree):
+From **this repo** (the viewer, IR generator, scanners and companion roles
+are the Cargo workspace):
 
 ```sh
-love ./love ir ./examples/uml-viewer.policy.edn
-love ./love ./examples/uml-viewer.edn
-lua5.4 scripts/run_busted.lua          # pure logic, Lua 5.4
-luajit scripts/run_busted.lua          # pure logic, LuaJIT
+cargo build --release --locked
+./uml ir ./examples/uml-viewer.policy.edn
+./uml ./examples/uml-viewer.edn
+cargo test --workspace --locked          # pure and integration suites
 ```
 
 From **any project** you want to view (no local uml-viewer checkout
@@ -78,10 +77,10 @@ curl -fsSL https://raw.githubusercontent.com/qinyuanj/uml-viewer/main/scripts/ge
 chmod +x get-uml-viewer
 ./get-uml-viewer               # fetch, write ./uml, start
 ./uml                          # later fresh starts (returns immediately)
-./uml --restart                # companion only: new LOVE process, restore last view
+./uml --restart                # companion only: new Rust process, restore last view
 ./uml ir                       # policy → IR
 ./uml crap                     # .metrics/crap.edn for the declared tree
-./uml mutate love/uml/a/b.lua  # differential mutation of these files
+./uml mutate 'src/file with spaces.rs'  # differential mutation of these files
 ```
 
 `scripts/get-uml-viewer` is in this repo. It clones uml-viewer into
@@ -91,14 +90,12 @@ skips the start. `UML_VIEWER_REPO_URL` and `UML_VIEWER_REF` override the clone
 source (default `qinyuanj/uml-viewer`, branch `main`). Installation and analysis
 use the native POSIX entry (`scripts/get-uml-viewer`), which runs Python
 directly and performs every step with literal argv; no PowerShell is
-required. git, LOVE, Lua, Herdr, and Python 3.11+ are user-installed
-prerequisites.
-Install LOVE from https://love2d.org/. The installer downloads and verifies
-cimgui-love into `.uml-viewer/cimgui-love-1.90-1`; public entries use that
-project-local dependency automatically. `UML_CIMGUI_DIRECTORY` can override
-it with an existing matching binding and DLL. Set `UML_LOVE_EXECUTABLE` when
-`love` is not on PATH; the entry reads the preflight line from the process's
-stdout, so the binary must not detach from its console.
+required. The Rust toolchain, git, Herdr, and Python 3.11+ are user-installed
+prerequisites. Install the pinned toolchain with `rustup toolchain install
+1.99.1`; the installer runs `cargo build --release --locked` in
+`.uml-viewer/uml-viewer/` and records the resulting binary in
+`.uml-viewer/install.json`. There is no LOVE, Lua, cimgui or LuaJIT
+provisioning any more (#144).
 The installer also provisions Sarasa Mono SC Regular v1.0.42: it downloads the
 pinned TTF release, verifies the archive and face SHA256 (the pins from #82),
 and extracts only that face into `.uml-viewer/fonts/`; any failure exits
@@ -126,14 +123,15 @@ Python command module. Arguments are passed as a literal argv: no shell
 re-parses them, so spaces, Unicode and shell metacharacters reach the tool
 unchanged.
 `UML_VIEWER_TOOL_ROOT` overrides the tool checkout the entry runs: point it at
-a working tree (for example this repository) to launch its `love/` code instead
-of the pinned `.uml-viewer/uml-viewer/` clone. The path must contain
-`love/main.lua`; anything else fails and names the variable. When the selected
+a working tree (for example this repository) to launch its Cargo workspace
+instead of the pinned `.uml-viewer/uml-viewer/` clone. The path must contain
+`Cargo.toml`; anything else fails and names the variable. When the selected
 tool root is a different git checkout at a different commit, startup prints a
 one-line stderr warning with both short SHAs and never blocks the launch.
-`UML_LOVE_EXECUTABLE` selects the LOVE binary; the Herdr backend preflight
-reads one line from its stdout. The viewer launcher starts the LOVE process
-with individual arguments and writes its output to `.uml-viewer/viewer.log`.
+`UML_VIEWER_RUST_EXECUTABLE` selects the built binary (default
+`<tool root>/target/release/uml-viewer`); the Herdr backend preflight reads one
+line from its stdout. The viewer launcher starts that binary with individual
+arguments and writes its output to `.uml-viewer/viewer.log`.
 Fresh startup uses **Herdr as the sole companion backend** on WSL.
 Historical Windows and macOS evidence remains historical.
 `--backend herdr` remains accepted; `--backend tmux` and `--backend psmux` are
@@ -170,10 +168,10 @@ A standalone downloaded installer script fetches its entry point from
 `UML_VIEWER_REF`; for custom hosts, keep the checkout layout or set
 `UML_VIEWER_INSTALLER_URL` explicitly.
 
-LOVE must be a native executable for the host architecture; the installer
-checks the cimgui-love dynamic library's architecture and runtime
-dependencies before use. There is no JVM or Clojure CLI requirement;
-`viewer-jvm.json` is no longer recognized.
+The Rust binary must be built for the host architecture; the installer
+verifies the pinned toolchain before building. There is no JVM, Clojure, Lua or
+LOVE requirement. A launcher record from a removed runtime (`love` or `jvm`)
+is refused; fresh-start the viewer instead.
 
 `CLAUDE_BIN` selects the companion program; it defaults to `claude` on PATH.
 The runner execs it directly so its recorded identity is the agent's own
@@ -194,17 +192,11 @@ fetch any tool is fatal instead of a warning. They need Python 3.11+
 `get-uml-viewer --install-only` to fetch updates; the editable installs use
 the updated source. Each tool runs from its own `.venv/bin/python -m <tool>`;
 sibling checkouts are not on `PATH` and are not used by the dispatcher. Keep a
-WSL project in the Linux home directory rather than `/mnt/c`, and install
-Lua/coverage prerequisites with mutator's `scripts/setup-ubuntu.sh`. Native Lua validation
-is recorded in
-[platform acceptance](docs/platform-acceptance.md#mutator-lua-接入复验--2026-10-10).
-The local default-runner fix loads `busted.runner` directly in the selected Lua
-interpreter; it does not require a native Busted executable or a custom
-`--test-command`. Use it with the matching crapper `main` checkout for LuaRocks
-module-path setup. It needs a real `lua5.4` or `lua` executable. LuaRocks installations also need
-their `bin` directory on PATH and their Lua module directories in `LUA_PATH` /
-`LUA_CPATH`; a terminal opened before these variables were set may need to be
-reopened. See
+WSL project in the Linux home directory rather than `/mnt/c`. The quality tools
+analyze the project's own language; this repository is Rust. crapper generates
+Rust coverage with `cargo llvm-cov` (installed into `~/.cargo` on first use when
+absent) and mutator uses `cargo test`. No Lua, Busted or LuaCov setup is needed
+for Rust analysis. See
 [mutator's setup and limitations](https://github.com/qinyuanj/mutator/tree/main).
 
 Analysis always runs from the examined project, forwards individual arguments,
@@ -220,7 +212,7 @@ through `standardTools`, independently of optional executable overrides in
   "sourceRoots":["business tree","common"],
   "exclude":["business tree/generated","**/vendor"],
   "crapperOptions":[],
-  "mutatorOptions":["--busted-task","fast","--max-workers","3"],
+  "mutatorOptions":["--max-workers","3"],
   "dryerOptions":["--threshold","0.9"]
 }}
 ```
@@ -253,7 +245,7 @@ Without persistent configuration, supply scope flags per invocation:
 
 ```sh
 ./uml crap --source-root 'business tree' --source-root common --exclude 'business tree/generated'
-./uml mutate 'business tree/file with spaces.lua' --busted-task fast --max-workers 3
+./uml mutate 'business tree/file with spaces.rs' --max-workers 3
 ./uml dry --threshold 0.9
 ```
 
@@ -274,8 +266,8 @@ business files explicitly. Crapper exclusions alone do not apply to mutation.
 differential; only explicitly passing `--mutate-all` requests all sites. Passing `--max-workers 3`
 to `./uml mutate src/calc/init.lua` caps parallel workers without changing
 differential selection. Mutator writes the same
-`.metrics/mutate/<namespace>.edn` snapshots used by the overlay, including
-private Lua functions as `defn-/…`.
+`.metrics/mutate/<namespace>.edn` snapshots used by the overlay; private
+functions are included as `defn-/…`.
 
 The standard contracts were inspected read-only in local crapper `1417c43`
 and Mutator `844a0d7`. CRAP exit 0 means analysis completed; exit 2 means a
@@ -298,25 +290,28 @@ launching dryer. Nothing in the viewer reads `dry.edn` yet.
 Run `python -I scripts/test_posix_entries.py` for the public-entry checks: real
 `./uml ir`, the four scanners, standard and configured quality scope, serial
 per-file mutation, installer idempotence and the launch/preflight contract. They
-do not establish real Lua coverage/Busted or companion mailbox acceptance, which
+do not establish real tool coverage/mutation or companion mailbox acceptance, which
 remains part of consumer integration (`scripts/test_posix_e2e.py`).
 
-Public-entry acceptance on POSIX (Python 3 + git + LOVE):
+Public-entry acceptance on POSIX (Python 3 + git + Rust toolchain):
 
 - `python3 -I scripts/test_posix_entries.py` — installer, IR, quality dispatch.
 - `python3 -I scripts/test_posix_restart_entries.py` — restart refusal rules.
 - `python3 -I scripts/test_posix_viewer.py` — real window, reload, frame capture.
 - `python3 -I scripts/test_posix_e2e.py` — launch, companion ready, FIFO, close.
+- `python3 -I scripts/test_posix_restart_e2e.py` and
+  `scripts/test_posix_recovery_e2e.py` — restart and recovery.
+- `python3 -I scripts/run_viewer_driver.py <driver>` — GUI driver evidence.
 
 These run in isolated projects and never touch a working checkout.
 
-`./uml ir` runs the LOVE IR generator on `examples/<dir>.policy.edn` (else the
+`./uml ir` runs the Rust IR generator on `examples/<dir>.policy.edn` (else the
 first `examples/*.policy.edn`, else `policy.edn`). `./uml crap` and
 `./uml mutate` run the project-local crapper and mutator. Run `./uml crap` on
 the declared tree: `.metrics/crap.edn` is replaced every run. The companion uses
 these three commands for every language.
 
-`./uml` returns immediately and starts LOVE through the detached launcher.
+`./uml` returns immediately and starts the Rust viewer through the detached launcher.
 Exceptions and viewer output append to **`uml-viewer-log.txt`** in the project
 directory (gitignored).
 
@@ -338,15 +333,15 @@ Prefer `./uml` in the examined project (from `get-uml-viewer`).
 
 | Command | Who | What |
 |---------|-----|------|
-| `./uml` | anyone | Fresh LOVE window in the background. Starts the companion. Waits for `:display`. |
-| `./uml --restart` | **associated agent only** | New LOVE process, same companion. Restores the last view. |
+| `./uml` | anyone | Fresh Rust viewer in the background. Starts the companion. Waits for `:display`. |
+| `./uml --restart` | **associated agent only** | New Rust viewer process, same companion. Restores the last view. |
 
 Do **not** pass `--restart` unless you are that companion recycling the
-window after source changes. The wrapper requires the existing launcher/LOVE
+window after source changes. The wrapper requires the existing launcher/viewer
 records and recorded companion ownership, and refuses restart rather than
 leaving a diagram with no agent or replacing a missing companion. The
 companion recycles the window by writing `:quit-for-restart` to
-`.uml-viewer/to-viewer.edn`, waiting for the LOVE viewer to exit, then running
+`.uml-viewer/to-viewer.edn`, waiting for the viewer to exit, then running
 `./uml --restart`. The new process restores the saved diagram path, discussion
 context, depth, pan, zoom, and which proposal was showing
 (`.uml-viewer/session.edn`). An explicit path after `--restart` opens that
@@ -357,8 +352,8 @@ without a saved path falls back to the policy output. Policy selection matches
 Relative `:out` paths resolve from the project root; absent `:out` uses the IR
 default `examples/uml-viewer.edn`. Missing or malformed policy, invalid output,
 and unreadable diagrams fail explicitly. A saved or explicit path that fails
-to load does not trigger fallback. A launcher record from the removed JVM
-runtime is refused. Do not SIGKILL.
+to load does not trigger fallback. A launcher record from a removed runtime (`love` or
+`jvm`) is refused. Do not SIGKILL.
 Closing the window kills only that project's companion, not other Claude
 sessions.
 
@@ -368,20 +363,20 @@ immediately and does not wait. A missing or unreadable file prints
 `UML viewer: file not found: …` in the inspector instead of throwing.
 
 `lua-fixture/` is a Lua project with `.metrics/` snapshots written by
-crapper and mutator. The Lua specs scan it and check the overlay joins
-those snapshots.
+crapper and mutator. The Rust cargo tests scan it and check the overlay joins
+those snapshots; Lua remains a supported scanner language even though the
+viewer no longer runs on Lua.
 
 ```sh
-lua5.4 scripts/run_busted.lua                          # pure logic
-luajit scripts/run_busted.lua                          # pure logic
-love ./love ir ./examples/uml-viewer.policy.edn
+cargo build --release --locked
+./uml ir                                               # examples policy → IR
 ./uml crap                                             # .metrics/crap.edn
-./uml mutate love/uml/engine/layout.lua                # differential mutation
+./uml mutate crates/edn/src/value.rs                   # differential mutation
 ./uml dry                                              # .metrics/dry.edn
 ```
 
 This repository's `uml-quality.json` declares
-`standardTools.sourceRoots: ["love/uml"]`; the dispatcher runs the
+`standardTools.sourceRoots: ["crates"]`; the dispatcher runs the
 project-local crapper and mutator. The full export pipeline is
 `crapper` (CRAP + coverage) and `mutator` (differential mutation), both
 installed by `get-uml-viewer` into `.uml-viewer/<tool>/.venv`. Commit
@@ -390,8 +385,8 @@ installed by `get-uml-viewer` into `.uml-viewer/<tool>/.venv`. Commit
 Rename or move of a function is a new form: overlay does not match old names.
 
 The `fixtures/jvm-goldens/` files are the frozen parity oracle captured from
-the removed JVM viewer. They are still read by the LOVE parity specs; only the
-JVM regeneration tooling was deleted.
+the removed JVM viewer. The Rust cargo golden tests read them unchanged; only
+the JVM regeneration tooling was deleted.
 
 ### Linux / WSL2
 
@@ -426,7 +421,7 @@ instructions before starting fresh.
   those src files; All Mutation passes `--mutate-all`. Omit adds the id to
   the current proposal's `:omit`, or to policy `:omit` on the real diagram.
 - Component titles paint **on top of** crossing arrows.
-- The viewer UI is Chinese (one string table, `love/uml/application/strings.lua`);
+- The viewer UI is Chinese (one string table, `crates/viewer/src/strings.rs`);
   metric and tool names stay English. The inspector (检查器) lists the
   **real diagram** (源码图, the namespace tree) above
   **Proposals**. Click the real row to return to the tree; click a proposal
@@ -472,15 +467,16 @@ A project-local import/require is a dependency. External requires/imports
 become **foreign** classes. The overlay fills members from `.metrics/`.
 TypeScript, Rust, Python, and Lua each have a scanner (see
 [Language graphs](#language-graphs)). This repository's policy uses
-`:lang :lua` with `:src "love"` and `:prefix "love"`, so class
-namespaces are `love.uml.*` and match crapper's project-relative snapshot
-namespaces. The overlay joins each snapshot by `:ns`, then by the class id.
+`:lang :rust` with one `:sources` root per crate and namespace prefix
+`uml.<crate>`. Class namespaces are `uml.ir.graph` with ids `ir.graph`;
+crapper names the same module `ir::graph`, and the overlay reads `::` as `.`,
+so the id joins. The overlay joins each snapshot by `:ns`, then by the class id.
 
 ### Do not invent layers (components)
 
 The tree **is** the namespaces. After `:prefix`, every `.` is a nesting
-level. `love.uml.engine.layout` is a child of `uml.engine`.
-`love.uml.lua_language.source_lua` is a child of `uml.lua_language`.
+level. `uml.scene.layout` is a child of `uml.scene`.
+`uml.ir.scan.lua` is a child of `uml.ir`.
 The policy does **not** assign nses to invented packages. If you want Domain /
 Engine / Adapters boxes **in the source tree**, those segments must exist as
 namespaces. To **view** a grouping that is not in the code, use `:proposals`
@@ -488,9 +484,9 @@ namespaces. To **view** a grouping that is not in the code, use `:proposals`
 
 To write a policy for a project:
 
-1. Set `:prefix` to the namespace prefix (`love` for `love.uml.graph`). A
-   single language also sets `:src` (default `src`) and `:lang`. More than
-   one language sets `:sources` instead of `:src`.
+1. Set `:prefix` to the id prefix (`uml` for `uml.ir.graph`). A single
+   language also sets `:src` (default `src`) and `:lang`. More than one
+   language or root sets `:sources` instead of `:src`.
 2. Set `:hierarchical true` (or omit `:packages` and `:diagrams`).
 3. List top-level **segments** in `:order` — the first dotted part after
    the prefix, in the order you want the boxes. Do not invent names.
@@ -523,23 +519,20 @@ Right (the ns tree):
 
 ```edn
 {:title "UML viewer"
- :src "love"
- :prefix "love"
- :lang :lua
+ :prefix "uml"
+ :lang :rust
  :out "examples/uml-viewer.edn"
  :hierarchical true
+ :sources [{:lang :rust :root "crates/edn/src" :prefix "uml.edn"}
+           {:lang :rust :root "crates/ir/src" :prefix "uml.ir"}
+           {:lang :rust :root "crates/scene/src" :prefix "uml.scene"}
+           {:lang :rust :root "crates/companion/src" :prefix "uml.companion"}
+           {:lang :rust :root "crates/viewer/src" :prefix "uml.viewer"}
+           {:lang :rust :root "crates/uml-viewer/src" :prefix "uml.main"}]
  :proposals [{:id :p-1791033119418, :name "test", :layers []}]
- :foreign [lfs ffi cimgui]
- :order [main conf uml.main uml.adapters uml.application uml.engine
-         uml.source uml.graph uml.lua_language uml.typescript_language
-         uml.rust_language uml.python_language uml.edn uml.compat uml.domain]
- :levels [[uml.domain uml.source uml.graph
-           uml.lua_language uml.typescript_language
-           uml.rust_language uml.python_language]
-          [uml.engine]
-          [uml.application]
-          [uml.adapters]
-          [uml.main main conf]]}
+ :foreign [std core alloc libc egui eframe image winit log]
+ :order [main viewer companion scene ir edn]
+ :levels [[edn] [ir scene companion] [viewer] [main]]}
 ```
 
 A project with more than one language lists each tree under `:sources`.
@@ -594,7 +587,7 @@ id. Missing CRAP or mutation data is red. Then regenerate the IR.
   top-level **segment** in `:order` if you care about box order.
 - Nested nses appear as contents of the parent component.
 - “This require is really an association”: one `:edge-kinds` entry.
-- Show a library like cimgui as an oval: add it to `:foreign`.
+- Show a library like egui as an oval: add it to `:foreign`.
 - Do not add `:packages` to fake Clean Architecture components. Use
   `:proposals` to view a grouping that is not in the code.
 - Preserve `:proposals` when rewriting policy. Do not invent them on launch.
@@ -699,7 +692,7 @@ does this itself on `to-viewer.edn`. The companion must pop each
 depth, pan, zoom, proposal, and mail cursor) written on `:quit-for-restart`
 and restored by `--restart`. `.uml-viewer/viewer-process.json` records the
 launcher identity, and `.uml-viewer/viewer-process-identity.json` records the
-exact LOVE PID/start; the public wrapper verifies and waits for those
+exact viewer PID/start; the public wrapper verifies and waits for those
 identities before starting a replacement. `.uml-viewer/viewer-jvm.json` is no
 longer recognized. `.uml-viewer/companion.edn`
 records the Herdr session, socket, workspace, pane, server/shell process
@@ -712,7 +705,7 @@ an attach command to the project log.
 |-------|---------|
 | `:display` | Viewer loads `:path` (relative to the project root). Canonical paths identifying the current diagram reload IR/metrics and retain its valid view; a different diagram starts at its own root. |
 | `:regen` | Claude rewrites hierarchical policy, regenerates IR, then `:display` |
-| `:quit-for-restart` | Viewer saves the diagram path, discussion context, view, and mail cursor, then exits the LOVE process without killing Claude. The associated agent waits for exit and runs `./uml --restart`. |
+| `:quit-for-restart` | Viewer saves the diagram path, discussion context, view, and mail cursor, then exits the viewer process without killing Claude. The associated agent waits for exit and runs `./uml --restart`. |
 | `:refresh-crap` | Public `./uml crap` with declared scope (standard tools: whole business tree; operation override: targets or whole tree); valid result → successful IR → display |
 | `:refresh-mutate` | Public `./uml mutate` on target files, differential; valid results → successful IR → display |
 | `:refresh-mutate-all` | Public `./uml mutate --mutate-all` on target files only; valid results → successful IR → display |
@@ -771,10 +764,9 @@ the inspector reports that the session is not attached.
 
 ## Language graphs
 
-Generating the IR asks `love/uml/graph.lua` to scan a source tree. `:lang`
-selects the scanner; `:sources` scans each root and merges them. A scanner is
-registered in `love/uml/main/ir_generator.lua` and must satisfy
-`LanguageGraph`:
+Generating the IR asks the Rust scanner registry (`crates/ir/src/graph.rs`)
+to scan a source tree. `:lang` selects the scanner; `:sources` scans each root
+and merges them. Each scanner implements the `Scanner` trait:
 
 | method | role |
 |--------|------|
@@ -790,7 +782,7 @@ language-neutral. Do not special-case a language in `policy`. Main
 requires each scanner so it registers; `ir-generator` looks the scanner
 up.
 
-**TypeScript** (`love/uml/typescript_language/graph_typescript.lua`) emits
+**TypeScript** (`crates/ir/src/scan/typescript.rs`) emits
 one class per module file (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`).
 It skips `*.test.*`, `*.spec.*`, `*.d.ts`, and paths under `node_modules`,
 `dist`, and `target`. A relative import is a dependency, and `import type`
@@ -804,7 +796,7 @@ interface and no values is `:stereotype :interface`. Exported functions,
 constants, classes, and enums are `:ops`. `invoke("name")` is recorded
 for the cross-language link.
 
-**Rust** (`love/uml/rust_language/graph_rust.lua`) walks the modules
+**Rust** (`crates/ir/src/scan/rust.rs`) walks the modules
 reachable from `lib.rs` and `main.rs` through `mod`. The `[lib] name` in
 `Cargo.toml` is the crate name, so `bookwriter_lib::run()` in `main.rs`
 depends on the lib class. Every Rust class is named by its source
@@ -815,7 +807,7 @@ private. `impl Trait for Type` is `:implements` when the trait resolves
 to a project module. The first segment of a `use`, other than `crate`,
 `self`, `super`, or the lib crate, is a foreign crate.
 
-**Python** (`love/uml/python_language/graph_python.lua`) emits one class per
+**Python** (`crates/ir/src/scan/python.rs`) emits one class per
 `.py` module. `__init__.py` is the package. Point `:src` at the package
 directory or at its parent. A path that already begins with the
 prefix stays as written, so `src/tools/parse.py` and
@@ -834,7 +826,7 @@ project name. `list[Animal]` is not. Public module-level functions and
 classes are `:ops`. A module whose public classes are only `Protocol` or
 `ABC` bases, with no public functions, is `:stereotype :interface`.
 
-**Lua** (`love/uml/lua_language/graph_lua.lua`) emits one class per `.lua`
+**Lua** (`crates/ir/src/scan/lua.rs`) emits one class per `.lua`
 module. The module name is the `require` path: strip the longest of
 `src/lua/`, `src/`, `lua/`, drop `.lua`, collapse a trailing `/init`,
 then `/` becomes `.`, so `src/calc/init.lua` and `src/calc/util.lua`
@@ -919,7 +911,7 @@ Optional authored metrics, used when snapshots are missing:
 - `:hide-members true` — compact box
 
 Package and class **color** maps CRAP (`μ + σ`) and mutation score each onto
-1–10 using `love/uml/domain/config.lua` cutoffs, averages them, and paints a
+1–10 using `crates/scene/src/config.rs` cutoffs, averages them, and paints a
 0–10 red–green fill. Missing CRAP or mutation data counts as red (grade 1),
 not unknown. A parent pools CRAP by function count: μ and σ of the
 functions underneath, then the same grade. It pools mutation by summing
@@ -960,20 +952,26 @@ Layout follows Mermaid's three stages:
 
 ## Source extractors
 
-Clicking a member asks `love/uml/source.lua` for the **whole file** and a
+Clicking a member asks `crates/viewer/src/source.rs` for the **whole file** and a
 **start line**. The IR (and the class card) only supply an **identity
 map**; a language-specific extractor turns that into
 `{:title :file :body :line}`. The source window opens on that file and
 scrolls to the member (highlighted). Clicking the module name opens the same
 file at the top (`:line` omitted).
 
-```lua
-Source.member_source({lang='lua', file='love/uml/engine/layout.lua', name='layout'}, files)
+```rust
+let ident = source::Ident {
+    lang: Some("lua".into()),
+    file: Some("lua-fixture/src/calc/util.lua".into()),
+    ns: None,
+    name: Some("helper".into()),
+};
+source::member_source(&ident, &files);
 ```
 
 `:lang` selects the extractor; there is no Clojure extractor after the cutover.
-A scanner is registered in `love/uml/main/source.lua` and must satisfy
-`LanguageSource`:
+The extractors live in `crates/viewer/src/source.rs` (`FileSource`, entered
+through `member_source`):
 
 | method | role |
 |--------|------|
@@ -981,14 +979,12 @@ A scanner is registered in `love/uml/main/source.lua` and must satisfy
 | `extract` | slice that member out of the file text |
 | `title` | window title |
 
-**TypeScript** (`love/uml/typescript_language/source_typescript.lua`),
-**Rust** (`love/uml/rust_language/source_rust.lua`), **Python**
-(`love/uml/python_language/source_python.lua`), and **Lua**
-(`love/uml/lua_language/source_lua.lua`) open `:file` and find the
+**TypeScript**, **Rust**, **Python**, and **Lua** (`crates/viewer/src/source.rs`)
+open `:file` and find the
 exported declaration, the `fn`, the `def`, or the `function`. The class card passes
 `:lang` and `:file` from the class. The protocol is the seam; do
 not special-case languages in the class card.
 
-cimgui stays in `adapters.class_boxes`, `adapters.edges`, and
-`adapters.inspector`. The rest of the engine does not depend on the ImGui
-binding.
+egui stays in the front end (`crates/viewer/src/paint.rs`,
+`crates/viewer/src/commands.rs`, `crates/viewer/src/inspector.rs`). The scene
+core (`crates/scene`) does not depend on egui.

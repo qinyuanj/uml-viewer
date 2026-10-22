@@ -1,0 +1,5 @@
+PASS first scene published: scene-1.edn
+PASS reload scene published: scene-2.edn
+PASS rendered frame: /tmp/uml144-viewer/render.png 340210 bytes sha256=e89f67dc43e78194
+PASS viewer exit: 0
+evidence: /tmp/uml144-viewer

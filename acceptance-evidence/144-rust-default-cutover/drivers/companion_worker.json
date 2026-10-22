@@ -1,0 +1,7 @@
+{
+  "driver": "companion_worker",
+  "runtime": "rust",
+  "project": "/tmp/uml viewer 项目 vnp8ky4l",
+  "evidence": "/tmp/uml144-driver-companion_worker",
+  "ok": true
+}

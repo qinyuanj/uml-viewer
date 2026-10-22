@@ -62,3 +62,10 @@ POSIX 实现，facade 直接转发，不再按宿主分支：
   **当前不承诺**；源码中已无交付目标的 Darwin 专用分支随 #114 退役。
 - Windows 本地仓库、安装副本与专用环境的最终清理需逐项清单与单独确认，
   不属于本 ADR 的自动结果。
+
+Addendum (2026-10-22, #144 under [ADR 0008](0008-rust-egui-viewer-drop-lua.md)): the
+runtime behind every POSIX contract in this ADR is now the single Rust binary.
+The LOVE-specific wording in the capability table is historical; the literal-argv
+spawn, explicit envp, `flock`, `rename`, `statx`, `/proc` starttime identity and
+Herdr socket-length rules are unchanged, and the platform check is implemented in
+Rust. LOVE/Lua and cimgui are no longer installed or required.

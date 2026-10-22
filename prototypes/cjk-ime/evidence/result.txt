@@ -1,6 +1,0 @@
-glyphs=pass
-injection=true
-composition=true
-commit=true
-submission=false
-real-ime=unverified

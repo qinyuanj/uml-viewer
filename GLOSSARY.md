@@ -38,19 +38,16 @@ _Avoid_: 引擎, 后端, scene service
 把某个元素从当前提案或真实图中排除的操作。
 _Avoid_: 省略, omit（界面文案中）
 
-## Lua 版本
-
-**分析语言版本**:
-质量工具理解被分析 Lua 源码时采用的版本，即 Lua 5.4；crapper 与 mutator 只在该版本下产出覆盖率。
-_Avoid_: 运行时版本, Lua 5.1
+## 运行时
 
 **viewer 运行时**:
-本仓 viewer 自身运行所用的解释器，即 LOVE 内嵌的 LuaJIT（Lua 5.1 语义）。
-_Avoid_: Lua 5.4, 主解释器
+本仓唯一的实现，一个 Rust 二进制（egui/eframe，WSLg + D3D12）；同时承担 viewer、IR 生成、四个扫描器与 companion 的无头角色。
+_Avoid_: LOVE, LuaJIT, 双解释器, 主解释器
+
+**分析语言版本**:
+质量工具理解被分析源码时采用的语言与版本。本仓自举时是 Rust；Lua 项目仍可被扫描，但仓库不再包含 Lua 运行时。
+_Avoid_: 运行时版本, Lua 5.4 分析契约
 
 **纯逻辑模块**:
-必须同时满足分析语言版本与 viewer 运行时的模块，只用两者公共子集；CI 在两种解释器下各跑一遍。
-
-**FFI 适配层**:
-只在 viewer 运行时中工作的模块，依赖 LuaJIT FFI；在分析语言版本下没有质量数据，按规则显示红色。
+不依赖窗口与输入、只消费 IR 与质量快照的模块（场景核心、EDN、IR、companion）。只有 FFI/POSIX 适配层与前端依赖宿主能力。
 _Avoid_: 适配器, adapter

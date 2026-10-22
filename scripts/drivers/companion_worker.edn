@@ -1,5 +1,5 @@
 {:version 1
- :doc "companion worker driver（#142，原 test_love_companion_worker.lua）：在隔离 XDG 下用真实
+ :doc "companion worker driver（#142，原 Lua driver）：在隔离 XDG 下用真实
        Herdr 起一个 companion（CLAUDE_BIN 为占位进程，UML_COMPANION_NO_ATTACH=1），viewer 在
        :display 之前显示等待空画布；状态行出现 Companion: ready 后写出 worker-ready.txt，
        再写入 :context :real 邮件；随后断言讨论上下文为 real、队列已出队。任何

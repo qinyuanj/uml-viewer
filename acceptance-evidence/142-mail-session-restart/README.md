@@ -1,5 +1,11 @@
 # #142 验收记录：mail、session 与 `--restart`
 
+> 历史记录（#144 之前）：本文件里的 `--runtime love`、LOVE viewer 与
+> `run_viewer_driver.py --runtime love` 描述的是 Lua/Rust 并存期。Rust 在 #144
+> 成为唯一运行时，`--runtime love` 与 `UML_RUNTIME` 已删除；`love-session/`
+> 保留为数据契约的历史 fixture（真实 LOVE viewer 写下的 session.edn），
+> Rust viewer 仍恢复它。新的验收见 `acceptance-evidence/144-rust-default-cutover/`。
+
 环境：WSL2 + WSLg，`renderer: D3D12 (NVIDIA GeForce GTX 1080 Ti)`，wgpu GL 后端。
 GUI driver 由 `python3 -I scripts/run_viewer_driver.py <driver>` 在 Rust runtime 下重放
 （`raw_input_hook` 注入 egui 事件），退出码与证据文件是断言来源。

@@ -1,0 +1,9 @@
+PASS first launch: pid 4089056
+PASS companion session: uml-viewer-uml-resta-336f5e97-f57c7043
+PASS old viewer exited: 4089056
+PASS session saved: {:cam-x 0 :cam-y 0 :focus [] :inspector-width 280 :mail-seen
+PASS restarted: pid 4096160
+PASS companion retained: uml-viewer-uml-resta-336f5e97-f57c7043
+PASS restarted viewer exited: 4096160
+PASS shutdown released ownership: {}
+evidence: /tmp/uml-restart-evidence-dx5izebj

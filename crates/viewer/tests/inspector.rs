@@ -155,7 +155,7 @@ fn proposal_write_back_keeps_other_proposals_and_policy_content() {
     .unwrap();
     std::fs::write(
         &policy,
-        r#"{:lang :lua :src "love" :omit [:x] :proposals [{:id :plan :name "中文方案" :layers []} {:id :keep :name "保留" :layers [{:name "L" :members [:a]}]}]}"#,
+        r#"{:lang :rust :src "crates" :omit [:x] :proposals [{:id :plan :name "中文方案" :layers []} {:id :keep :name "保留" :layers [{:name "L" :members [:a]}]}]}"#,
     )
     .unwrap();
     let mut state = load(&std::fs::read_to_string(&ir).unwrap());
@@ -166,11 +166,11 @@ fn proposal_write_back_keeps_other_proposals_and_policy_content() {
         "中文方案输入",
         Some(&project_files::Files),
     );
-    // Proposals are written in their normalized form (as the LOVE viewer
-    // does): added `:omit []` and layer ids are not losses.
+    // Proposals are written in their normalized form (as the viewer does):
+    // added `:omit []` and layer ids are not losses.
     let written = edn::parse(&std::fs::read_to_string(&policy).unwrap()).unwrap();
-    assert_eq!(get(&written, "lang"), Some(&Value::keyword("lua")));
-    assert_eq!(get(&written, "src"), Some(&Value::String("love".into())));
+    assert_eq!(get(&written, "lang"), Some(&Value::keyword("rust")));
+    assert_eq!(get(&written, "src"), Some(&Value::String("crates".into())));
     assert_eq!(get(&written, "omit"), Some(&edn::parse("[:x]").unwrap()));
     let Some(Value::Vector(proposals)) = get(&written, "proposals") else {
         panic!("proposals lost")

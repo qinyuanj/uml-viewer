@@ -1,5 +1,5 @@
 //! The four headless companion roles, dispatched by the single binary (#134).
-//! Argument shapes match the LOVE runtime's, minus the game directory:
+//! Argument shapes for the companion roles: `[exe, role, manifest]`.
 //! `companion-preflight <root> [args...]`, `companion-worker <request.edn>`,
 //! `companion-runner <manifest.edn>`, `companion-controller <manifest.edn>`.
 

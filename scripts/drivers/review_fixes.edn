@@ -1,8 +1,8 @@
 {:version 1
- :doc "review fixes driver（#142 承接 #141，原 test_love_review_fixes.lua）：两个源码窗口各自保留
+ :doc "review fixes driver（#142 承接 #141，原 Lua driver）：两个源码窗口各自保留
        选区；先在 first.lua 选中 FIRST，再打开 second.lua 选中 SECOND——第一个窗口的选区不被
        覆盖；Ctrl+C 复制的是聚焦（最新）窗口的 SECOND；随后在搜索框里另选一段文本复制，
-       两个源码窗口的选区与源码复制结果都不被覆盖。Lua 版用 cimgui 的剪贴板回调断言系统
+       两个源码窗口的选区与源码复制结果都不被覆盖。历史 Lua driver 用原生剪贴板回调断言系统
        剪贴板；egui 的 :copied 记录的是本 viewer 交给平台的文本，系统剪贴板本身需人工验证。"
  :steps [{:op :wait-frames :n 3}
          {:op :open-source :lang "lua" :file "first.lua"}

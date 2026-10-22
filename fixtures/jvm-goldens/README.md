@@ -3,12 +3,12 @@
 These eight files are the **frozen parity oracle** captured on native Windows
 by the JVM implementation at
 `4afab4f2b2117a06086bfd812163962c7c3af84f` (Temurin OpenJDK LTS, Clojure CLI
-1.12.6.1673, Clojure 1.12.0). They are an independent oracle for the Lua
-rewrite, including existing scanner limitations. No viewer window or companion
+1.12.6.1673, Clojure 1.12.0). They are an independent oracle for the Rust
+port, including existing scanner limitations. No viewer window or companion
 was involved.
 
 The JVM implementation and its regeneration tooling were deleted by the #72
-cutover. Do **not** rewrite these EDN files: the LOVE parity specs read them
+cutover. Do **not** rewrite these EDN files: the Rust golden tests read them
 unchanged. There is no `regenerate-jvm-goldens.ps1`, `capture-jvm-geometry.clj`,
 or `test_jvm_goldens.clj` any more; reproducing them would require checking out
 the historical JVM commit.
@@ -51,5 +51,5 @@ Fixture provenance (historical scanner spec scenarios materialized):
 | `lua-fixture/` | Existing real Lua project, unchanged, including its existing metrics snapshots. |
 
 These are scanner fixture projects; comparison needs no npm/Cargo/Python
-dependency installation or compilation. The LOVE specs establish the current
-parity result under both LuaJIT and Lua 5.4.
+dependency installation or compilation. The Rust cargo golden tests establish
+the current parity result.

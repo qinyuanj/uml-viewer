@@ -45,14 +45,13 @@ def main():
                UML_VIEWER_TOOL_ROOT=str(REPO), UML_VIEWER_EVIDENCE=str(evidence),
                UML_VIEWER_TEST_SECONDS='75', CLAUDE_BIN=str(project / 'companion-placeholder'),
                UML_COMPANION_NO_ATTACH='1')
-    for variable in ('UML_CIMGUI_DIRECTORY', 'UML_VIEWER_PROJECT_ROOT'):
+    for variable in ('UML_VIEWER_PROJECT_ROOT',):
         env.pop(variable, None)
     checks = []
     result = {'project': str(project), 'evidence': str(evidence)}
     try:
         (project / '.uml-viewer').mkdir()
         shutil.copy2(REPO / 'examples/uml-viewer.edn', project / 'diagram.edn')
-        shutil.copytree(REPO / '.uml-viewer/cimgui-love-1.90-1', project / '.uml-viewer/cimgui-love-1.90-1')
         (project / 'companion-placeholder').write_text('#!/bin/sh\nsleep 600\n')
         (project / 'companion-placeholder').chmod(0o755)
         shutil.copy2(REPO / 'scripts/uml', project / 'uml')

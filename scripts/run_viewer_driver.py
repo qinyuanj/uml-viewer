@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """在真实 viewer 里运行一个 GUI 行为 driver，断言可观察结果。
 
-driver 有声明式 EDN 脚本（`scripts/drivers/<name>.edn`，由 #139 的 egui
-viewer 重放）时用 Rust viewer；否则沿用 `scripts/test_love_*.lua` 在原生
-LOVE 里重放（两实现并存到 #144）。两类 driver 都通过
+driver 是声明式 EDN 脚本（`scripts/drivers/<name>.edn`），由 Rust egui
+viewer 重放（#139；Lua 实现已随 #144 删除）。driver 通过
 `UML_VIEWER_TEST_DRIVER` 拿脚本路径、写入证据文件，并遵守同样的退出契约。
 原先每个 driver 配一个包装器（设环境变量、启动 viewer、检查证据）；那些
 PowerShell 包装器已随 Windows 原生支持退役（ADR 0007），本脚本是它们唯一的
@@ -11,7 +10,7 @@ POSIX 替代，因此断言本身不丢失。
 
 用法：
     python3 -I scripts/run_viewer_driver.py metrics
-    python3 -I scripts/run_viewer_driver.py navigation --runtime love
+    python3 -I scripts/run_viewer_driver.py navigation
     python3 -I scripts/run_viewer_driver.py metrics --evidence DIR --seconds 60
 """
 import argparse
@@ -41,7 +40,7 @@ def wait_for(test, timeout, interval=0.05, message='condition'):
 # These lists came from the retired PowerShell wrappers, so retiring a wrapper
 # did not silently drop a behavioural assertion.
 # Each driver asserts against specific project content; the retired PowerShell
-# wrappers wrote that content before launching LOVE. These fixtures replace
+# wrappers wrote that content before launching the viewer. These fixtures replace
 # exactly that setup, so retiring a wrapper dropped no behavioural assertion.
 def prepare_metrics(project):
     (project / '.metrics').mkdir(parents=True, exist_ok=True)
@@ -65,8 +64,8 @@ def prepare_navigation(project):
 def prepare_search(project):
     (project / 'diagram.edn').write_text(
         '{:hierarchical true :classes [{:id :alpha.deep.parser :name "解析器"'
-        ' :ns "love.alpha.deep.parser"} {:id :beta.parser :name "解析器"'
-        ' :ns "love.beta.parser"}] :edges [{:from :alpha.deep.parser'
+        ' :ns "demo.alpha.deep.parser"} {:id :beta.parser :name "解析器"'
+        ' :ns "demo.beta.parser"}] :edges [{:from :alpha.deep.parser'
         ' :to :beta.parser :kind :dependency}]}')
 
 
@@ -141,7 +140,7 @@ def prepare_inspector(project):
     # Proposal write-back (#141) must keep the other proposal and every other
     # policy key, so the IR has a sibling policy carrying both.
     (project / 'diagram.policy.edn').write_text(
-        '{:lang :lua :src "love" :prefix "demo" :omit [:zzz]'
+        '{:lang :rust :src "crates" :prefix "demo" :omit [:zzz]'
         ' :proposals [{:id :plan :name "中文方案" :layers []}'
         ' {:id :keep :name "保留方案" :layers []}]}')
 
@@ -382,21 +381,9 @@ DRIVERS = {
 }
 
 
-def love_executable():
-    love = shutil.which(os.environ.get('UML_LOVE_EXECUTABLE', 'love'))
-    if not love:
-        raise ValueError('LOVE 11.5 is required: install love or set UML_LOVE_EXECUTABLE')
-    return love
-
-
 def edn_script(name):
-    """The declarative script of a driver ported to the Rust viewer (#139)."""
+    """The declarative script of a driver (#139)."""
     path = REPO / f'scripts/drivers/{name}.edn'
-    return path if path.is_file() else None
-
-
-def lua_driver(name):
-    path = REPO / f'scripts/test_love_{name}.lua'
     return path if path.is_file() else None
 
 
@@ -412,7 +399,7 @@ def rust_executable():
                      '(or set UML_VIEWER_RUST_EXECUTABLE)')
 
 
-def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run', runtime='love',
+def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run',
                viewer_args=()):
     """Launch the real viewer once and require success plus its pass marker."""
     xdg = Path(tempfile.mkdtemp(prefix='uml-viewer-xdg-'))
@@ -423,14 +410,10 @@ def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run'
                UML_VIEWER_TEST_SECONDS=str(seconds),
                UML_VIEWER_TEST_DRIVER=str(driver),
                UML_MAIL_TEST_ROOT=str(project), UML_COMPANION_NO_ATTACH='1')
-    env.pop('UML_CIMGUI_DIRECTORY', None)
-    if runtime == 'rust':
-        argv = [rust_executable(), 'viewer', *viewer_args, *diagram]
-        # WSLg: without these the viewer falls back to llvmpipe (ADR 0008).
-        env.setdefault('GALLIUM_DRIVER', 'd3d12')
-        env.setdefault('WGPU_BACKEND', 'gl')
-    else:
-        argv = [love_executable(), str(REPO / 'love'), 'viewer', *viewer_args, *diagram]
+    argv = [rust_executable(), 'viewer', *viewer_args, *diagram]
+    # WSLg: without these the viewer falls back to llvmpipe (ADR 0008).
+    env.setdefault('GALLIUM_DRIVER', 'd3d12')
+    env.setdefault('WGPU_BACKEND', 'gl')
     env.update(extra_env)
     try:
         process = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True,
@@ -456,46 +439,33 @@ def release_companion(project, timeout=90):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('driver', help='driver name, e.g. navigation for test_love_navigation.lua')
+    parser.add_argument('driver', help='driver name, e.g. navigation for scripts/drivers/navigation.edn')
     parser.add_argument('--evidence')
     parser.add_argument('--seconds', type=float, default=None)
     parser.add_argument('--project-root', help='use this project instead of an isolated copy')
     parser.add_argument('--diagram', help='initial diagram, relative to the project root')
     parser.add_argument('--pass-marker', action='append', default=[],
                         help='evidence file the driver must create (repeatable)')
-    parser.add_argument('--runtime', choices=['love', 'rust'], default=None,
-                        help='force a runtime; default picks rust when an EDN script exists')
     arguments = parser.parse_args()
 
     spec = DRIVERS.get(arguments.driver, {'seconds': 90, 'evidence': []})
     seconds = arguments.seconds or spec['seconds']
     markers = list(arguments.pass_marker) or list(spec['evidence'])
     script = edn_script(arguments.driver)
-    runtime = arguments.runtime or ('rust' if script else 'love')
-    if runtime == 'rust':
-        if not script:
-            print(f'no EDN driver: scripts/drivers/{arguments.driver}.edn', file=sys.stderr)
-            return 2
-        driver = script
-    else:
-        driver = lua_driver(arguments.driver)
-        if not driver:
-            print(f'no driver: {REPO}/scripts/test_love_{arguments.driver}.lua', file=sys.stderr)
-            return 2
-    result_runtime = runtime
-    evidence = Path(arguments.evidence or tempfile.mkdtemp(prefix='uml-love-evidence-'))
+    if not script:
+        print(f'no EDN driver: scripts/drivers/{arguments.driver}.edn', file=sys.stderr)
+        return 2
+    driver = script
+    evidence = Path(arguments.evidence or tempfile.mkdtemp(prefix='uml-viewer-evidence-'))
     evidence.mkdir(parents=True, exist_ok=True)
     temporary_project = arguments.project_root is None
     project = Path(arguments.project_root) if arguments.project_root else \
-        Path(tempfile.mkdtemp(prefix='uml love 项目 '))
-    result = {'driver': arguments.driver, 'runtime': result_runtime,
+        Path(tempfile.mkdtemp(prefix='uml viewer 项目 '))
+    result = {'driver': arguments.driver, 'runtime': 'rust',
               'project': str(project), 'evidence': str(evidence)}
     try:
         if temporary_project:
             (project / '.uml-viewer').mkdir(parents=True)
-            if (REPO / '.uml-viewer/cimgui-love-1.90-1').exists():
-                shutil.copytree(REPO / '.uml-viewer/cimgui-love-1.90-1',
-                                project / '.uml-viewer/cimgui-love-1.90-1')
         fixture = FIXTURES.get(arguments.driver)
         scenarios = SCENARIOS[arguments.driver](project, evidence) \
             if arguments.driver in SCENARIOS else [{'tag': 'run'}]
@@ -521,14 +491,13 @@ def main():
                     else DRIVER_ENV.get(arguments.driver, lambda p, e: {})(project, evidence)
             except AssertionError as error:
                 raise DriverSkipped(str(error))
-            # The LOVE driver branches on its environment; an EDN script stays
-            # declarative, so a scenario may name its own script instead.
+            # A scenario may name its own EDN script instead.
             scenario_driver = driver
-            if runtime == 'rust' and scenario.get('script'):
+            if scenario.get('script'):
                 scenario_driver = edn_script(scenario['script'])
                 assert scenario_driver, f"{tag}: no EDN script {scenario['script']}"
             process = run_viewer(project, evidence, seconds, scenario_driver, diagram, extra,
-                                 tag=tag, runtime=runtime, viewer_args=scenario.get('args', []))
+                                 tag=tag, viewer_args=scenario.get('args', []))
             expected = scenario.get('markers', markers)
             for marker in expected:
                 assert (evidence / marker).exists() or (project / marker).exists(), \

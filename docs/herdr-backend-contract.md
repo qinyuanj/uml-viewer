@@ -3,10 +3,10 @@
 本文档记录 Herdr 的能力证据和生命周期契约。**平台以 ADR 0007 为准：交付目标为
 WSL2 + Ubuntu 24.04 + WSLg；Windows 原生不受支持，macOS 当前不承诺。**
 文中 Java/JVM 与旧 Windows/macOS 验收记录是历史证据，不代表当前实现。当前实现是
-`love/uml/adapters/` 的 LOVE runner/controller，进程创建、等待、身份与 OS 单例 lock
-由 POSIX adapter 提供（平台能力表见 ADR 0007；Windows 专用实现在 spec #106 退役），ownership、
-预算、FIFO 与质量门控契约保持不变。当前身份文件与重启规则见 §9.1。#23 退役后
-Herdr 是唯一 companion 后端；`--backend herdr` 保留为兼容选项。
+`crates/companion` 的 Rust runner/controller（#144 删除了 LOVE/Lua 实现），进程创建、
+等待、身份与 OS 单例 lock 由 POSIX adapter 提供（平台能力表见 ADR 0007；Windows 专用实现
+在 spec #106 退役），ownership、预算、FIFO 与质量门控契约保持不变。当前身份文件与重启规则
+见 §9.1。#23 退役后 Herdr 是唯一 companion 后端；`--backend herdr` 保留为兼容选项。
 
 WSL 原生证据：Herdr 0.9.5 / protocol 22 下的完整生命周期（preflight、隔离 server、
 workspace/pane、runner、恢复注册、验证清理）与公共入口端到端流程；
@@ -136,12 +136,12 @@ wake 投递成功或 `pane wait-output`（socket `pane.wait_for_output`）匹配
 
 #19 实现采用以下有界政策，而不是无限重启：
 
-- **runner**：pane 内启动项目拥有的 LOVE runner。runner 用 `posix_spawn` 传
-  精确 argv/cwd 并保留实际 Claude 子进程 handle；交互 stdin/stdout/stderr
-  继承 pane，状态文件原子替换记录唯一 generation token、实际 child PID/start、
-  退出码与时间。只接受可直接 exec 的命令：脚本 wrapper（`.ps1`/`.cmd`/
-  `.bat`）会在创建资源前拒绝，因为无法证明实际 child 身份。runner 被杀死
-  且没有匹配的最终 exit 记录时，原因未知，不恢复。上面描述的 Java runner
+- **runner**：pane 内启动项目拥有的 Rust runner（`uml-viewer companion-runner`）。
+  runner 用 `posix_spawn` 传精确 argv/cwd 并保留实际 Claude 子进程 handle；交互
+  stdin/stdout/stderr 继承 pane，状态文件原子替换记录唯一 generation token、实际
+  child PID/start、退出码与时间。只接受可直接 exec 的命令：脚本 wrapper
+  （`.ps1`/`.cmd`/`.bat`）会在创建资源前拒绝，因为无法证明实际 child 身份。runner
+  被杀死且没有匹配的最终 exit 记录时，原因未知，不恢复。上面描述的 Java runner
   与 Windows 专属约束属历史记录。
 - **controller**（历史为 JVM `FileChannel`，现由 `adapters/lock` 的 `flock` 承担）：项目独占 detached controller，经 OS 单例 lock 注册
   UUID/PID/start。Viewer 只持久化 immutable supervisor 引用；mutable phase、
@@ -208,7 +208,7 @@ Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace cr
 
 ## 7. Viewer 重启连续性
 
-当前实现：LOVE viewer 由 POSIX wrapper 按 §9.1 的 `/proc` 身份核实并等待旧进程
+当前实现：Rust viewer 由 POSIX wrapper 按 §9.1 的 `/proc` 身份核实并等待旧进程
 退出后重启，companion 与 ownership 保持不变（ADR 0002，WSL 证据见
 `acceptance-evidence/106-wsl/`）。以下 JVM 措辞是该流程的历史记录，语义不变。
 
@@ -294,27 +294,28 @@ Herdr 是唯一后端；tmux/psmux adapter、pane 恢复 hook 和旧终端桥接
 新版本不会自动清理活动 legacy 资源，也不会影响其他项目或共享 Herdr 服务。
 维护者已明确取消双平台完整验收作为退役前置条件；这项决策不改变未验证状态。
 
-### 9.1 运行时身份文件与跨运行时 `--restart`
+### 9.1 运行时身份文件与 `--restart`
 
-LOVE viewer 经 POSIX 进程 adapter 读取自身 PID 与 `/proc/<pid>/stat` 的
+Rust viewer 经 POSIX 进程 adapter 读取自身 PID 与 `/proc/<pid>/stat` 的
 starttime（第 22 字段），在启动成功后写入
 `.uml-viewer/viewer-process-identity.json`：
 
 ```json
-{"pid":1234,"started":"5381724","runtime":"love","cwd":"/home/user/project"}
+{"pid":1234,"started":"5381724","runtime":"rust","cwd":"/home/user/project"}
 ```
 
 - `started` 是不透明十进制文本，restart wrapper（`scripts/uml_launch.py`）只做
   精确相等比较，不解释、不设时间窗容差（ADR 0007）。Windows FILETIME 表示随
   spec #106 退役，不再写出或接受。
-- #72 切换后 JVM 实现已删除：wrapper **不再识别**
-  `.uml-viewer/viewer-jvm.json`，`./uml --restart` 只验证 LOVE 记录。
+- #72 切换后 JVM 实现已删除；#144 切换后 LOVE/Lua 实现也已删除：wrapper
+  **不再识别** `.uml-viewer/viewer-jvm.json`，并拒绝 `runtime` 为 `love` 或
+  `jvm` 的旧记录。`--restart` 只验证 `rust` 记录。
 - 每次新启动的 launcher 记录 `.uml-viewer/viewer-process.json` 带
-  `runtime` 字段（只允许 `love`），作为当前会话的权威来源。声明其他运行时的
-  旧记录被明确拒绝，不以 LOVE 记录猜测替代。
+  `runtime` 字段（只允许 `rust`），作为当前会话的权威来源。声明其他运行时或缺
+  该字段的旧记录被明确拒绝，不猜测替代。
 - 记录缺失、PID/starttime 不符或身份文件无效同样拒绝；已有身份文件保持原字节，
   不删除、不改写、不以新进程替代。
-- 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。LOVE 的
+- 旧 launcher/旧 viewer 均须在 30 秒内实际退出后才启动替代进程。Rust viewer 的
   `:quit-for-restart` 先原子写入 `session.edn` 再退出；重启后恢复图路径、
   独立 discussion context、视图（focus/proposal/layer/declutter/camera/
   zoom/selection/detail）与 mailbox cursor（ADR 0002）。

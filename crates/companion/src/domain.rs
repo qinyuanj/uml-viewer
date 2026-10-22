@@ -41,7 +41,7 @@ a.b module. Non-local functions are the operations. A top-level
 setmetatable(t, {__index = Base}) or setmetatable(t, Base), with Base
 from local Base = require("m"), is inheritance from m.
 Snapshots join by the class :ns, then by the class id.
-./uml ir runs the LOVE IR generator on this project's policy. Use the public
+./uml ir runs the Rust IR generator on this project's policy. Use the public
 ./uml crap and ./uml mutate quality dispatch for mailbox refreshes: it
 shares CLI routing, optional uml-quality.json overrides and standard tool
 scope/exclusions. If the entry is absent, install it
@@ -92,8 +92,8 @@ A companion wake-up means mail is waiting. If idle, pop and handle each
 to-agent command in order. If busy, finish first. Do not control the session backend yourself.
 After successful regen only, write :display with the generated EDN path.
 Prefer ./uml (fresh start: spawn this companion, wait for :display)
-and ./uml --restart (new LOVE viewer, keep this session, restore last view).
-The viewer runs on LOVE 11.5 with cimgui-love; there is no JVM or Clojure
+and ./uml --restart (new Rust viewer, keep this session, restore last view).
+The viewer is the Rust egui binary; there is no JVM, Clojure or LOVE
 dependency. If ./uml is missing, tell the user to run get-uml-viewer in this
 directory (it clones uml-viewer into gitignored .uml-viewer/uml-viewer/).
 Do not start the viewer on launch; it reloads EDN when the file mtime

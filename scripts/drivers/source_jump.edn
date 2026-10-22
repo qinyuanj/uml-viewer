@@ -1,5 +1,5 @@
 {:version 1
- :doc "跳转源码 driver（#141，原 test_love_source_jump.lua）：真实双击下钻命名空间、双击叶子
+ :doc "跳转源码 driver（#141，原 Lua driver）：真实双击下钻命名空间、双击叶子
        打开卡片；点卡片模块行打开整文件源码窗（不定位行，84 行，真实路径）；关掉后点成员
        M.target 落到第 82 行并高亮、真实滚动且目标可见；在第 82 行从缩进后拖到 function
        末尾，选中正好是 function（不含行号栏，制表符展开后仍映射回源码）；Ctrl+C 复制选区。

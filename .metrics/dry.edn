@@ -1,32 +1,404 @@
 {:candidates [
  {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/posix_lock.lua", :start-line 9, :end-line 20}
-  :right {:file "love/uml/adapters/posix_path.lua", :start-line 5, :end-line 12}
-  :left-nodes 75
-  :right-nodes 75}
+  :language "rust"
+  :left {:file "crates/companion/src/json.rs", :start-line 332, :end-line 348}
+  :right {:file "crates/edn/src/lib.rs", :start-line 489, :end-line 505}
+  :left-nodes 276
+  :right-nodes 276}
  {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/posix_lock.lua", :start-line 9, :end-line 20}
-  :right {:file "love/uml/adapters/posix_process.lua", :start-line 22, :end-line 44}
-  :left-nodes 75
-  :right-nodes 75}
+  :language "rust"
+  :left {:file "crates/companion/src/mailbox.rs", :start-line 64, :end-line 69}
+  :right {:file "crates/viewer/src/mailbox.rs", :start-line 43, :end-line 48}
+  :left-nodes 123
+  :right-nodes 123}
  {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/adapters/posix_path.lua", :start-line 5, :end-line 12}
-  :right {:file "love/uml/adapters/posix_process.lua", :start-line 22, :end-line 44}
-  :left-nodes 75
-  :right-nodes 75}
+  :language "rust"
+  :left {:file "crates/companion/src/record.rs", :start-line 10, :end-line 15}
+  :right {:file "crates/scene/src/geom.rs", :start-line 8, :end-line 13}
+  :left-nodes 128
+  :right-nodes 128}
  {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/application/events.lua", :start-line 180, :end-line 184}
-  :right {:file "love/uml/application/highlight.lua", :start-line 9, :end-line 13}
-  :left-nodes 111
-  :right-nodes 111}
+  :language "rust"
+  :left {:file "crates/ir/src/pair_order.rs", :start-line 9, :end-line 13}
+  :right {:file "crates/scene/src/pair_order.rs", :start-line 9, :end-line 13}
+  :left-nodes 45
+  :right-nodes 45}
  {:score 1.0
-  :language "lua"
-  :left {:file "love/uml/domain/herdr.lua", :start-line 13, :end-line 18}
-  :right {:file "love/uml/domain/recovery.lua", :start-line 16, :end-line 21}
-  :left-nodes 152
-  :right-nodes 152}
+  :language "rust"
+  :left {:file "crates/ir/src/pair_order.rs", :start-line 15, :end-line 20}
+  :right {:file "crates/scene/src/pair_order.rs", :start-line 15, :end-line 20}
+  :left-nodes 56
+  :right-nodes 56}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/ir/src/policy.rs", :start-line 15, :end-line 18}
+  :right {:file "crates/scene/src/hierarchy.rs", :start-line 41, :end-line 44}
+  :left-nodes 90
+  :right-nodes 90}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/ir/src/policy.rs", :start-line 15, :end-line 18}
+  :right {:file "crates/scene/src/policy.rs", :start-line 37, :end-line 40}
+  :left-nodes 90
+  :right-nodes 90}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/ir/src/scan/rust.rs", :start-line 123, :end-line 128}
+  :right {:file "crates/ir/src/scan/typescript.rs", :start-line 411, :end-line 416}
+  :left-nodes 142
+  :right-nodes 142}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 47, :end-line 53}
+  :right {:file "crates/scene/src/geom.rs", :start-line 40, :end-line 46}
+  :left-nodes 104
+  :right-nodes 104}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :left-nodes 76
+  :right-nodes 76}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/config.rs", :start-line 13, :end-line 20}
+  :right {:file "crates/scene/src/config.rs", :start-line 23, :end-line 30}
+  :left-nodes 98
+  :right-nodes 98}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/config.rs", :start-line 44, :end-line 49}
+  :right {:file "crates/scene/src/config.rs", :start-line 51, :end-line 56}
+  :left-nodes 68
+  :right-nodes 68}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/document.rs", :start-line 23, :end-line 30}
+  :right {:file "crates/scene/src/hit.rs", :start-line 112, :end-line 119}
+  :left-nodes 102
+  :right-nodes 102}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hierarchy.rs", :start-line 41, :end-line 44}
+  :right {:file "crates/scene/src/policy.rs", :start-line 37, :end-line 40}
+  :left-nodes 90
+  :right-nodes 90}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :right {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/hit.rs", :start-line 36, :end-line 41}
+  :right {:file "crates/scene/src/hit.rs", :start-line 43, :end-line 48}
+  :left-nodes 169
+  :right-nodes 169}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/ir.rs", :start-line 315, :end-line 320}
+  :right {:file "crates/scene/src/policy.rs", :start-line 15, :end-line 20}
+  :left-nodes 119
+  :right-nodes 119}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 1.0
+  :language "rust"
+  :left {:file "crates/viewer/src/theme.rs", :start-line 132, :end-line 140}
+  :right {:file "crates/viewer/src/theme.rs", :start-line 142, :end-line 150}
+  :left-nodes 74
+  :right-nodes 74}
+ {:score 0.941176470588
+  :language "rust"
+  :left {:file "crates/companion/src/record.rs", :start-line 28, :end-line 35}
+  :right {:file "crates/scene/src/document.rs", :start-line 23, :end-line 30}
+  :left-nodes 104
+  :right-nodes 102}
+ {:score 0.941176470588
+  :language "rust"
+  :left {:file "crates/companion/src/record.rs", :start-line 28, :end-line 35}
+  :right {:file "crates/scene/src/hit.rs", :start-line 112, :end-line 119}
+  :left-nodes 104
+  :right-nodes 102}
+ {:score 0.932203389831
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 47, :end-line 53}
+  :right {:file "crates/viewer/src/driver.rs", :start-line 500, :end-line 506}
+  :left-nodes 104
+  :right-nodes 102}
+ {:score 0.932203389831
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 40, :end-line 46}
+  :right {:file "crates/viewer/src/driver.rs", :start-line 500, :end-line 506}
+  :left-nodes 104
+  :right-nodes 102}
+ {:score 0.931034482759
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 34, :end-line 39}
+  :right {:file "crates/scene/src/ir.rs", :start-line 315, :end-line 320}
+  :left-nodes 121
+  :right-nodes 119}
+ {:score 0.931034482759
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 34, :end-line 39}
+  :right {:file "crates/scene/src/policy.rs", :start-line 15, :end-line 20}
+  :left-nodes 121
+  :right-nodes 119}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/ir/src/value.rs", :start-line 56, :end-line 61}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/compose.rs", :start-line 13, :end-line 18}
+  :right {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :left-nodes 74
+  :right-nodes 76}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/hierarchy.rs", :start-line 14, :end-line 19}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/hit.rs", :start-line 6, :end-line 11}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/ir.rs", :start-line 12, :end-line 17}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/layout.rs", :start-line 46, :end-line 51}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/overlay.rs", :start-line 14, :end-line 19}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.92
+  :language "rust"
+  :left {:file "crates/scene/src/geom.rs", :start-line 309, :end-line 314}
+  :right {:file "crates/scene/src/policy.rs", :start-line 22, :end-line 27}
+  :left-nodes 76
+  :right-nodes 74}
+ {:score 0.913978494624
+  :language "rust"
+  :left {:file "crates/ir/src/scan/lua.rs", :start-line 117, :end-line 130}
+  :right {:file "crates/ir/src/scan/lua.rs", :start-line 154, :end-line 162}
+  :left-nodes 214
+  :right-nodes 155}
+ {:score 0.911111111111
+  :language "rust"
+  :left {:file "crates/ir/src/graph.rs", :start-line 205, :end-line 213}
+  :right {:file "crates/ir/src/scan/python.rs", :start-line 495, :end-line 503}
+  :left-nodes 99
+  :right-nodes 97}
+ {:score 0.906976744186
+  :language "rust"
+  :left {:file "crates/ir/src/policy_tests.rs", :start-line 42, :end-line 58}
+  :right {:file "crates/ir/src/policy_tests.rs", :start-line 61, :end-line 85}
+  :left-nodes 99
+  :right-nodes 171}
+ {:score 0.893333333333
+  :language "rust"
+  :left {:file "crates/companion/src/mailbox.rs", :start-line 75, :end-line 81}
+  :right {:file "crates/viewer/src/mailbox.rs", :start-line 57, :end-line 63}
+  :left-nodes 119
+  :right-nodes 125}
+ {:score 0.866071428571
+  :language "rust"
+  :left {:file "crates/ir/src/scan/lua.rs", :start-line 133, :end-line 151}
+  :right {:file "crates/ir/src/scan/lua.rs", :start-line 165, :end-line 176}
+  :left-nodes 325
+  :right-nodes 247}
+ {:score 0.857142857143
+  :language "rust"
+  :left {:file "crates/ir/src/scan/rust.rs", :start-line 433, :end-line 456}
+  :right {:file "crates/ir/src/scan/rust.rs", :start-line 459, :end-line 471}
+  :left-nodes 528
+  :right-nodes 307}
+ {:score 0.854166666667
+  :language "rust"
+  :left {:file "crates/ir/src/pair_order.rs", :start-line 71, :end-line 89}
+  :right {:file "crates/scene/src/pair_order.rs", :start-line 90, :end-line 108}
+  :left-nodes 341
+  :right-nodes 319}
+ {:score 0.840579710145
+  :language "rust"
+  :left {:file "crates/ir/src/scan/rust.rs", :start-line 412, :end-line 429}
+  :right {:file "crates/ir/src/scan/rust.rs", :start-line 459, :end-line 471}
+  :left-nodes 487
+  :right-nodes 307}
+ {:score 0.826086956522
+  :language "rust"
+  :left {:file "crates/viewer/src/app.rs", :start-line 1418, :end-line 1425}
+  :right {:file "crates/viewer/src/gui.rs", :start-line 129, :end-line 136}
+  :left-nodes 102
+  :right-nodes 96}
 ]}

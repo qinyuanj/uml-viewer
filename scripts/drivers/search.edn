@@ -1,5 +1,5 @@
 {:version 1
- :doc "Ctrl+F 搜索 driver（#140，原 test_love_search.lua）：Ctrl+F 聚焦搜索框；中文 textinput
+ :doc "Ctrl+F 搜索 driver（#140，原 Lua driver）：Ctrl+F 聚焦搜索框；中文 textinput
        与粘贴（egui Event::Text / Event::Paste，走 TextEdit 自身的输入路径）进入搜索框；
        深层目标与同名类都列出；打开的搜索框截获画布快捷键与框内指针（egui 下 imgui 捕获
        断言的等价物）；Down 显式选中第一个结果；Enter 进入目标命名空间、选中并打开卡片。

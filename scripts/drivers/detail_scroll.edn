@@ -1,9 +1,9 @@
 {:version 1
- :doc "类卡片滚动 driver（#141，原 test_love_detail_scroll.lua）：空检查器画出说明；默认
+ :doc "类卡片滚动 driver（#141，原 Lua driver）：空检查器画出说明；默认
        640x700 卡片纵向溢出时没有横向溢出；指针在卡片上时滚轮按 48px 一格滚动并两端夹紧，
        且不把检查器父控件滚出视野；悬停的操作行从绘制行发布；卡片窄到 400 时出现横向滚动、
        宽到 900 时指标列贴可用宽度；New Proposal 加一行；右键提案打开 Rename/Delete 菜单。
-       Lua 版直接改 state 打开卡片；这里用真实双击。"
+       历史 Lua driver 直接改 state 打开卡片；这里用真实双击。"
  :steps [{:op :wait-frames :n 3}
          {:op :assert-gui :path [:inspector :empty-help] :equals true
           :message "empty-inspector explanation was not drawn"}

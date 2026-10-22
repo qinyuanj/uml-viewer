@@ -1,0 +1,1 @@
+PASS driver font_parity; evidence: /tmp/uml144-rerun-font_parity

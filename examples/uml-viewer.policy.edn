@@ -1,19 +1,20 @@
 {:hierarchical true,
- :src "love",
  :title "UML viewer",
- :prefix "love",
- :lang :lua,
+ :prefix "uml",
+ :lang :rust,
+ :sources
+ [{:lang :rust, :root "crates/edn/src", :prefix "uml.edn"}
+  {:lang :rust, :root "crates/ir/src", :prefix "uml.ir"}
+  {:lang :rust, :root "crates/scene/src", :prefix "uml.scene"}
+  {:lang :rust, :root "crates/companion/src", :prefix "uml.companion"}
+  {:lang :rust, :root "crates/viewer/src", :prefix "uml.viewer"}
+  {:lang :rust, :root "crates/uml-viewer/src", :prefix "uml.main"}],
  :proposals [{:id :p-1791033119418, :name "test", :layers []}],
  :levels
- [[uml.domain uml.source uml.graph
-   uml.lua_language uml.typescript_language uml.rust_language uml.python_language]
-  [uml.engine]
-  [uml.application]
-  [uml.adapters]
-  [uml.main main conf]],
+ [[edn]
+  [ir scene companion]
+  [viewer]
+  [main]],
  :out "examples/uml-viewer.edn",
- :order
- [main conf uml.main uml.adapters uml.application uml.engine
-  uml.source uml.graph uml.lua_language uml.typescript_language
-  uml.rust_language uml.python_language uml.edn uml.compat uml.domain],
- :foreign [lfs ffi cimgui]}
+ :order [main viewer companion scene ir edn],
+ :foreign [std core alloc libc egui eframe image winit log]}

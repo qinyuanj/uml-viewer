@@ -1,5 +1,5 @@
 {:version 1
- :doc "字形尺寸对等 driver（#140，原 test_love_font_parity.lua 的 chinese 场景）：
+ :doc "字形尺寸对等 driver（#140，原 Lua driver 的 chinese 场景）：
        1500x920、DPI 1、缩放 1 下，画布上每条文字命令按真实字库测量后都落在槽内
        （拟合字号 ≤18 且 ≤ 槽高，宽度 ≤ max_w）。canvas.png 之后（#141 承接）
        双击打开 640x700 类卡片：无横向溢出，前两行行高 20/18。"

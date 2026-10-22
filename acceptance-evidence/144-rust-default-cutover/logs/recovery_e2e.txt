@@ -1,0 +1,14 @@
+FAIL timed out waiting for exhausted recovery 2
+evidence: /tmp/uml-recovery-evidence-7f8qdpk5
+PASS neighbour: companion ready: uml-viewer-uml-recovery--f0c9218f-33e77d4e
+PASS cancel: companion ready: uml-viewer-uml-recovery--3a284ec4-6be5f2d6
+PASS cancel: recovery 1: scheduled 1.06s after exit (budget 1s), child started 1.64s after, attempts 1, generation 1
+PASS cancel: FIFO after recovery: queue drained oldest first, no rejection logged
+PASS cancel: recovery 2: scheduled 2.04s after exit (budget 2s), child started 2.50s after, attempts 2, generation 2
+PASS cancel: third exit: journal :backoff; close requested 0.08s after exit (4s budget)
+PASS cancel: closed: viewer exited, ownership {} and Herdr session removed
+PASS cancel: close during backoff: journal :cancelled, controller 63439 gone
+PASS cancel: no revival: 3 children after the 4s budget elapsed
+PASS cancel: bystanders: unrelated Herdr session, process and project alive
+PASS exhausted: companion ready: uml-viewer-uml-recovery--6862a25f-e424c241
+PASS exhausted: recovery 1: scheduled 1.06s after exit (budget 1s), child started 1.78s after, attempts 1, generation 1

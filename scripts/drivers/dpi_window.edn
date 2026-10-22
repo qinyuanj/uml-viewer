@@ -1,5 +1,5 @@
 {:version 1
- :doc "DPI/窗口 driver（#140，原 test_love_dpi_window.lua 的 first 阶段，矩阵只跑 scale 1）：
+ :doc "DPI/窗口 driver（#140，原 Lua driver 的 first 阶段，矩阵只跑 scale 1）：
        ui 缩放等于 UML_VIEWER_TEST_DPI_SCALE；字号以点为单位不变（egui 按 pixels-per-point
        栅格化，等价于 Lua font_raster=size*ui*fb 且无全局字体缩放）；按当前显示缩放计算的
        指针点中类；窗口改为 1100x700 后画布跟随；缩放 1 与 1.7 截图。

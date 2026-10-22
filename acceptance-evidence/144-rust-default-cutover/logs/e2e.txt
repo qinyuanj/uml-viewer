@@ -1,0 +1,9 @@
+PASS launch: UML Rust viewer starting (launcher pid 3883188). Log: /tmp/uml e2e 项目 bf46jsvz/.uml-viewer/viewer.log
+PASS companion ownership: uml-viewer-uml-e2e----bf-2456465f-d1670992
+PASS companion ready: worker event :ready
+PASS viewer scenes: scene-1.edn
+PASS FIFO drain: {:next-id 3 :queue []}
+PASS viewer exit: process gone
+PASS shutdown released ownership: {}
+PASS herdr session removed: uml-viewer-uml-e2e----bf-2456465f-d1670992
+evidence: /tmp/uml-e2e-evidence-h6m95juy

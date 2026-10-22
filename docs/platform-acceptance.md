@@ -8,7 +8,11 @@ Current status:
 
 - **WSL/Linux**: the full lifecycle runs natively and is recorded in
   [acceptance-evidence/106-wsl/](../acceptance-evidence/106-wsl/README.md)
-  (Herdr 0.9.5 / protocol 22, LOVE 11.5, Lua 5.4 + cluacov 1.0.0 for analysis, LuaJIT runtime, Python 3.12).
+  (Herdr 0.9.5 / protocol 22, Python 3.12). Since #144 the viewer, IR
+  generation and companion roles are one Rust binary; the LOVE 11.5 / Lua
+  runtime and the Lua 5.4 + cluacov analysis prerequisites in the historical
+  record below are no longer used. The #144 cutover evidence is in
+  [acceptance-evidence/144-rust-default-cutover/](../acceptance-evidence/144-rust-default-cutover/README.md).
 - **macOS**: not committed (spec #106 scope, 2026-10-21). No current
   acceptance exists; the JVM-era records below are historical only.
 - **Windows native**: historical only. The records below describe earlier

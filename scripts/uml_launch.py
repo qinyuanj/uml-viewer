@@ -1,4 +1,4 @@
-"""POSIX LOVE 生命周期入口：preflight、fresh 启动与安全 restart。
+"""POSIX viewer 生命周期入口：preflight、fresh 启动与安全 restart。
 
 进程身份来自 /proc（PID + starttime），比较按精确文本；不猜测、不接管未知
 ownership。restart 只等待记录中那个旧进程真实退出，绝不 SIGKILL。
@@ -52,7 +52,7 @@ def await_exit(record, label, timeout=30.0, interval=0.05):
 
 
 def verify_previous(state, root, restart):
-    """restart 前核对旧 launcher 与 LOVE 身份；缺失或未知一律拒绝。"""
+    """restart 前核对旧 launcher 与 viewer 身份；缺失或未知一律拒绝。"""
     launcher = read_record(state / LAUNCHER)
     viewer = read_record(state / IDENTITY)
     if restart and launcher is None:
@@ -61,15 +61,15 @@ def verify_previous(state, root, restart):
     for path in (state / LAUNCHER, state / IDENTITY):
         if path.exists() and read_record(path) is None:
             raise ValueError(f'{path.name} 不是有效记录；拒绝 restart。')
-    for label, record in (('launcher', launcher), ('LOVE viewer', viewer)):
+    for label, record in (('launcher', launcher), ('viewer', viewer)):
         if record is None:
             continue
         pid = record.get('pid')
         started = record.get('started')
         if type(pid) is not int or pid < 1 or not isinstance(started, str) or not started.isdigit():
             raise ValueError(f'{label} 进程身份记录无效；拒绝 restart。')
-        if record.get('runtime', 'love') not in RUNTIMES:
-            raise ValueError(f"{label} 记录的运行时 {record['runtime']!r} 已移除；请 fresh 启动 viewer。")
+        if record.get('runtime') not in RUNTIMES:
+            raise ValueError(f"{label} 记录的运行时 {record.get('runtime')!r} 已移除；请 fresh 启动 viewer。")
         observed = proc_identity(pid)
         if observed is not None and observed['start'] != started:
             raise ValueError(f'{label} 进程身份已变化；拒绝 restart。')
@@ -92,13 +92,11 @@ def preflight(prefix, root, viewer_args):
 RENDER_DEFAULTS = {'GALLIUM_DRIVER': 'd3d12', 'WGPU_BACKEND': 'gl'}
 
 
-def viewer_env(runtime, environ):
-    """The spawn environment: render defaults for the rust runtime, user
-    values never overridden."""
+def viewer_env(environ):
+    """The spawn environment: render defaults, user values never overridden."""
     env = dict(environ)
-    if runtime == 'rust':
-        for key, value in RENDER_DEFAULTS.items():
-            env.setdefault(key, value)
+    for key, value in RENDER_DEFAULTS.items():
+        env.setdefault(key, value)
     return env
 
 
@@ -114,7 +112,7 @@ def forward_args(viewer_args):
     return forwarded
 
 
-def launch(root, tool_root, viewer_args, restart=False, runtime='love'):
+def launch(root, tool_root, viewer_args, restart=False, runtime='rust'):
     state = root / '.uml-viewer'
     state.mkdir(exist_ok=True)
     # Refuse an unusable identity before spending seconds on a preflight that
@@ -128,12 +126,12 @@ def launch(root, tool_root, viewer_args, restart=False, runtime='love'):
         if launcher:
             await_exit(launcher, 'launcher')
         if viewer:
-            await_exit(viewer, 'LOVE viewer')
+            await_exit(viewer, 'viewer')
     # The subcommand leads the viewer's own arguments so either runtime
     # dispatches to its viewer role.
     rest = forwarded[1:] if forwarded and forwarded[0] == 'viewer' else forwarded
     command = ['--backend', 'herdr', *rest]
-    env = viewer_env(runtime, os.environ)
+    env = viewer_env(os.environ)
     log_path = state / 'viewer.log'
     log = open(log_path, 'ab')
     try:
@@ -148,8 +146,7 @@ def launch(root, tool_root, viewer_args, restart=False, runtime='love'):
     write_record(state / LAUNCHER,
                  {'pid': observed['pid'], 'started': observed['start'], 'runtime': runtime,
                   'cwd': str(root), 'argv': ['viewer', *command]})
-    label = 'LOVE' if runtime == 'love' else 'Rust'
-    print(f'UML {label} viewer starting (launcher pid {child.pid}). Log: {log_path}')
+    print(f'UML Rust viewer starting (launcher pid {child.pid}). Log: {log_path}')
     return 0
 
 

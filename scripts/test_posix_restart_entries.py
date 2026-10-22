@@ -58,7 +58,7 @@ class RestartEntries(unittest.TestCase):
     def test_restart_refuses_a_reused_pid(self):
         sleeper = self.running_sleeper()
         self.write('viewer-process.json',
-                   {'pid': sleeper.pid, 'started': '1', 'runtime': 'love'})
+                   {'pid': sleeper.pid, 'started': '1', 'runtime': 'rust'})
         result = self.invoke('--restart', 'diagram.edn')
         self.assertEqual(1, result.returncode)
         self.assertIn('身份已变化', result.stderr)
@@ -72,6 +72,18 @@ class RestartEntries(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('运行时', result.stderr)
 
+    def test_restart_refuses_a_removed_love_record(self):
+        # #144: a session recorded by the retired LOVE viewer must be refused
+        # instead of being taken over by the Rust viewer.
+        sleeper = self.running_sleeper()
+        self.write('viewer-process.json',
+                   {'pid': sleeper.pid, 'started': start_identity(sleeper.pid), 'runtime': 'love'})
+        result = self.invoke('--restart', 'diagram.edn')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('运行时', result.stderr)
+        self.assertIn('love', result.stderr)
+        self.assertIsNone(sleeper.poll(), 'a refused restart must not touch the live process')
+
     def test_restart_refuses_a_malformed_record(self):
         self.write('viewer-process.json', {'pid': 'not-a-pid', 'started': 'abc'})
         result = self.invoke('--restart', 'diagram.edn')
@@ -80,20 +92,20 @@ class RestartEntries(unittest.TestCase):
 
 
     def test_restart_refuses_unverifiable_viewer_identity_without_waiting(self):
-        # Ported from the retired Windows suite: a changed LOVE identity and a
-        # missing identity both refuse before any wait, without touching the
+        # Ported from the retired Windows suite: a changed viewer identity and
+        # a missing identity both refuse before any wait, without touching the
         # live launcher or writing a launch record.
         sleeper = self.running_sleeper()
         # A launcher that has already exited: the wait for it returns at once,
         # so only the viewer identity can refuse the restart.
         exited = subprocess.Popen(['true'])
         exited.wait()
-        launcher = {'pid': exited.pid, 'started': '1', 'runtime': 'love'}
+        launcher = {'pid': exited.pid, 'started': '1', 'runtime': 'rust'}
         self.write('viewer-process.json', launcher)
         before = (self.state / 'viewer-process.json').read_bytes()
         identity = self.state / 'viewer-process-identity.json'
         for name, record in (
-            ('changed identity', {'pid': sleeper.pid, 'started': '1', 'runtime': 'love'}),
+            ('changed identity', {'pid': sleeper.pid, 'started': '1', 'runtime': 'rust'}),
             ('invalid identity', None),
         ):
             with self.subTest(name=name):

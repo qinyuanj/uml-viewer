@@ -1,0 +1,31 @@
+PASS neighbour: companion ready: uml-viewer-uml-recovery--3d2d389c-442347bd
+PASS cancel: companion ready: uml-viewer-uml-recovery--e2a90621-6b1342ec
+PASS cancel: recovery 1: scheduled 1.00s after exit (budget 1s), child started 1.64s after, attempts 1, generation 1
+PASS cancel: FIFO after recovery: queue drained oldest first, no rejection logged
+PASS cancel: recovery 2: scheduled 2.03s after exit (budget 2s), child started 2.63s after, attempts 2, generation 2
+PASS cancel: third exit: journal :backoff; close requested 0.08s after exit (4s budget)
+PASS cancel: closed: viewer exited, ownership {} and Herdr session removed
+PASS cancel: close during backoff: journal :cancelled, controller 545760 gone
+PASS cancel: no revival: 3 children after the 4s budget elapsed
+PASS cancel: bystanders: unrelated Herdr session, process and project alive
+PASS exhausted: companion ready: uml-viewer-uml-recovery--af4b7946-e829b72d
+PASS exhausted: recovery 1: scheduled 1.01s after exit (budget 1s), child started 1.63s after, attempts 1, generation 1
+PASS exhausted: recovery 2: scheduled 2.04s after exit (budget 2s), child started 2.50s after, attempts 2, generation 2
+PASS exhausted: recovery 3: scheduled 4.03s after exit (budget 4s), child started 4.74s after, attempts 3, generation 3
+PASS exhausted: fourth exit: journal :failed "Recovery exhausted after three retries", controller gone
+PASS exhausted: no fifth child: 4 children in total
+PASS exhausted: closed: viewer exited, ownership {} and Herdr session removed
+PASS exhausted: bystanders: unrelated Herdr session, process and project alive
+PASS normal: companion ready: uml-viewer-uml-recovery--4918a810-ece69711
+PASS normal: exit 0: journal :normal "Companion exited normally", controller gone
+PASS normal: no relaunch: 1 child in total
+PASS normal: closed: viewer exited, ownership {} and Herdr session removed
+PASS normal: bystanders: unrelated Herdr session, process and project alive
+PASS unknown: companion ready: uml-viewer-uml-recovery--b004b3e5-1a63cede
+PASS unknown: unverified exit: journal :failed "Runner child disappeared without a matching exit; recovery unsupported", controller gone
+PASS unknown: no relaunch: 1 child in total
+PASS unknown: closed: viewer exited, ownership {} and Herdr session removed
+PASS unknown: bystanders: unrelated Herdr session, process and project alive
+PASS neighbour: undisturbed: same ownership, Herdr session and companion child throughout
+PASS neighbour: closed: viewer exited, ownership {} and Herdr session removed
+evidence: /tmp/uml-recovery-evidence-6u32w_5v

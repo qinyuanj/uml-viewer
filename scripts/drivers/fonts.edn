@@ -1,5 +1,5 @@
 {:version 1
- :doc "字体 driver（#140，原 test_love_fonts.lua），三个场景（provisioned/override/fallback）
+ :doc "字体 driver（#140，原 Lua driver），三个场景（provisioned/override/fallback）
        共用：查找链选中的字体来源等于 UML_FONT_TEST_EXPECT；角色字号 body/title=18、
        badge=9、level=11、marker=12；整张界面文案表（strings::glyph_text）加
        UML_FONT_TEST_EXTRA 的每个字形都能解析（egui 按需栅格化到图集，不预建）；

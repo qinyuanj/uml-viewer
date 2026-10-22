@@ -1,9 +1,9 @@
 {
   "version": 1,
   "standardTools": {
-    "sourceRoots": ["love/uml"],
+    "sourceRoots": ["crates"],
     "exclude": [],
-    "crapperOptions": ["--coverage-command", "lua5.4 scripts/coverage.lua && lua5.4 scripts/coverage.lua report"],
-    "mutatorOptions": ["--max-workers", "3", "--coverage-command", "lua5.4 scripts/coverage.lua && lua5.4 scripts/coverage.lua report"]
+    "crapperOptions": [],
+    "mutatorOptions": ["--max-workers", "3"]
   }
 }

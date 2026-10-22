@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""POSIX viewer acceptance: real LOVE window, real reload, real screenshots.
+"""POSIX viewer acceptance: real Rust window, real reload, real screenshots.
 
 Runs the viewer through the public entry in an isolated project and asserts
 observable results only: the scene files the viewer publishes, the diagram
@@ -36,11 +36,16 @@ def wait_for(test, timeout, interval=0.05, message='condition'):
     raise AssertionError(f'timed out waiting for {message}')
 
 
-def love_executable():
-    love = shutil.which(os.environ.get('UML_LOVE_EXECUTABLE', 'love'))
-    if not love:
-        raise AssertionError('LOVE 11.5 is required: install love or set UML_LOVE_EXECUTABLE')
-    return love
+def rust_executable():
+    configured = os.environ.get('UML_VIEWER_RUST_EXECUTABLE')
+    if configured:
+        return configured
+    for profile in ('release', 'debug'):
+        binary = REPO / 'target' / profile / 'uml-viewer'
+        if binary.is_file():
+            return str(binary)
+    raise AssertionError('the Rust uml-viewer binary is missing: run cargo build --release '
+                         '(or set UML_VIEWER_RUST_EXECUTABLE)')
 
 
 def run_viewer(project, evidence, seconds, driver=None):
@@ -51,10 +56,11 @@ def run_viewer(project, evidence, seconds, driver=None):
     """
     env = dict(os.environ, UML_VIEWER_PROJECT_ROOT=str(project),
                UML_VIEWER_EVIDENCE=str(evidence), UML_VIEWER_TEST_SECONDS=str(seconds))
-    env.pop('UML_CIMGUI_DIRECTORY', None)
+    env.setdefault('GALLIUM_DRIVER', 'd3d12')
+    env.setdefault('WGPU_BACKEND', 'gl')
     if driver:
         env['UML_VIEWER_TEST_DRIVER'] = str(driver)
-    return subprocess.Popen([love_executable(), str(REPO / 'love'), 'viewer', 'diagram.edn'],
+    return subprocess.Popen([rust_executable(), 'viewer', 'diagram.edn'],
                             cwd=project, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -70,7 +76,6 @@ def main():
     try:
         shutil.copy2(REPO / 'examples/uml-viewer.edn', project / 'diagram.edn')
         (project / '.uml-viewer').mkdir()
-        shutil.copytree(REPO / '.uml-viewer/cimgui-love-1.90-1', project / '.uml-viewer/cimgui-love-1.90-1')
 
         process = run_viewer(project, evidence, 45)
         first = wait_for(lambda: scene_files(evidence), 40, message='first scene')
@@ -95,7 +100,7 @@ def main():
                                   f'sha256={hashlib.sha256(shot.read_bytes()).hexdigest()[:16]}'))
 
         # The viewer leaves on its own schedule (UML_VIEWER_TEST_SECONDS), the
-        # same love.quit path a user's window close takes. SIGKILL is never used;
+        # same quit path a user's window close takes. SIGKILL is never used;
         # a viewer that misses its deadline is a failure, not something to wait
         # out.
         try:

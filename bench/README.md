@@ -1,7 +1,9 @@
 # viewer 技术栈基准：合成场景与测量协议
 
-服务于选型 map「viewer 技术栈选型：替代 LOVE + Lua」(#124)。所有入围原型和现有
-LOVE viewer 都用这里的场景和协议测量，结果才能横向比较。
+服务于选型 map「viewer 技术栈选型：替代 LOVE + Lua」(#124)。所有入围原型和当时的
+LOVE viewer 都用这里的场景和协议测量，结果才能横向比较。当前 viewer 是 Rust
+（`bench/run_rust.sh`）；LOVE/Lua 测量工具已随 #144 删除，下文的 LOVE 结果保留为
+历史对照。
 
 ## 场景
 
@@ -10,14 +12,17 @@ LOVE viewer 都用这里的场景和协议测量，结果才能横向比较。
 | `scenes/synthetic-500.edn`、`scenes/synthetic-2000.edn` | 合成 IR（非层级，`:packages` 分组），与真实图同一种输入 |
 | `scenes/synthetic-N.scene.edn` / `.scene.json` | 已布局的渲染场景，内容相同，供任何语言直接读取 |
 
-生成方式（确定性，Lua 5.4 与 LuaJIT 输出逐字节相同）：
+生成方式（确定性；生成脚本是 Lua，已随 #144 删除，下面的命令仅存档）：
 
 ```sh
+# historical, no longer runnable: the Lua generators were removed in #144
 luajit bench/gen_synthetic.lua 500 5 bench/scenes/synthetic-500.edn
 luajit bench/gen_synthetic.lua 2000 10 bench/scenes/synthetic-2000.edn
 luajit bench/export_scene.lua bench/scenes/synthetic-500.edn bench/scenes/synthetic-500
 luajit bench/export_scene.lua bench/scenes/synthetic-2000.edn bench/scenes/synthetic-2000
 ```
+
+已提交的场景文件是当前基准的输入；重新生成需要历史提交里的 Lua 工具。
 
 分布按 `examples/uml-viewer.edn`（89 类、262 边）校准：每类成员数 p50 3 / p90 13 /
 最大 34，类名长度 p50 7 / p90 13，成员文本长度 p50 10 / p90 17，约 3 条依赖边/类
@@ -111,22 +116,32 @@ p99 / max，CPU% = 进程树 (user+sys) 时间增量 / 墙钟时间（100% = 一
 
 启动时间和 IR 时间只记录，不设门槛。
 
-## LOVE 对照
+## 当前 Rust viewer
+
+```sh
+bench/run_rust.sh bench/scenes/synthetic-500.edn <out-dir>
+bench/run_rust.sh bench/scenes/synthetic-2000.edn <out-dir>
+```
+
+`run_rust.sh` 用 `uml-viewer bench` 跑同一协议，写 `protocol.edn` 与 `summary.txt`；
+#143 的实测结果见 `acceptance-evidence/143-rust-install/`。
+
+## 历史 LOVE 对照
 
 ```sh
 UML_CJK_FONT=<SarasaMonoSC-Regular.ttf> bench/run_love.sh bench/scenes/synthetic-500.edn d3d12 <out>
 ```
 
-`love_protocol_driver.lua` 通过 `UML_VIEWER_TEST_DRIVER` 注入现有 viewer，按上表设置
-相机，输出 `protocol.edn` 和 `summary.txt`。结果见下节。
+`love_protocol_driver.lua` 通过 `UML_VIEWER_TEST_DRIVER` 注入当时的 LOVE viewer，按上表设置
+相机，输出 `protocol.edn` 和 `summary.txt`。两个脚本都已随 #144 删除；结果见下节。
 
 ## 结果
 
-机器：Ryzen 5 5500 / GTX 1080 Ti，WSL2 + WSLg，LOVE 11.5.0 / LuaJIT 2.1，D3D12
-渲染（`GALLIUM_DRIVER=d3d12`）。vsync 在 WSLg 下报告关闭（`flags.vsync=0`），
-刷新率 60 Hz。
+机器：Ryzen 5 5500 / GTX 1080 Ti，WSL2 + WSLg，历史 LOVE 结果使用 LOVE 11.5.0 /
+LuaJIT 2.1，D3D12 渲染（`GALLIUM_DRIVER=d3d12`）；当前 Rust 结果使用 egui/eframe 0.37
+与 wgpu GL 后端。vsync 在 WSLg 下报告关闭（`flags.vsync=0`），刷新率 60 Hz。
 
-### LOVE 对照（本协议）
+### 历史 LOVE 对照（本协议，工具已删除）
 
 可测量的只有链式 500 legacy 档（idle + pan-fit，zoom 钳制 0.1）：
 

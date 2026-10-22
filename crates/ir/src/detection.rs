@@ -12,7 +12,7 @@ fn supported(lang: Option<&Value>) -> Result<Option<Value>, String> {
             _ => "",
         };
         if name == "clojure" {
-            return Err("Clojure is not supported by the LOVE implementation".to_owned());
+            return Err("Clojure is not supported by the Rust implementation".to_owned());
         }
         return Ok(Some(lang.clone()));
     }
