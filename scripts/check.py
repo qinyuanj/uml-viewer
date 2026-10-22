@@ -2,7 +2,9 @@
 """One guardrail command: the checks that are safe to run at any time.
 
 This is the only guardrail command; the earlier `check.ps1` was retired with
-Windows native support (ADR 0007). Stops at the first failure so the printed
+Windows native support (ADR 0007). The cargo check builds the release binary
+used by the entry test files (which skip without it), then runs the workspace
+tests. Stops at the first failure so the printed
 label names the actual cause. The quality gate (`./uml crap` / `./uml mutate`) is
 deliberately absent: it needs serialized, declared-scope runs against a real
 project, so it cannot be a default check. Real-window drivers need the explicit
@@ -35,6 +37,12 @@ def cargo_suite():
     cargo = interpreter('cargo')
     if not cargo:
         return 'failed', 1, 'cargo is required (the workspace tests)'
+    # The entry suites exercise target/release/uml-viewer and skip when it is
+    # absent. Build it first so this guardrail runs them for real instead of
+    # silently passing with skips.
+    code, output = run([cargo, 'build', '--release', '--locked'])
+    if code != 0:
+        return 'failed', code, output
     code, output = run([cargo, 'test', '--workspace', '--locked'])
     return ('executed' if code == 0 else 'failed'), code, output
 
@@ -74,7 +82,7 @@ def main():
     arguments = parser.parse_args()
 
     checks = [
-        ('cargo test --workspace --locked', cargo_suite),
+        ('cargo build --release --locked + cargo test --workspace --locked', cargo_suite),
         ('entries (python -I scripts/test_posix_entries.py)', entries),
         ('restart (python -I scripts/test_posix_restart_entries.py)', restart_entries),
     ]

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 
@@ -631,8 +632,19 @@ class PosixEntries(unittest.TestCase):
         observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
         self.assertEqual(observed, launcher['started'])
         self.assertEqual(['viewer', '--backend', 'herdr', *arguments], launcher['argv'])
-        # The stub writes after the viewer exits; the preflight consumes the
-        # only --backend pair, so the viewer sees exactly the forwarded argv.
+        # The stub writes its argv before it sleeps, so read what the runtime
+        # itself received. Poll briefly: the launcher returns as soon as the
+        # child starts, before the child's first write is necessarily visible.
+        expected = ['viewer', '--backend', 'herdr', *arguments]
+        deadline = time.monotonic() + 5
+        received = []
+        while time.monotonic() < deadline:
+            if record.exists():
+                received = record.read_text().splitlines()
+                if received == expected:
+                    break
+            time.sleep(0.01)
+        self.assertEqual(expected, received, 'the viewer stub did not receive the literal argv')
 
     def test_install_defaults_to_main_and_accepts_a_fixed_commit(self):
         source = self.root / 'viewer source'
