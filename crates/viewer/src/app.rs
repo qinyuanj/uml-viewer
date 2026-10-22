@@ -14,6 +14,7 @@ use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
 use scene::geom::{get, num};
 
+use crate::bench;
 use crate::driver::{self, Input, Runner};
 use crate::evidence::Evidence;
 use crate::paint;
@@ -158,6 +159,9 @@ struct Setup {
     script: Option<driver::Script>,
     restart: bool,
     backend: bool,
+    /// Protocol-1 output directory (#143); the bench owns the camera.
+    bench: Option<PathBuf>,
+    bench_only: Option<String>,
 }
 
 impl Setup {
@@ -201,6 +205,8 @@ impl Setup {
             script,
             restart: options.restart,
             backend: options.backend,
+            bench: env_nonempty("UML_VIEWER_BENCH").map(PathBuf::from),
+            bench_only: env_nonempty("UML_VIEWER_BENCH_ONLY"),
         })
     }
 }
@@ -225,9 +231,15 @@ pub fn run(options: Options) -> ExitCode {
     };
     let mode = choose(x11_available());
     let exit = Arc::new(AtomicU8::new(0));
+    // Protocol 1 fixes the window at 1500 × 920 view px.
+    let inner = if setup.bench.is_some() {
+        [1500.0, 920.0]
+    } else {
+        [1200.0, 800.0]
+    };
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(WINDOW_TITLE)
-        .with_inner_size([1200.0, 800.0])
+        .with_inner_size(inner)
         .with_min_inner_size([420.0, 300.0])
         .with_decorations(mode.decorated());
     if !mode.decorated() {
@@ -289,6 +301,10 @@ struct Viewer {
     window_w: f64,
     window_h: f64,
     shots_sent: Vec<String>,
+    bench: Option<bench::Bench>,
+    bench_geo: Option<bench::Geo>,
+    /// Adapter name, backend, driver, driver info (protocol-1 environment).
+    adapter: [String; 4],
 }
 
 impl Viewer {
@@ -299,6 +315,19 @@ impl Viewer {
         exit: Arc<AtomicU8>,
     ) -> Result<Viewer, String> {
         fonts::install(&cc.egui_ctx, &setup.project_root);
+        let adapter = cc
+            .wgpu_render_state
+            .as_ref()
+            .map(|state| {
+                let info = state.adapter.get_info();
+                [
+                    info.name,
+                    format!("{:?}", info.backend),
+                    info.driver,
+                    info.driver_info,
+                ]
+            })
+            .unwrap_or_default();
         let renderer = cc.wgpu_render_state.as_ref().map(|state| {
             let info = state.adapter.get_info();
             format!(
@@ -334,6 +363,9 @@ impl Viewer {
             window_w: 1200.0,
             window_h: 800.0,
             shots_sent: Vec::new(),
+            bench: None,
+            bench_geo: None,
+            adapter,
         };
         if let Some(evidence) = &setup.evidence {
             if let Some(info) = &renderer {
@@ -346,6 +378,18 @@ impl Viewer {
             );
         }
         app.load_initial(setup.restart, setup.backend)?;
+        if let Some(out) = setup.bench.clone() {
+            let (classes, _, _) = bench::scene_counts(&app.state.scene);
+            let runner = bench::Bench::new(
+                out,
+                setup.bench_only.clone(),
+                app.adapter[0].clone(),
+                classes,
+            )?;
+            app.bench = Some(runner);
+            // The bench sets the unclamped protocol camera; no viewer fit.
+            app.state.fit_pending = false;
+        }
         // A refused or invalid startup never overwrites an existing identity.
         if !setup.backend
             && let Err(error) = identity::record(&setup.project_root)
@@ -565,8 +609,8 @@ impl Viewer {
         let screen = ctx.content_rect();
         self.window_w = screen.width() as f64;
         self.window_h = screen.height() as f64;
-        if self.driver.is_some() {
-            // A driver owns the event stream; real input would race it.
+        if self.driver.is_some() || self.bench.is_some() {
+            // A driver or the bench owns the event stream; real input would race it.
             return;
         }
         let transform = paint::Transform::new(screen, &self.state);
@@ -636,6 +680,61 @@ impl Viewer {
     }
 }
 
+impl Viewer {
+    /// One protocol-1 frame: apply the trajectory camera (unclamped, world
+    /// centre → top-left cam), keep repainting in interactive phases, and
+    /// close with the verdict as the exit code once every phase is done.
+    fn bench_frame(
+        &mut self,
+        ctx: &egui::Context,
+        rect: egui::Rect,
+        now: Instant,
+        cpu_ms: Option<f64>,
+    ) {
+        let (w, h) = (rect.width() as f64, rect.height() as f64);
+        if self.bench_geo.is_none() {
+            let geo = bench::Geo::from_scene(&self.state.scene, w, h);
+            let [name, backend, driver, info] = &self.adapter;
+            let meta = bench::environment_meta(
+                name,
+                backend,
+                driver,
+                info,
+                ctx.pixels_per_point() as f64,
+                (w, h),
+                &geo,
+                bench::scene_counts(&self.state.scene),
+            );
+            eprintln!("UML viewer bench: {meta}");
+            if let Some(runner) = &mut self.bench {
+                runner.set_meta(meta);
+            }
+            self.bench_geo = Some(geo);
+        }
+        let geo = self.bench_geo.expect("set above");
+        let Some(runner) = &mut self.bench else {
+            return;
+        };
+        let step = runner.frame(&geo, now, cpu_ms);
+        let passed = runner.passed();
+        if let Some((cx, cy, zoom)) = step.camera {
+            self.state.zoom = zoom;
+            self.state.cam_x = cx - w / (2.0 * zoom);
+            self.state.cam_y = cy - h / (2.0 * zoom);
+            self.state.fit_pending = false;
+        }
+        if step.continuous {
+            ctx.request_repaint();
+        }
+        if step.finished {
+            let code = if passed == Some(true) { 0 } else { 1 };
+            self.exit.store(code, Ordering::SeqCst);
+            self.quit = true;
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+}
+
 fn key_name(key: egui::Key) -> &'static str {
     match key {
         egui::Key::R => "r",
@@ -668,7 +767,7 @@ fn write_png(target: &Path, image: &egui::ColorImage) -> Result<(), String> {
 }
 
 impl eframe::App for Viewer {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         self.frames += 1;
@@ -676,8 +775,14 @@ impl eframe::App for Viewer {
         self.frame_ms = now.duration_since(self.last_frame).as_secs_f64() * 1000.0;
         self.last_frame = now;
 
+        // Protocol-1 bench (#143): it owns the camera and the frame cadence.
+        if self.bench.is_some() {
+            let cpu_ms = frame.info().cpu_usage.map(|s| s as f64 * 1000.0);
+            self.bench_frame(ctx, ui.max_rect(), now, cpu_ms);
+        }
+
         // Driver replay: take the runner out so it can borrow the app as host.
-        if self.driver.is_some() && !self.driver_failed {
+        if self.bench.is_none() && self.driver.is_some() && !self.driver_failed {
             let mut runner = self.driver.take().expect("checked");
             let evidence = self.evidence.as_ref().map(|e| e.dir.clone());
             let project = self.project_root.clone();

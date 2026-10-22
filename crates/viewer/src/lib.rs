@@ -5,6 +5,7 @@
 //! declarative EDN driver scripts under `scripts/drivers/`.
 
 pub mod app;
+pub mod bench;
 pub mod cli;
 pub mod commands;
 pub mod driver;
