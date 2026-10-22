@@ -205,7 +205,9 @@ fn the_diagram_list_is_recomputed_only_when_the_revision_changes() {
         if n > 0 {
             doc.push(' ');
         }
-        doc.push_str(&format!("{{:id :c{n} :name \"C{n}\" :ops [{{:name \"go\"}}]}}"));
+        doc.push_str(&format!(
+            "{{:id :c{n} :name \"C{n}\" :ops [{{:name \"go\"}}]}}"
+        ));
     }
     doc.push_str("] :proposals [{:id :plan :name \"方案\" :layers []}]}");
     let mut state = load(&doc);
