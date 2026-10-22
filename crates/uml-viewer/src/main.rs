@@ -17,12 +17,12 @@ const ROLES: &[(&str, &str, Entry)] = &[
     (
         "ir",
         "generate IR from a policy and source tree, headless",
-        unported,
+        |_, args| ir::run(args),
     ),
     (
         "scene",
         "export scene geometry for each focus, headless",
-        unported,
+        |_, args| scene::run(args),
     ),
     ("companion-worker", "Herdr companion worker", |_, args| {
         companion::run_worker(args)

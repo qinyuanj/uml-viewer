@@ -19,8 +19,6 @@ fn stderr(output: &Output) -> String {
 fn every_role_from_the_spec_is_a_subcommand() {
     for role in [
         "viewer",
-        "ir",
-        "scene",
         "companion-worker",
         "companion-runner",
         "companion-controller",
@@ -63,6 +61,17 @@ fn companion_roles_are_ported_and_report_real_failures() {
 }
 
 #[test]
+fn ir_is_ported_and_reports_bad_arguments_on_stderr() {
+    // #136: the ir role runs headless; an unknown option is a usage failure
+    // (exit 1) naming the option, not EX_UNAVAILABLE.
+    let output = run(&["ir", "--bogus"]);
+    assert_eq!(Some(1), output.status.code());
+    let err = stderr(&output);
+    assert!(err.contains("IR generation failed"), "{err}");
+    assert!(err.contains("--bogus"), "{err}");
+}
+
+#[test]
 fn arguments_without_a_subcommand_go_to_the_viewer() {
     for args in [&[][..], &["diagram with spaces.edn"][..]] {
         let output = run(args);
@@ -86,4 +95,23 @@ fn an_unknown_leading_option_is_refused_with_usage() {
     let output = run(&["--bogus"]);
     assert_eq!(Some(2), output.status.code());
     assert!(stderr(&output).contains("usage"), "{}", stderr(&output));
+}
+
+#[test]
+fn scene_is_ported_and_reports_usage_errors() {
+    // #137: no `--ir` is a usage error (exit 2), not "unported" (69).
+    let output = run(&["scene"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(stderr(&output).contains("usage"), "{}", stderr(&output));
+    let output = run(&["scene", "--bogus"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(stderr(&output).contains("usage"), "{}", stderr(&output));
+    // A missing IR file is a runtime failure (exit 1), named on stderr.
+    let output = run(&["scene", "--ir", "no-such-file.edn"]);
+    assert_eq!(Some(1), output.status.code());
+    assert!(
+        stderr(&output).contains("no-such-file.edn"),
+        "{}",
+        stderr(&output)
+    );
 }

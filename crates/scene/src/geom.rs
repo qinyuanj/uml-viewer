@@ -1,0 +1,314 @@
+//! Geometry over the EDN value boundary (port of `love/uml/domain/geom.lua`).
+//! Rects are EDN maps `{:x :y :w :h}` and points are 2-vectors at the public
+//! boundary; internally the math runs on plain f64 pairs.
+
+use edn::Value;
+
+/// Map lookup by keyword; `nil` and absent both read as `None` (Lua `g`).
+pub fn get<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
+    match m.get(&Value::keyword(key)) {
+        Some(Value::Nil) | None => None,
+        some => some,
+    }
+}
+
+/// Map lookup that keeps an explicit `nil` (Lua `E.get` found-flag use).
+pub fn get_raw<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
+    m.get(&Value::keyword(key))
+}
+
+/// Set `key` to `value` in place (Lua `G.put`); `Nil` values are kept.
+pub fn put(m: &mut Value, key: &str, value: Value) {
+    m.assoc(Value::keyword(key), value);
+}
+
+/// Drop the entries whose keyword names are listed (Lua `drop`).
+pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
+    match m {
+        Value::Map(entries) => Value::Map(
+            entries
+                .iter()
+                .filter(|(k, _)| !matches!(k, Value::Keyword(n) if keys.contains(&n.as_str())))
+                .cloned()
+                .collect(),
+        ),
+        _ => Value::Map(vec![]),
+    }
+}
+
+/// Number coercion shared by the whole port: ints and floats are both f64.
+pub fn num(v: &Value) -> Option<f64> {
+    match v {
+        Value::Integer(n) => Some(*n as f64),
+        Value::Float(x) => Some(*x),
+        _ => None,
+    }
+}
+
+pub fn num_or(v: Option<&Value>, default: f64) -> f64 {
+    v.and_then(num).unwrap_or(default)
+}
+
+/// `G.name`: a string is itself; a keyword/symbol yields its trailing segment
+/// after the last `/`.
+pub fn name(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Keyword(n) | Value::Symbol(n) => {
+            n.rsplit('/').next().unwrap_or(n.as_str()).to_owned()
+        }
+        _ => String::new(),
+    }
+}
+
+pub fn vec2(v: &Value) -> Option<[f64; 2]> {
+    if let Value::Vector(items) = v
+        && items.len() == 2
+    {
+        return Some([num(&items[0])?, num(&items[1])?]);
+    }
+    None
+}
+
+pub fn point(p: [f64; 2]) -> Value {
+    Value::Vector(vec![numval(p[0]), numval(p[1])])
+}
+
+/// Numbers written back into EDN: integral values stay integers, like the
+/// Lua number formatting the golden files were produced with.
+pub fn numval(x: f64) -> Value {
+    if x == x.trunc() && x.abs() <= edn::MAX_EXACT_INTEGER as f64 {
+        Value::Integer(x as i64)
+    } else {
+        Value::Float(x)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl Rect {
+    pub fn new(x: f64, y: f64, w: f64, h: f64) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    pub fn from_value(v: &Value) -> Option<Rect> {
+        Some(Rect {
+            x: num(get(v, "x")?)?,
+            y: num(get(v, "y")?)?,
+            w: num(get(v, "w")?)?,
+            h: num(get(v, "h")?)?,
+        })
+    }
+
+    pub fn to_value(self) -> Value {
+        Value::Map(vec![
+            (Value::keyword("x"), numval(self.x)),
+            (Value::keyword("y"), numval(self.y)),
+            (Value::keyword("w"), numval(self.w)),
+            (Value::keyword("h"), numval(self.h)),
+        ])
+    }
+
+    pub fn right(self) -> f64 {
+        self.x + self.w
+    }
+
+    pub fn bottom(self) -> f64 {
+        self.y + self.h
+    }
+
+    pub fn cx(self) -> f64 {
+        self.x + self.w / 2.0
+    }
+
+    pub fn cy(self) -> f64 {
+        self.y + self.h / 2.0
+    }
+
+    pub fn translate(self, dx: f64, dy: f64) -> Rect {
+        Rect::new(self.x + dx, self.y + dy, self.w, self.h)
+    }
+
+    pub fn inflate(self, pad: f64) -> Rect {
+        Rect::new(
+            self.x - pad,
+            self.y - pad,
+            self.w + 2.0 * pad,
+            self.h + 2.0 * pad,
+        )
+    }
+
+    pub fn contains(self, x: f64, y: f64) -> bool {
+        x >= self.x && x <= self.right() && y >= self.y && y <= self.bottom()
+    }
+
+    pub fn overlaps(self, other: Rect) -> bool {
+        self.x < other.right()
+            && self.right() > other.x
+            && self.y < other.bottom()
+            && self.bottom() > other.y
+    }
+}
+
+/// `G.union`: bounding rect of all present rects, `None` when empty.
+pub fn union(rects: &[Option<Rect>]) -> Option<Rect> {
+    let mut out: Option<Rect> = None;
+    for r in rects.iter().flatten() {
+        out = Some(match out {
+            None => *r,
+            Some(b) => Rect {
+                x: b.x.min(r.x),
+                y: b.y.min(r.y),
+                w: b.right().max(r.right()) - b.x.min(r.x),
+                h: b.bottom().max(r.bottom()) - b.y.min(r.y),
+            },
+        });
+    }
+    out
+}
+
+pub fn point_seg_dist(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let dx = b[0] - a[0];
+    let dy = b[1] - a[1];
+    let l = dx * dx + dy * dy;
+    let mut t = 0.0;
+    if l >= 1e-12 {
+        t = (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l).clamp(0.0, 1.0);
+    }
+    let x = p[0] - a[0] - t * dx;
+    let y = p[1] - a[1] - t * dy;
+    (x * x + y * y).sqrt()
+}
+
+pub fn near_polyline(p: [f64; 2], ps: &[[f64; 2]], pad: f64) -> bool {
+    ps.windows(2).any(|s| point_seg_dist(p, s[0], s[1]) <= pad)
+}
+
+pub fn near_triangle(p: [f64; 2], ps: &[[f64; 2]; 3], pad: f64) -> bool {
+    let sign =
+        |a: [f64; 2], b: [f64; 2]| (p[0] - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (p[1] - b[1]);
+    let a = sign(ps[0], ps[1]);
+    let b = sign(ps[1], ps[2]);
+    let c = sign(ps[2], ps[0]);
+    !((a < 0.0 || b < 0.0 || c < 0.0) && (a > 0.0 || b > 0.0 || c > 0.0))
+        || near_polyline(p, &[*ps.first().unwrap(), ps[1], ps[2], ps[0]], pad)
+}
+
+fn near(a: [f64; 2], b: [f64; 2]) -> bool {
+    point_seg_dist(a, b, b) < 0.51
+}
+
+fn lerp(a: [f64; 2], b: [f64; 2], t: f64) -> [f64; 2] {
+    [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+}
+
+/// `G.gap_segment`: the sub-segments of `a–b` left visible after clipping the
+/// padded obstacle rects. The rect scan order is irrelevant (intervals are
+/// sorted and merged), so callers may source rects from a spatial index.
+pub fn gap_segment(a: [f64; 2], b: [f64; 2], rects: &[Rect], pad: f64) -> Vec<[[f64; 2]; 2]> {
+    let mut out: Vec<[[f64; 2]; 2]> = Vec::new();
+    if near(a, b) {
+        return out;
+    }
+    let mut removed: Vec<[f64; 2]> = Vec::new();
+    for r0 in rects {
+        let r = r0.inflate(pad);
+        let dx = b[0] - a[0];
+        let dy = b[1] - a[1];
+        let (mut lo, mut hi): (f64, f64) = (0.0, 1.0);
+        let mut valid = true;
+        for (p, q) in [
+            (-dx, a[0] - r.x),
+            (dx, r.right() - a[0]),
+            (-dy, a[1] - r.y),
+            (dy, r.bottom() - a[1]),
+        ] {
+            if p.abs() < 1e-12 {
+                if q < 0.0 {
+                    valid = false;
+                    break;
+                }
+            } else {
+                let t = q / p;
+                if p < 0.0 {
+                    if t > hi {
+                        valid = false;
+                        break;
+                    }
+                    lo = lo.max(t);
+                } else {
+                    if t < lo {
+                        valid = false;
+                        break;
+                    }
+                    hi = hi.min(t);
+                }
+            }
+        }
+        if valid && lo < hi {
+            removed.push([lo, hi]);
+        }
+    }
+    removed.sort_by(|x, y| x[0].partial_cmp(&y[0]).unwrap());
+    let mut merged: Vec<[f64; 2]> = Vec::new();
+    for iv in removed {
+        if let Some(last) = merged.last_mut()
+            && iv[0] <= last[1] + 1e-9
+        {
+            last[1] = last[1].max(iv[1]);
+            continue;
+        }
+        merged.push(iv);
+    }
+    let mut keep = |lo: f64, hi: f64| {
+        let (p, q) = (lerp(a, b, lo), lerp(a, b, hi));
+        if !near(p, q) {
+            out.push([p, q]);
+        }
+    };
+    let mut u = 0.0;
+    for iv in &merged {
+        if u < iv[0] - 1e-9 {
+            keep(u, iv[0]);
+        }
+        u = u.max(iv[1]);
+    }
+    if u < 0.999999 {
+        keep(u, 1.0);
+    }
+    out
+}
+
+/// `G.gap_polyline`: every polyline segment clipped, adjacent pieces joined.
+pub fn gap_polyline(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 2]>> {
+    let mut out: Vec<Vec<[f64; 2]>> = Vec::new();
+    if ps.len() < 2 {
+        return out;
+    }
+    if rects.is_empty() {
+        return vec![ps.to_vec()];
+    }
+    for seg in ps.windows(2) {
+        for piece in gap_segment(seg[0], seg[1], rects, pad) {
+            match out.last_mut() {
+                Some(last) if near(*last.last().unwrap(), piece[0]) => last.push(piece[1]),
+                _ => out.push(vec![piece[0], piece[1]]),
+            }
+        }
+    }
+    out
+}
+
+/// Sequence view over an optional EDN vector (`[]` for absent/non-vectors).
+pub fn get_slice(v: Option<&Value>) -> &[Value] {
+    match v {
+        Some(Value::Vector(items)) => items,
+        _ => &[],
+    }
+}

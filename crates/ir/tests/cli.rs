@@ -1,0 +1,90 @@
+//! CLI behaviour of the `ir` role (#136): usage errors, missing policies and
+//! language detection, mirroring the POSIX entry expectations. These run
+//! `ir::run` in a process with a changed working directory, so they are
+//! serial by file and restore the directory afterwards.
+
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+fn tempdir(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("uml-ir-cli-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn run_in(dir: &Path, args: &[&str]) -> ExitCode {
+    let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    // --root keeps this process-global cwd untouched.
+    let mut full: Vec<OsString> = vec![OsString::from("--root"), dir.as_os_str().to_owned()];
+    full.extend(args);
+    ir::run(&full)
+}
+
+#[test]
+fn a_missing_policy_fails_and_preserves_previous_output() {
+    let dir = tempdir("missing");
+    let output = dir.join("result.edn");
+    std::fs::write(&output, "previous").unwrap();
+    let code = run_in(&dir, &["missing.edn", "result.edn"]);
+    assert_eq!(ExitCode::from(1), code);
+    assert_eq!("previous", std::fs::read_to_string(&output).unwrap());
+}
+
+#[test]
+fn ambiguous_markers_require_an_explicit_language() {
+    let dir = tempdir("ambiguous");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/a.lua"), "return {}\n").unwrap();
+    std::fs::write(dir.join("Cargo.toml"), "").unwrap();
+    std::fs::write(dir.join("ambiguous.edn"), "{:src \"src\" :prefix \"app\"}").unwrap();
+    let code = run_in(&dir, &["ambiguous.edn", "ambiguous-result.edn"]);
+    assert_eq!(ExitCode::from(1), code);
+    assert!(!dir.join("ambiguous-result.edn").exists());
+}
+
+#[test]
+fn detection_uses_the_single_marker_language() {
+    let dir = tempdir("detect");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/a.py"), "def hello():\n    return True\n").unwrap();
+    std::fs::write(dir.join("pyproject.toml"), "").unwrap();
+    std::fs::write(dir.join("detect.edn"), "{:src \"src\" :prefix \"app\"}").unwrap();
+    let code = run_in(&dir, &["detect.edn", "detected.edn"]);
+    assert_eq!(ExitCode::SUCCESS, code);
+    let document = std::fs::read_to_string(dir.join("detected.edn")).unwrap();
+    assert!(document.contains(":lang :python"), "{document}");
+    assert!(document.contains("hello"), "{document}");
+}
+
+#[test]
+fn an_unknown_option_is_a_usage_failure() {
+    let dir = tempdir("usage");
+    assert_eq!(ExitCode::from(1), run_in(&dir, &["--bogus"]));
+}
+
+#[test]
+fn duplicate_output_options_are_refused() {
+    let dir = tempdir("duplicate");
+    assert_eq!(
+        ExitCode::from(1),
+        run_in(&dir, &["--output", "a.edn", "--output", "b.edn"])
+    );
+}
+
+#[test]
+fn source_symlinks_are_refused() {
+    let dir = tempdir("symlink");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/a.lua"), "return {}\n").unwrap();
+    std::os::unix::fs::symlink(dir.join("src"), dir.join("src/cycle")).unwrap();
+    std::fs::write(
+        dir.join("policy.edn"),
+        "{:lang :lua :src \"src\" :prefix \"app\"}",
+    )
+    .unwrap();
+    let code = run_in(&dir, &["policy.edn", "result.edn"]);
+    assert_eq!(ExitCode::from(1), code);
+    assert!(!dir.join("result.edn").exists());
+}
