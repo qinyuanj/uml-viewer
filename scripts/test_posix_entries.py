@@ -525,9 +525,9 @@ class PosixEntries(unittest.TestCase):
         env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
         result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', 'scene'], cwd=self.root,
                                 env=env, capture_output=True, text=True, timeout=30)
-        # The Rust `scene` role is a placeholder until it is ported (#134).
-        self.assertEqual(69, result.returncode, result.stderr)
-        self.assertIn('`scene`', result.stderr)
+        # #137: the ported `scene` role answers its own usage error.
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn('uml-viewer scene', result.stderr)
 
     def test_rust_ir_matches_all_four_language_goldens(self):
         # #136: the ported ir role reproduces the JVM goldens structurally

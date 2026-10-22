@@ -1,6 +1,7 @@
 //! The single uml-viewer binary (#134). It only dispatches: each role is a
 //! subcommand whose implementation lives in its own workspace library crate
 //! (`crates/<role>`), exposing `pub fn run(args: &[OsString]) -> ExitCode`.
+//! All roles are ported (#134-#139).
 //! Arguments after the subcommand are passed on literally (no re-quoting,
 //! no lossy UTF-8 conversion). Without a subcommand, all arguments go to
 //! the viewer, so `uml-viewer diagram.edn` opens a diagram.
@@ -26,29 +27,31 @@ const ROLES: &[(&str, &str, Entry)] = &[
         "export scene geometry for each focus, headless",
         |_, args| scene::run(args),
     ),
-    ("companion-worker", "Herdr companion worker", unported),
-    ("companion-runner", "Herdr companion runner", unported),
+    ("companion-worker", "Herdr companion worker", |_, args| {
+        companion::run_worker(args)
+    }),
+    ("companion-runner", "Herdr companion runner", |_, args| {
+        companion::run_runner(args)
+    }),
     (
         "companion-controller",
         "companion recovery controller",
-        unported,
+        |_, args| companion::run_controller(args),
     ),
     (
         "companion-preflight",
         "read-only Herdr backend preflight",
-        unported,
+        |_, args| companion::run_preflight(args),
+    ),
+    (
+        "companion-smoke",
+        "isolated Herdr acceptance harness",
+        |_, args| companion::run_smoke(args),
     ),
 ];
 
-/// EX_UNAVAILABLE: the role exists but is not implemented in Rust yet.
-const UNAVAILABLE: u8 = 69;
 /// Command-line usage error.
 const USAGE: u8 = 2;
-
-fn unported(role: &'static str, _args: &[OsString]) -> ExitCode {
-    eprintln!("uml-viewer: `{role}` 尚未移植到 Rust 运行时；请使用 --runtime love。");
-    ExitCode::from(UNAVAILABLE)
-}
 
 fn usage() -> String {
     let mut text = String::from("usage: uml-viewer [<subcommand>] [args]\n\nsubcommands:\n");

@@ -328,6 +328,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "companion"
+version = "0.1.0"
+dependencies = [
+ "edn",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2567,6 +2574,7 @@ dependencies = [
 name = "uml-viewer"
 version = "0.1.0"
 dependencies = [
+ "companion",
  "edn",
  "ir",
  "scene",
