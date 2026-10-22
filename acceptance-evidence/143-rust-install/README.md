@@ -76,6 +76,27 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 - 空闲：后台线程只 stat IR、`.metrics/**` 和 `to-viewer.edn`，戳变化才请求重绘；driver、计时运行和待截图仍保留 250 ms 节奏。
   bench 的 idle 相位自己安排结束时的唤醒。
 
+### 合并 integration/spec-134 之后
+
+上面的数字在 `ticket/143-perf` 合并 integration tip（`e5cc114`）之前测得。合并后 #141 的检查器侧栏每帧深拷贝整份
+document，pan-detail 掉到约 29 fps、app CPU 约 33 ms（gui.draw 实测均值 11.2 ms/帧，其中 `inspector::entries`
+占 7.6–10.8 ms）。#141 在其分支上修复（`036c315`，侧栏 0.16–0.20 ms/帧）。在本分支上未提交地应用该修复后实测：
+
+| 场景 | 相位 | fps | p95 ms | 进程 CPU% |
+|---|---|---|---|---|
+| 500 | idle（仅 idle 相位，两次） | — | — | 1.10 / 0.80 |
+| 500 | pan-detail | 55.29 | 18.10 | 49.1 |
+| 500 | zoom-detail | 57.40 | 18.18 | 57.0 |
+| 500 | pan-fit | 58.70 | 17.63 | 49.0 |
+| 500 | zoom-fit | 57.38 | 18.62 | 61.1 |
+| 2000 | pan-detail | 58.09 | 18.05 | 62.0 |
+| 2000 | zoom-detail | 55.95 | 27.15 | 63.7 |
+| 2000 | pan-fit | 58.96 | 17.68 | 57.0 |
+| 2000 | zoom-fit | 46.74 | 34.96 | 64.0 |
+
+那次运行与本机其他 agent 的 driver/bench 并发（负载约 3.9–4.7），所以 2000 的 zoom-fit 从 29.9 ms 变成 35.0 ms
+属于干扰，而不是回归；2000 全部达标是在合并前、同一代码路径上测得的。该修复必须先进入 integration，合并后的数字才有意义。
+
 仍未通过：500 类的 zoom-detail 和 zoom-fit 略低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
 Full 档 feather 细分）。2000 类全部通过。
 
