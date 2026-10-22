@@ -1,0 +1,75 @@
+//! The single uml-viewer binary (#134). It only dispatches: each role is a
+//! subcommand whose implementation lives in its own workspace library crate
+//! (`crates/<role>`), exposing `pub fn run(args: &[OsString]) -> ExitCode`.
+//! Arguments after the subcommand are passed on literally (no re-quoting,
+//! no lossy UTF-8 conversion). Without a subcommand, all arguments go to
+//! the viewer, so `uml-viewer diagram.edn` opens a diagram.
+
+use std::ffi::OsString;
+use std::process::ExitCode;
+
+type Entry = fn(&'static str, &[OsString]) -> ExitCode;
+
+/// Role table. A later ticket that ports a role replaces `unported` with
+/// a wrapper around its crate's `run`, e.g. `|_, args| ir::run(args)`.
+const ROLES: &[(&str, &str, Entry)] = &[
+    ("viewer", "egui viewer (default)", unported),
+    (
+        "ir",
+        "generate IR from a policy and source tree, headless",
+        unported,
+    ),
+    (
+        "scene",
+        "export scene geometry for each focus, headless",
+        unported,
+    ),
+    ("companion-worker", "Herdr companion worker", unported),
+    ("companion-runner", "Herdr companion runner", unported),
+    (
+        "companion-controller",
+        "companion recovery controller",
+        unported,
+    ),
+    (
+        "companion-preflight",
+        "read-only Herdr backend preflight",
+        unported,
+    ),
+];
+
+/// EX_UNAVAILABLE: the role exists but is not implemented in Rust yet.
+const UNAVAILABLE: u8 = 69;
+/// Command-line usage error.
+const USAGE: u8 = 2;
+
+fn unported(role: &'static str, _args: &[OsString]) -> ExitCode {
+    eprintln!("uml-viewer: `{role}` 尚未移植到 Rust 运行时；请使用 --runtime love。");
+    ExitCode::from(UNAVAILABLE)
+}
+
+fn usage() -> String {
+    let mut text = String::from("usage: uml-viewer [<subcommand>] [args]\n\nsubcommands:\n");
+    for (name, summary, _) in ROLES {
+        text.push_str(&format!("  {name:<22}{summary}\n"));
+    }
+    text
+}
+
+fn main() -> ExitCode {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    let first = args.first().and_then(|a| a.to_str());
+    if matches!(first, Some("--help" | "-h")) {
+        print!("{}", usage());
+        return ExitCode::SUCCESS;
+    }
+    if let Some(&(name, _, entry)) = ROLES.iter().find(|(name, _, _)| Some(*name) == first) {
+        return entry(name, &args[1..]);
+    }
+    if first.is_some_and(|a| a.starts_with("--")) {
+        eprintln!("uml-viewer: 未知选项 {}\n{}", first.unwrap(), usage());
+        return ExitCode::from(USAGE);
+    }
+    let (name, _, entry) = ROLES[0];
+    entry(name, &args)
+}

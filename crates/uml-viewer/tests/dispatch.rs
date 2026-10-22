@@ -1,0 +1,68 @@
+//! Seam A (#134): the binary's process boundary. Each role named in #134
+//! is a subcommand; roles not yet ported exit 69 (EX_UNAVAILABLE) naming the
+//! role, unknown `--` options are refused with usage (exit 2).
+
+use std::process::{Command, Output};
+
+fn run(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_uml-viewer"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn every_role_from_the_spec_is_a_subcommand() {
+    for role in [
+        "viewer",
+        "ir",
+        "scene",
+        "companion-worker",
+        "companion-runner",
+        "companion-controller",
+        "companion-preflight",
+    ] {
+        let output = run(&[role, "some arg"]);
+        assert_eq!(
+            Some(69),
+            output.status.code(),
+            "{role}: {}",
+            stderr(&output)
+        );
+        assert!(
+            stderr(&output).contains(&format!("`{role}`")),
+            "{role}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn arguments_without_a_subcommand_go_to_the_viewer() {
+    for args in [&[][..], &["diagram with spaces.edn"][..]] {
+        let output = run(args);
+        assert_eq!(Some(69), output.status.code());
+        assert!(stderr(&output).contains("`viewer`"), "{}", stderr(&output));
+    }
+}
+
+#[test]
+fn help_lists_the_subcommands_and_succeeds() {
+    let output = run(&["--help"]);
+    assert_eq!(Some(0), output.status.code());
+    let text = String::from_utf8_lossy(&output.stdout);
+    for role in ["viewer", "ir", "scene", "companion-preflight"] {
+        assert!(text.contains(role), "{text}");
+    }
+}
+
+#[test]
+fn an_unknown_leading_option_is_refused_with_usage() {
+    let output = run(&["--bogus"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(stderr(&output).contains("usage"), "{}", stderr(&output));
+}
