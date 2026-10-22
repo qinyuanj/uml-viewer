@@ -1,0 +1,945 @@
+//! Durable project recovery controller boundary (port of
+//! `love/uml/adapters/recovery.lua`). The viewer owns only immutable
+//! references; this module is the sole journal writer when running detached.
+//! Journals are EDN; runner `started`/`exit` side files are JSON.
+
+use crate::posix::{self, Failure, Owner, Result};
+use crate::record;
+use crate::recovery_domain as domain;
+use edn::Value;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Injected journal/process behaviour; the production host uses the real
+/// POSIX boundary, tests substitute in-memory journals.
+type ClockFn = Rc<dyn Fn() -> i64>;
+type SleepFn = Rc<dyn Fn(i64)>;
+type OwnerFn = Rc<dyn Fn(i64) -> Option<Owner>>;
+/// Raw journal bytes. `Ok(None)` is an absent file; `Err` is a transient lock
+/// or IO failure. Parsing happens in the caller, so a malformed journal is
+/// never mistaken for a transient failure.
+type ReadFn = Rc<dyn Fn(&Path) -> Result<Option<String>>>;
+type WriteFn = Rc<dyn Fn(&Path, &Value) -> Result<()>>;
+type RemoveFn = Rc<dyn Fn(&Path)>;
+type TokenFn = Rc<dyn Fn() -> String>;
+type RunnerStatePathFn = Rc<dyn Fn(&Value, i64) -> String>;
+
+#[derive(Clone)]
+pub struct Host {
+    pub clock: ClockFn,
+    pub sleep: SleepFn,
+    pub owner: OwnerFn,
+    pub read: ReadFn,
+    pub write: WriteFn,
+    pub remove: RemoveFn,
+    pub token: TokenFn,
+    pub runner_state_path: RunnerStatePathFn,
+}
+
+fn real_read(path: &Path) -> Result<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(path)
+        .map(Some)
+        .map_err(|error| Failure::new(format!("{error}")))
+}
+
+fn real_write(path: &Path, state: &Value) -> Result<()> {
+    posix::atomic::ensure_parent(path)?;
+    posix::atomic::write(path, edn::encode(state)?.as_bytes())
+}
+
+fn default_runner_state_path(identity: &Value, generation: i64) -> String {
+    let cwd = record::get_name(identity, "cwd").unwrap_or_else(|| ".".to_owned());
+    let session = record::get_name(identity, "session").unwrap_or_default();
+    format!("{cwd}/.uml-viewer/{session}-runner-{generation}.edn")
+}
+
+pub fn real_host() -> Host {
+    Host {
+        clock: Rc::new(posix::monotonic_ms),
+        sleep: Rc::new(posix::sleep),
+        owner: Rc::new(|pid| {
+            if pid < 1 || pid > i32::MAX as i64 {
+                return None;
+            }
+            posix::identity(pid as i32).ok().flatten()
+        }),
+        read: Rc::new(real_read),
+        write: Rc::new(real_write),
+        remove: Rc::new(|path| {
+            let _ = std::fs::remove_file(path);
+        }),
+        token: Rc::new(new_token),
+        runner_state_path: Rc::new(default_runner_state_path),
+    }
+}
+
+/// Read a journal, retrying transient sharing violations for up to two
+/// seconds while the controller replaces the file. An absent file is `None`;
+/// a malformed journal is an error, never retried (Lua `M.read_state`).
+pub fn read_state(path: &Path, host: &Host) -> Result<Option<Value>> {
+    let deadline = (host.clock)() + 2000;
+    loop {
+        match (host.read)(path) {
+            Ok(Some(text)) => return edn::parse(&text).map(Some).map_err(Failure::from),
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                let message = error.message.to_lowercase();
+                if message.contains("no such file") {
+                    return Ok(None);
+                }
+                if (host.clock)() < deadline {
+                    (host.sleep)(25);
+                } else {
+                    return Err(Failure::new(format!(
+                        "Could not read recovery journal {}: {}",
+                        path.display(),
+                        error.message
+                    )));
+                }
+            }
+        }
+    }
+}
+
+/// Only a positively present, well-formed runner file with a phase is a
+/// record; malformed runner state is no acknowledgement, never an exit cause.
+pub fn read_runner(state: &Value, host: &Host) -> Result<Option<Value>> {
+    let Some(path) = record::get_name(state, "runner-state") else {
+        return Ok(None);
+    };
+    let Ok(Some(text)) = (host.read)(Path::new(&path)) else {
+        return Ok(None);
+    };
+    let Ok(value) = edn::parse(&text) else {
+        return Ok(None);
+    };
+    if record::get_name(&value, "phase").is_some() {
+        Ok(Some(value))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn write_state(path: &Path, state: &Value, host: &Host) -> Result<()> {
+    (host.write)(path, state)
+}
+
+pub fn status(identity: &Value, host: &Host) -> Result<Option<Value>> {
+    read_state(Path::new(&domain::state_file(identity)), host)
+}
+
+pub fn save(identity: &Value, state: &Value, host: &Host) -> Result<()> {
+    write_state(Path::new(&domain::state_file(identity)), state, host)
+}
+
+/// Register the journal for a fresh controller; an existing journal refuses
+/// replacement.
+pub fn register(identity: &Value, controller: &Value, host: &Host) -> Result<()> {
+    if status(identity, host)?.is_some() {
+        return Err(Failure::new(
+            "Recovery journal already exists; refusing replacement",
+        ));
+    }
+    save(
+        identity,
+        &domain::initial(identity, controller, (host.clock)()),
+        host,
+    )
+}
+
+/// The registered controller identity must still be exactly what the journal
+/// recorded (unless the phase is already terminal).
+pub fn verify(identity: &Value, host: &Host) -> Result<Value> {
+    let state = status(identity, host)?
+        .ok_or_else(|| Failure::new("Recovery controller identity is missing or changed"))?;
+    domain::matching(identity, &state)?;
+    let controller = record::get(&state, "controller")
+        .filter(|controller| record::is_map(controller))
+        .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
+    let pid = record::get_i64(controller, "pid")
+        .filter(|pid| *pid >= 1)
+        .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
+    if record::get_name(controller, "start").is_none() {
+        return Err(Failure::new("Recovery process identity is incomplete"));
+    }
+    let phase = record::get_name(&state, "phase").unwrap_or_default();
+    if !domain::terminal(&phase) {
+        let start = record::get_name(controller, "start").unwrap_or_default();
+        let observed = (host.owner)(pid);
+        let matches = observed
+            .as_ref()
+            .is_some_and(|observed| i64::from(observed.pid) == pid && observed.start == start);
+        if !matches {
+            return Err(Failure::new(
+                "Recovery controller disappeared; refusing replacement",
+            ));
+        }
+    }
+    Ok(state)
+}
+
+/// Start and cancel share the OS gate lock (Lua `M.with_gate`).
+pub fn with_gate<T>(identity: &Value, action: impl FnOnce() -> Result<T>) -> Result<T> {
+    let gate = posix::acquire(Path::new(&domain::gate_file(identity)))?;
+    let result = action();
+    posix::release(Some(gate));
+    result
+}
+
+/// Durable cancel: verify, journal the cancel under the gate, then wait for
+/// the controller to confirm by reaching a terminal phase and exiting.
+pub fn cancel(identity: &Value, host: &Host) -> Result<()> {
+    verify(identity, host)?;
+    let reference = domain::reference(identity);
+    let control_path = PathBuf::from(domain::control_file(identity));
+    with_gate(identity, || {
+        write_state(
+            &control_path,
+            &record::map(vec![(
+                "cancel",
+                record::get(&reference, "token")
+                    .cloned()
+                    .unwrap_or(Value::Nil),
+            )]),
+            host,
+        )
+    })?;
+    let deadline = (host.clock)() + 10000;
+    loop {
+        let state = verify(identity, host)?;
+        let controller = record::get(&state, "controller").unwrap();
+        let pid = record::get_i64(controller, "pid").unwrap_or(0);
+        let start = record::get_name(controller, "start").unwrap_or_default();
+        // A reused PID is not the registered controller: only the exact
+        // original creation identity proves the controller is still running.
+        let absent = match (host.owner)(pid) {
+            None => true,
+            Some(observed) => observed.start != start,
+        };
+        let phase = record::get_name(&state, "phase").unwrap_or_default();
+        if domain::terminal(&phase) && absent {
+            return Ok(());
+        }
+        if (host.clock)() < deadline {
+            (host.sleep)(25);
+        } else {
+            return Err(Failure::new(format!(
+                "Recovery cancellation was not acknowledged; resources retained (phase {}, controller {})",
+                if phase.is_empty() { "unknown" } else { &phase },
+                if absent { "absent" } else { "alive" }
+            )));
+        }
+    }
+}
+
+/// Completed lifecycle journals retire; a live one refuses.
+pub fn retire_completed(identity: &Value, host: &Host) -> Result<Option<()>> {
+    let Some(existing) = status(identity, host)? else {
+        return Ok(None);
+    };
+    let phase = record::get_name(&existing, "phase").unwrap_or_default();
+    if !domain::terminal(&phase) {
+        return Err(Failure::new("Recovery registration already exists"));
+    }
+    (host.remove)(Path::new(&domain::state_file(identity)));
+    (host.remove)(Path::new(&domain::control_file(identity)));
+    Ok(Some(()))
+}
+
+pub struct Step<'a> {
+    pub identity: &'a Value,
+    pub now: i64,
+    pub host: &'a Host,
+    pub launch: &'a dyn Fn(&Value) -> Result<()>,
+}
+
+/// One controller step (Lua `M.step`): journal before the external side
+/// effect; a persisted `:submitting` is never replayed after a rebind.
+pub fn step(step: &Step) -> Result<Value> {
+    let identity = step.identity;
+    let host = step.host;
+    let state = read_state(Path::new(&domain::state_file(identity)), host)?;
+    let control = read_state(Path::new(&domain::control_file(identity)), host)?;
+    let event = match &state {
+        Some(state) => read_runner(state, host)?,
+        None => None,
+    };
+    let runner_state_fn = |generation: i64| (host.runner_state_path)(identity, generation);
+    let owner = host.owner.clone();
+    let owner_ref = move |pid: i64| owner(pid);
+    let token = host.token.clone();
+    let token_ref = move || token();
+    let decision = domain::decide(&domain::Context {
+        identity,
+        state: state
+            .as_ref()
+            .ok_or_else(|| Failure::new("Recovery controller identity is missing or changed"))?,
+        control: control.as_ref(),
+        event: event.as_ref(),
+        now: step.now,
+        owner: &owner_ref,
+        token: &token_ref,
+        runner_state: &runner_state_fn,
+    })?;
+    let state_path = PathBuf::from(domain::state_file(identity));
+    if !decision.launch {
+        if decision.changed {
+            write_state(&state_path, &decision.state, host)?;
+        }
+        return Ok(decision.state);
+    }
+    write_state(&state_path, &decision.state, host)?;
+    let mut submission = identity.clone();
+    if let Some(token) = record::get(&decision.state, "runner-token") {
+        record::put(&mut submission, "runner-token", token.clone());
+    }
+    if let Some(path) = record::get(&decision.state, "runner-state") {
+        record::put(&mut submission, "runner-state", path.clone());
+    }
+    let mut result = decision.state.clone();
+    match (step.launch)(&submission) {
+        Ok(()) => {
+            record::put(&mut result, "phase", Value::keyword("running"));
+        }
+        Err(error) => {
+            record::put(&mut result, "phase", Value::keyword("failed"));
+            record::put(
+                &mut result,
+                "reason",
+                Value::String(format!("Recovery submission uncertain: {}", error.message)),
+            );
+        }
+    }
+    write_state(&state_path, &result, host)?;
+    Ok(result)
+}
+
+/// Unique generation tokens (UUIDv4 shape). Uniqueness comes from the
+/// monotonic clock, the pid and a process-local counter, not from
+/// cryptography — tokens identify one generation, nothing more.
+pub fn new_token() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seed = posix::monotonic_ms() as u64
+        ^ (posix::current_pid() as u64) << 32
+        ^ COUNTER.fetch_add(0x9e3779b9, Ordering::Relaxed);
+    let mut state = seed ^ 0x2545_f491_4f6c_dd1d;
+    let mut next = || {
+        // xorshift64*
+        state ^= state >> 12;
+        state ^= state << 25;
+        state ^= state >> 27;
+        state.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32
+    };
+    let mut text = String::with_capacity(36);
+    for (index, c) in "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".chars().enumerate() {
+        let _ = index;
+        match c {
+            'x' => text.push_str(&format!("{:x}", next() % 16)),
+            'y' => text.push_str(&format!("{:x}", next() % 4 + 8)),
+            other => text.push(other),
+        }
+    }
+    text
+}
+
+pub struct ControllerLauncher {
+    pub executable: std::ffi::OsString,
+    pub argv: Vec<std::ffi::OsString>,
+}
+
+/// Register a detached controller and wait for its journal (Lua `M.start`).
+pub fn start(
+    identity: &Value,
+    host: &Host,
+    spawn: &dyn Fn(&Value, &str) -> Result<()>,
+) -> Result<Value> {
+    retire_completed(identity, host)?;
+    let manifest = domain::manifest_path(identity);
+    write_state(Path::new(&manifest), identity, host)?;
+    spawn(identity, &manifest)?;
+    let deadline = (host.clock)() + 30000;
+    loop {
+        if status(identity, host)?.is_some() {
+            return verify(identity, host);
+        }
+        if (host.clock)() < deadline {
+            (host.sleep)(25);
+        } else {
+            return Err(Failure::new(
+                "Detached recovery controller did not register; ownership retained",
+            ));
+        }
+    }
+}
+
+/// The runner role body (Lua `M.run_child`): one generation lock, spawn the
+/// companion command attached, publish started/exited records. Returns the
+/// verified exit code, or `None` for an unknown exit.
+pub fn run_child(identity: &Value) -> Result<Option<i32>> {
+    let host = real_host();
+    let runner_state = record::get_name(identity, "runner-state")
+        .ok_or_else(|| Failure::new("Runner manifest is missing its state path"))?;
+    let generation_lock = posix::try_acquire(Path::new(&format!("{runner_state}.lock")))?;
+    if generation_lock.is_none() {
+        return Err(Failure::new("Runner generation already executing"));
+    }
+    let started_path = PathBuf::from(format!("{runner_state}.started.json"));
+    let exit_path = PathBuf::from(format!("{runner_state}.exit.json"));
+    let _ = std::fs::remove_file(&started_path);
+    let _ = std::fs::remove_file(&exit_path);
+    let command: Vec<std::ffi::OsString> = record::string_vec(record::get_vec(identity, "command"))
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .collect();
+    if command.is_empty() {
+        posix::release(generation_lock);
+        return Err(Failure::new("Runner manifest has no command"));
+    }
+    let cwd = record::get_name(identity, "cwd").unwrap_or_else(|| ".".to_owned());
+    let child = match posix::start_attached(
+        &command,
+        Path::new(&cwd),
+        &["NO_COLOR"],
+        &started_path,
+        &exit_path,
+    ) {
+        Ok(child) => child,
+        Err(error) => {
+            posix::release(generation_lock);
+            return Err(error);
+        }
+    };
+    let deadline = posix::monotonic_ms() + 30000;
+    let started = loop {
+        let started = std::fs::read_to_string(&started_path)
+            .ok()
+            .and_then(|text| crate::json::decode(&text).ok());
+        if let Some(started) = started {
+            break started;
+        }
+        if posix::monotonic_ms() >= deadline {
+            posix::release(generation_lock);
+            return Err(Failure::new("Runner child did not report its identity"));
+        }
+        posix::sleep(25);
+    };
+    let child_record = record::map(vec![
+        (
+            "pid",
+            Value::Integer(
+                started
+                    .get("pid")
+                    .and_then(crate::json::Json::as_i64)
+                    .unwrap_or(child.pid as i64),
+            ),
+        ),
+        (
+            "start",
+            Value::String(
+                started
+                    .get("start")
+                    .and_then(crate::json::Json::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            ),
+        ),
+    ]);
+    let token = record::get(identity, "runner-token")
+        .cloned()
+        .unwrap_or(Value::Nil);
+    write_state(
+        Path::new(&runner_state),
+        &record::map(vec![
+            ("token", token.clone()),
+            ("phase", Value::keyword("started")),
+            ("child", child_record.clone()),
+        ]),
+        &host,
+    )?;
+    let exit = posix::await_exit(&child, Some(&exit_path));
+    let mut exited = record::map(vec![
+        ("token", token),
+        ("phase", Value::keyword("exited")),
+        ("child", child_record),
+        ("at", Value::Integer(posix::monotonic_ms())),
+    ]);
+    if let Some(code) = exit {
+        record::put(&mut exited, "exit", Value::Integer(code as i64));
+    }
+    write_state(Path::new(&runner_state), &exited, &host)?;
+    posix::release(generation_lock);
+    Ok(exit)
+}
+
+/// The detached controller loop (Lua `M.controller_loop`): register, then
+/// step under the gate every 100 ms until a terminal phase. Returns the
+/// terminal phase; step failures journal `:failed`.
+pub fn controller_loop(
+    identity: &Value,
+    host: &Host,
+    launch: &dyn Fn(&Value) -> Result<()>,
+) -> Result<String> {
+    let lock = posix::try_acquire(Path::new(&domain::lock_file(identity)))?;
+    if lock.is_none() {
+        return Err(Failure::new("Project recovery controller already running"));
+    }
+    let current = (host.owner)(i64::from(posix::current_pid()))
+        .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
+    let controller = record::map(vec![
+        ("pid", Value::Integer(i64::from(current.pid))),
+        ("start", Value::String(current.start)),
+    ]);
+    register(identity, &controller, host)?;
+    loop {
+        let stepped = with_gate(identity, || {
+            step(&Step {
+                identity,
+                now: (host.clock)(),
+                host,
+                launch,
+            })
+        });
+        let state = match stepped {
+            Ok(state) => state,
+            Err(error) => {
+                let mut existing = status(identity, host)?.unwrap_or_else(|| Value::Map(vec![]));
+                record::put(&mut existing, "phase", Value::keyword("failed"));
+                record::put(&mut existing, "reason", Value::String(error.message));
+                write_state(Path::new(&domain::state_file(identity)), &existing, host)?;
+                existing
+            }
+        };
+        let phase = record::get_name(&state, "phase").unwrap_or_default();
+        if domain::terminal(&phase) {
+            posix::release(lock);
+            return Ok(phase);
+        }
+        (host.sleep)(100);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    /// In-memory journal: path → EDN value, exactly like the busted
+    /// `fast_write` fixtures.
+    struct Memory {
+        files: Rc<RefCell<HashMap<PathBuf, Value>>>,
+    }
+
+    impl Memory {
+        fn new() -> Memory {
+            Memory {
+                files: Rc::new(RefCell::new(HashMap::new())),
+            }
+        }
+
+        fn host(&self) -> Host {
+            let read_files = self.files.clone();
+            let write_files = self.files.clone();
+            let remove_files = self.files.clone();
+            Host {
+                clock: Rc::new(|| 0),
+                sleep: Rc::new(|_| {}),
+                owner: Rc::new(|_| None),
+                read: Rc::new(move |path| match read_files.borrow().get(path) {
+                    Some(value) => edn::encode(value).map(Some).map_err(Failure::from),
+                    None => Ok(None),
+                }),
+                write: Rc::new(move |path, state| {
+                    write_files
+                        .borrow_mut()
+                        .insert(path.to_path_buf(), state.clone());
+                    Ok(())
+                }),
+                remove: Rc::new(move |path| {
+                    remove_files.borrow_mut().remove(path);
+                }),
+                token: Rc::new(|| "mem-token".to_owned()),
+                runner_state_path: Rc::new(default_runner_state_path),
+            }
+        }
+    }
+
+    fn identity(root: &str) -> Value {
+        edn::parse(&format!(
+            r#"{{:cwd "{root}" :session "uml-viewer-A" :runner-token "initial"
+                :runner-state "{root}/.uml-viewer/runner.edn"
+                :supervisor {{:token "controller"
+                              :manifest "{root}/.uml-viewer/recovery-launch.edn"
+                              :state-file "{root}/.uml-viewer/recovery.edn"
+                              :control-file "{root}/.uml-viewer/recovery-control.edn"
+                              :gate-file "{root}/.uml-viewer/recovery-gate.lock"
+                              :lock-file "{root}/.uml-viewer/recovery-controller.lock"}}}}"#
+        ))
+        .unwrap()
+    }
+
+    fn controller() -> Value {
+        record::map(vec![
+            ("pid", Value::Integer(10)),
+            ("start", Value::String("start".to_owned())),
+        ])
+    }
+
+    fn exited(token: &str, code: i64) -> Value {
+        record::map(vec![
+            ("token", Value::String(token.to_owned())),
+            ("phase", Value::keyword("exited")),
+            (
+                "child",
+                record::map(vec![
+                    ("pid", Value::Integer(20)),
+                    ("start", Value::String("child".to_owned())),
+                ]),
+            ),
+            ("exit", Value::Integer(code)),
+        ])
+    }
+
+    #[test]
+    fn step_journals_a_backoff_then_submits_exactly_once_at_the_deadline() {
+        let memory = Memory::new();
+        let host = memory.host();
+        let identity = identity("/r");
+        register(&identity, &controller(), &host).unwrap();
+        let launches = Rc::new(RefCell::new(Vec::new()));
+        let launch_log = launches.clone();
+        let launch = move |submission: &Value| {
+            launch_log.borrow_mut().push(submission.clone());
+            Ok(())
+        };
+        memory.files.borrow_mut().insert(
+            PathBuf::from("/r/.uml-viewer/runner.edn"),
+            exited("initial", 37),
+        );
+        let first = step(&Step {
+            identity: &identity,
+            now: 1000,
+            host: &host,
+            launch: &launch,
+        })
+        .unwrap();
+        assert_eq!("backoff", record::get_name(&first, "phase").unwrap());
+        assert_eq!(Some(2000), record::get_i64(&first, "deadline"));
+        assert!(launches.borrow().is_empty());
+        let early = step(&Step {
+            identity: &identity,
+            now: 1999,
+            host: &host,
+            launch: &launch,
+        })
+        .unwrap();
+        assert!(launches.borrow().is_empty());
+        assert_eq!("backoff", record::get_name(&early, "phase").unwrap());
+        let submitted = step(&Step {
+            identity: &identity,
+            now: 2000,
+            host: &host,
+            launch: &launch,
+        })
+        .unwrap();
+        assert_eq!(1, launches.borrow().len());
+        assert_eq!(Some(1), record::get_i64(&submitted, "attempts"));
+        assert_eq!(Some(1), record::get_i64(&submitted, "generation"));
+        assert_eq!(
+            Some("mem-token".to_owned()),
+            record::get_name(&launches.borrow()[0], "runner-token")
+        );
+    }
+
+    #[test]
+    fn a_step_that_changes_nothing_does_not_rewrite_the_journal() {
+        let memory = Memory::new();
+        let writes = Rc::new(RefCell::new(0));
+        let counted = writes.clone();
+        let write_files = memory.files.clone();
+        let host = Host {
+            write: Rc::new(move |path, state| {
+                *counted.borrow_mut() += 1;
+                write_files
+                    .borrow_mut()
+                    .insert(path.to_path_buf(), state.clone());
+                Ok(())
+            }),
+            ..memory.host()
+        };
+        let identity = identity("/r");
+        register(&identity, &controller(), &host).unwrap();
+        let launch = |_: &Value| Ok(());
+        let baseline = *writes.borrow();
+        step(&Step {
+            identity: &identity,
+            now: 0,
+            host: &host,
+            launch: &launch,
+        })
+        .unwrap();
+        let first = *writes.borrow();
+        step(&Step {
+            identity: &identity,
+            now: 50,
+            host: &host,
+            launch: &launch,
+        })
+        .unwrap();
+        assert_eq!(first, *writes.borrow());
+        assert_eq!(baseline, first);
+    }
+
+    #[test]
+    fn an_uncertain_submission_fails_closed_and_never_replays() {
+        let memory = Memory::new();
+        let host = memory.host();
+        let identity = identity("/r");
+        register(&identity, &controller(), &host).unwrap();
+        memory.files.borrow_mut().insert(
+            PathBuf::from("/r/.uml-viewer/runner.edn"),
+            exited("initial", 37),
+        );
+        let attempts = RefCell::new(0);
+        let failing = |_: &Value| {
+            *attempts.borrow_mut() += 1;
+            Err(Failure::new("timeout"))
+        };
+        step(&Step {
+            identity: &identity,
+            now: 0,
+            host: &host,
+            launch: &failing,
+        })
+        .unwrap();
+        let result = step(&Step {
+            identity: &identity,
+            now: 1000,
+            host: &host,
+            launch: &failing,
+        })
+        .unwrap();
+        assert_eq!("failed", record::get_name(&result, "phase").unwrap());
+        assert_eq!(Some(1), record::get_i64(&result, "attempts"));
+        assert_eq!(
+            Some("Recovery submission uncertain: timeout".to_owned()),
+            record::get_name(&result, "reason")
+        );
+        let noop = |_: &Value| Ok(());
+        step(&Step {
+            identity: &identity,
+            now: 999999,
+            host: &host,
+            launch: &noop,
+        })
+        .unwrap();
+        assert_eq!(1, *attempts.borrow());
+    }
+
+    #[test]
+    fn read_state_retries_transient_locks_but_not_malformed_journals() {
+        let directory = tempfile();
+        let target = directory.join("state.edn");
+        std::fs::write(&target, "{:phase :running}").unwrap();
+        let calls = Rc::new(RefCell::new(0));
+        let counted = calls.clone();
+        let host = Host {
+            clock: Rc::new(|| 0),
+            sleep: Rc::new(|_| {}),
+            owner: Rc::new(|_| None),
+            read: Rc::new(move |path| {
+                *counted.borrow_mut() += 1;
+                if *counted.borrow() < 3 {
+                    return Err(Failure::new("sharing violation"));
+                }
+                real_read(path)
+            }),
+            write: Rc::new(real_write),
+            remove: Rc::new(|_| {}),
+            token: Rc::new(|| "t".to_owned()),
+            runner_state_path: Rc::new(default_runner_state_path),
+        };
+        let value = read_state(&target, &host).unwrap().unwrap();
+        assert_eq!(
+            Some("running".to_owned()),
+            record::get_name(&value, "phase")
+        );
+        assert_eq!(3, *calls.borrow());
+        std::fs::write(&target, "{:phase").unwrap();
+        assert!(read_state(&target, &host).is_err());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_sharing_violation_outlasting_the_budget_fails() {
+        let directory = tempfile();
+        let target = directory.join("state.edn");
+        std::fs::write(&target, "{:phase :running}").unwrap();
+        let now = Rc::new(RefCell::new(0i64));
+        let clock_now = now.clone();
+        let sleep_now = now.clone();
+        let host = Host {
+            clock: Rc::new(move || *clock_now.borrow()),
+            sleep: Rc::new(move |ms| *sleep_now.borrow_mut() += ms),
+            owner: Rc::new(|_| None),
+            read: Rc::new(|_| Err(Failure::new("sharing violation"))),
+            write: Rc::new(real_write),
+            remove: Rc::new(|_| {}),
+            token: Rc::new(|| "t".to_owned()),
+            runner_state_path: Rc::new(default_runner_state_path),
+        };
+        assert!(read_state(&target, &host).is_err());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn retire_completed_removes_terminal_journals_and_never_live_ones() {
+        for phase in ["cancelled", "failed", "normal"] {
+            let memory = Memory::new();
+            let host = memory.host();
+            let identity = identity("/r");
+            register(&identity, &controller(), &host).unwrap();
+            let mut state = status(&identity, &host).unwrap().unwrap();
+            record::put(&mut state, "phase", Value::keyword(phase));
+            save(&identity, &state, &host).unwrap();
+            assert!(retire_completed(&identity, &host).unwrap().is_some());
+            assert!(status(&identity, &host).unwrap().is_none());
+        }
+        for phase in ["running", "backoff", "submitting"] {
+            let memory = Memory::new();
+            let host = memory.host();
+            let identity = identity("/r");
+            register(&identity, &controller(), &host).unwrap();
+            let mut state = status(&identity, &host).unwrap().unwrap();
+            record::put(&mut state, "phase", Value::keyword(phase));
+            save(&identity, &state, &host).unwrap();
+            assert!(retire_completed(&identity, &host).is_err());
+            assert_eq!(
+                Some(phase.to_owned()),
+                record::get_name(&status(&identity, &host).unwrap().unwrap(), "phase")
+            );
+        }
+    }
+
+    #[test]
+    fn verify_accepts_only_the_exact_original_controller_identity() {
+        let memory = Memory::new();
+        let host = Host {
+            owner: Rc::new(|pid: i64| {
+                (pid == 10).then(|| Owner {
+                    pid: 10,
+                    start: "start".to_owned(),
+                    name: "controller".to_owned(),
+                })
+            }),
+            ..memory.host()
+        };
+        let identity = identity("/r");
+        register(&identity, &controller(), &host).unwrap();
+        assert_eq!(
+            "running",
+            record::get_name(&verify(&identity, &host).unwrap(), "phase").unwrap()
+        );
+        for replacement in [
+            record::map(vec![
+                ("pid", Value::Integer(11)),
+                ("start", Value::String("start".to_owned())),
+            ]),
+            record::map(vec![
+                ("pid", Value::Integer(10)),
+                ("start", Value::String("other".to_owned())),
+            ]),
+            record::map(vec![("start", Value::String("start".to_owned()))]),
+        ] {
+            let mut state = status(&identity, &host).unwrap().unwrap();
+            record::put(&mut state, "controller", replacement);
+            save(&identity, &state, &host).unwrap();
+            assert!(verify(&identity, &host).is_err());
+        }
+    }
+
+    #[test]
+    fn runner_state_must_carry_a_phase_to_count_as_acknowledgement() {
+        let directory = tempfile();
+        let good = directory.join("runner.edn");
+        std::fs::write(&good, "{:token \"t\" :phase :started}").unwrap();
+        let state = record::map(vec![(
+            "runner-state",
+            Value::String(good.to_string_lossy().into_owned()),
+        )]);
+        let host = real_host();
+        assert!(read_runner(&state, &host).unwrap().is_some());
+        std::fs::write(&good, "broken EDN {{{").unwrap();
+        assert!(read_runner(&state, &host).unwrap().is_none());
+        std::fs::write(&good, "{:token \"t\"}").unwrap();
+        assert!(read_runner(&state, &host).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn tokens_are_unique_and_uuid_shaped() {
+        let a = new_token();
+        let b = new_token();
+        assert_ne!(a, b);
+        assert_eq!(36, a.len());
+        assert_eq!(Some('4'), a.chars().nth(14));
+    }
+
+    fn tempfile() -> PathBuf {
+        static SERIAL: AtomicU64 = AtomicU64::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "uml recovery test {} {}",
+            std::process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
+        directory
+    }
+
+    #[test]
+    fn run_child_records_started_and_the_actual_exit() {
+        let directory = tempfile();
+        let root = directory.to_string_lossy().into_owned();
+        let runner_state = format!("{root}/.uml-viewer/runner.edn");
+        let identity = edn::parse(&format!(
+            r#"{{:cwd "{root}" :command ["/bin/sh" "-c" "sleep 0.1; exit 7"]
+                :runner-token "gen" :runner-state "{runner_state}"}}"#
+        ))
+        .unwrap();
+        let exit = run_child(&identity).unwrap();
+        assert_eq!(Some(7), exit);
+        let text = std::fs::read_to_string(&runner_state).unwrap();
+        let state = edn::parse(&text).unwrap();
+        assert_eq!(Some("exited".to_owned()), record::get_name(&state, "phase"));
+        assert_eq!(Some(7), record::get_i64(&state, "exit"));
+        assert!(record::get_i64(&state, "at").is_some());
+        let child = record::get(&state, "child").unwrap();
+        assert!(record::get_i64(child, "pid").unwrap_or(0) > 1);
+        // A second run of the same generation now succeeds (lock released).
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn run_child_refuses_a_second_holder_of_the_generation_lock() {
+        let directory = tempfile();
+        let root = directory.to_string_lossy().into_owned();
+        let runner_state = format!("{root}/.uml-viewer/runner.edn");
+        let held = posix::try_acquire(Path::new(&format!("{runner_state}.lock")))
+            .unwrap()
+            .expect("lock");
+        let identity = edn::parse(&format!(
+            r#"{{:cwd "{root}" :command ["/bin/true"] :runner-token "gen"
+                :runner-state "{runner_state}"}}"#
+        ))
+        .unwrap();
+        let error = run_child(&identity).unwrap_err();
+        assert_eq!("Runner generation already executing", error.message);
+        posix::release(Some(held));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+}

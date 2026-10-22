@@ -3,9 +3,19 @@
 version = 4
 
 [[package]]
+name = "companion"
+version = "0.1.0"
+dependencies = [
+ "edn",
+]
+
+[[package]]
 name = "edn"
 version = "0.1.0"
 
 [[package]]
 name = "uml-viewer"
 version = "0.1.0"
+dependencies = [
+ "companion",
+]

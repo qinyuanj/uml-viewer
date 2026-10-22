@@ -25,16 +25,37 @@ fn every_role_from_the_spec_is_a_subcommand() {
         "companion-runner",
         "companion-controller",
         "companion-preflight",
+        "companion-smoke",
     ] {
         let output = run(&[role, "some arg"]);
-        assert_eq!(
-            Some(69),
+        assert_ne!(
+            Some(2),
             output.status.code(),
-            "{role}: {}",
+            "{role} is an unknown subcommand: {}",
             stderr(&output)
         );
+    }
+}
+
+#[test]
+fn companion_roles_are_ported_and_report_real_failures() {
+    // #138: the five companion roles dispatch to the companion crate, so a
+    // bogus argument is a named failure (never the unported placeholder).
+    for role in [
+        "companion-worker",
+        "companion-runner",
+        "companion-controller",
+        "companion-preflight",
+        "companion-smoke",
+    ] {
+        let output = run(&[role, "some arg"]);
+        assert_ne!(
+            Some(69),
+            output.status.code(),
+            "{role} is ported but still reported as unported"
+        );
         assert!(
-            stderr(&output).contains(&format!("`{role}`")),
+            !stderr(&output).contains("尚未移植到 Rust 运行时"),
             "{role}: {}",
             stderr(&output)
         );

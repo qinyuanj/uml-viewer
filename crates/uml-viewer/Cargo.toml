@@ -10,3 +10,4 @@ name = "uml-viewer"
 path = "src/main.rs"
 
 [dependencies]
+companion = { path = "../companion" }

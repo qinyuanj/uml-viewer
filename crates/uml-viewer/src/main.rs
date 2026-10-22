@@ -24,17 +24,26 @@ const ROLES: &[(&str, &str, Entry)] = &[
         "export scene geometry for each focus, headless",
         unported,
     ),
-    ("companion-worker", "Herdr companion worker", unported),
-    ("companion-runner", "Herdr companion runner", unported),
+    ("companion-worker", "Herdr companion worker", |_, args| {
+        companion::run_worker(args)
+    }),
+    ("companion-runner", "Herdr companion runner", |_, args| {
+        companion::run_runner(args)
+    }),
     (
         "companion-controller",
         "companion recovery controller",
-        unported,
+        |_, args| companion::run_controller(args),
     ),
     (
         "companion-preflight",
         "read-only Herdr backend preflight",
-        unported,
+        |_, args| companion::run_preflight(args),
+    ),
+    (
+        "companion-smoke",
+        "isolated Herdr acceptance harness",
+        |_, args| companion::run_smoke(args),
     ),
 ];
 

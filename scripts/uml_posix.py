@@ -55,9 +55,18 @@ RUNTIMES = ('love', 'rust')
 
 
 def take_runtime(args):
-    """Strip one `--runtime love|rust` pair; refuse anything else."""
+    """Strip one `--runtime love|rust` pair; refuse anything else.
+
+    `UML_RUNTIME` supplies the default so the existing suites can be pointed
+    at either runtime without changing their own argv (#138): an explicit
+    `--runtime` still wins, and an invalid value is refused the same way.
+    """
+    requested = os.environ.get('UML_RUNTIME')
+    if requested is not None and requested not in RUNTIMES:
+        raise ValueError('--runtime 只接受 love 或 rust（默认 love）；JVM 已移除。')
+    default = requested or 'love'
     if '--runtime' not in args:
-        return 'love', args
+        return default, args
     index = args.index('--runtime')
     value = args[index + 1] if index + 1 < len(args) else None
     if value not in RUNTIMES or args.count('--runtime') != 1:
