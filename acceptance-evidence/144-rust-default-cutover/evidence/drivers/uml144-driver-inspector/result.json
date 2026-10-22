@@ -1,0 +1,9 @@
+{
+  "driver": "inspector",
+  "runtime": "rust",
+  "project": "/tmp/uml viewer 项目 ow32atmy",
+  "evidence": "/tmp/uml144-driver-inspector",
+  "ok": false,
+  "failure": "run: driver did not publish inspector-pass.txt",
+  "project_retained": "/tmp/uml viewer 项目 ow32atmy"
+}

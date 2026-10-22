@@ -1,0 +1,1 @@
+PASS empty-inspector copy, clamped detail scrolling, hovered op, narrow/wide card columns, New Proposal row and Rename/Delete menu

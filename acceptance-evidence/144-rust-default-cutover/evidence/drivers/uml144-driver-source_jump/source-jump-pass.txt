@@ -1,0 +1,1 @@
+PASS selected leaf -> module full file; member line 82 highlighted and scrolled; drag selects function; Ctrl+C copies

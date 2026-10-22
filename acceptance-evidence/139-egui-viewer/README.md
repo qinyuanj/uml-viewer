@@ -11,15 +11,19 @@
 | 截图证据：三档 LOD 各一张 | 通过 | `lod/lod-blocks.png`（zoom 0.1，块+包标题）、`lod/lod-frames.png`（0.25，框+类名+抽稀边）、`lod/lod-full.png`（1.0，完整细节）；由 `scripts/drivers/lod_shots.edn` 驱动 |
 | D3D12 路径生效（非 llvmpipe） | 通过 | 每次运行的 `renderer.txt`：`renderer: D3D12 (NVIDIA GeForce GTX 1080 Ti)`、`backend: Gl`（`GALLIUM_DRIVER=d3d12`、`WGPU_BACKEND=gl` 生效） |
 | 窗口装饰结论及理由 | 本机走 Wayland 无装饰 | 见下节 |
-| 进程身份 JSON 结构沿用现有格式 | 通过 | `viewer-process-identity.json`：`{"pid":…,"started":"…","runtime":"rust","cwd":"…"}`，键序、无空格、无尾换行与 LOVE 版一致；`runtime` 为 `rust`（`uml_launch.verify_previous` 的 RUNTIMES 接受） |
+| 进程身份 JSON 结构沿用现有格式 | 通过 | `viewer-process-identity.json`：`{"pid":…,"started":"…","runtime":"rust","cwd":"…"}`，键序、无空格、无尾换行与 LOVE 版一致；`runtime` 为 `rust`（`uml_launch.verify_previous` 只接受这一个运行时值） |
 
 空画布与文件缺失提示：`hints/waiting-display.png`（`--backend herdr` 等待
 `:display`）、`hints/missing-file.png`（找不到 IR 文件），均为真实窗口截图。
 
 复现：`cargo build --release` 后
 `python3 -I scripts/run_viewer_driver.py metrics|class_boxes|lod_shots`。
-LOVE 共存：`--runtime love` 仍走 `scripts/test_love_*.lua`（
-`love-coexistence/` 里 metrics 的 LOVE 证据通过）。
+
+运行时沿革：本记录写成并验收时（提交 `a692019` 之前），`--runtime love` 仍可运行
+`scripts/test_love_*.lua`，`love-coexistence/` 里 metrics 的 LOVE 证据通过。
+`a692019`（#144）删除了 LOVE/Lua 运行时后，HEAD 上 `--runtime love` 在 dispatch 前
+被拒绝，这些 Lua 脚本已不存在，`love-coexistence/` 只能作为当时的对照证据保留，
+不能在 HEAD 上重跑。
 
 ## 窗口装饰结论
 

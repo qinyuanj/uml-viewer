@@ -1,0 +1,9 @@
+{
+  "driver": "font_parity",
+  "runtime": "rust",
+  "project": "/tmp/uml viewer 项目 rpsfp6h0",
+  "evidence": "/tmp/uml144-driver-font_parity",
+  "ok": false,
+  "failure": "baseline: viewer exited 1: libEGL warning: failed to get driver name for fd -1\n\nlibEGL warning: MESA-LOADER: failed to retrieve device information\n\nlibEGL warning: failed to get driver name for fd -1\n\nUML viewer: renderer: D3D12 (NVIDIA GeForce GTX 1080 Ti); backend: Gl; api: Other; driver:\nNavigation acceptance failed: no class uml on the scene",
+  "project_retained": "/tmp/uml viewer 项目 rpsfp6h0"
+}

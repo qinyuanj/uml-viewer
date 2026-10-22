@@ -1,0 +1,1 @@
+PASS 1500x920 DPI1 zoom1 canvas text bounds (chinese)

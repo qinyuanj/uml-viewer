@@ -1,0 +1,9 @@
+{
+  "driver": "class_boxes",
+  "runtime": "rust",
+  "project": "/tmp/uml viewer 项目 tnivb2hm",
+  "evidence": "/tmp/uml144-driver-class_boxes",
+  "ok": false,
+  "failure": "run: driver did not publish render.png",
+  "project_retained": "/tmp/uml viewer 项目 tnivb2hm"
+}

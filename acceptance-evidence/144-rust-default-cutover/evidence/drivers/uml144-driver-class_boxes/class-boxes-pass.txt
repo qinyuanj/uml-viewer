@@ -1,0 +1,1 @@
+PASS egui italic shear: same glyph topology, unchanged baselines, shifted x

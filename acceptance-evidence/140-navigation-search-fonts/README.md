@@ -19,7 +19,9 @@
 `:anchor-fixed`、`:*-unchanged`、`:fitted`）。负例已验证：`UML_FONT_TEST_EXPECT=sarasa`
 而实际为 system 时 viewer 以 1 退出，stderr 为对应断言消息。
 
-**未等价移植、由后续 ticket 承接（Lua driver 仍可 `--runtime love` 运行）：**
+**未等价移植、由后续 ticket 承接。** 本记录写成时（`a692019` 之前）Lua driver 仍可
+`--runtime love` 运行；`a692019`（#144）删除 LOVE/Lua 运行时后，HEAD 上这些 Lua
+driver 已不存在，以下各项均由 Rust driver 承接：
 - search：两个源码窗口并存/关闭其一 → #141 源码窗口；imgui.ini 隔离 → egui 不写 ini，无对应物。
 - font_parity：640x700 类卡片无横向滚动、行高 20/18 → #141 类卡片。
 - dpi_window：检查器侧栏 280/拖到 340/summary 卡/Regen 按钮 → #141；mail `:display`、

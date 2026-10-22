@@ -49,8 +49,11 @@ love-exit=1
 
 `python3 -I scripts/run_viewer_driver.py <driver> --evidence <dir>`。16 个 driver 的
 首轮全量运行一次；三个失败项在修正 driver 期望后各重检一次（见下表），其余未重跑。
-证据文件（截图、scene EDN、session/邮件）留在 `/tmp/uml144-driver-<name>/` 或
-`/tmp/uml144-rerun-<name>/`，仓库只保留 `result.json` 与退出码。
+证据文件（截图、scene EDN、session/邮件）当时写在 `/tmp/uml144-driver-<name>/` 与
+`/tmp/uml144-rerun-<name>/`；现已原样拷入本目录的 `evidence/drivers/` 与
+`evidence/rerun/`（`drivers/*.json` 的 `evidence` 字段保留当时的 /tmp 路径，作为
+来源记录）。16 个 driver 与 3 次重检的文件数逐一核对一致，没有只留在 /tmp、
+无法再查看的声明；`evidence/viewer/` 是 Seam A viewer 运行的证据。
 
 | driver | 首次结果 | 备注 |
 |---|---|---|
@@ -75,6 +78,20 @@ love-exit=1
 viewer 运行时；各重检一次通过，`result.json` 的 `ok:true` 在
 `drivers/<name>.json`。重检覆盖了同名 `.txt` 日志，首次失败原因保留在本表与
 `drivers/summary.txt` 的 `exit=1` 行。
+
+两处 driver 期望变化的来源（都是 #144 的合法后果，不是放宽断言）：
+
+- `inspector` 的状态文案：driver 不带 `--backend` 运行，Rust 的 mail-only companion
+  仍记录唤醒尝试并成功唤醒，`app.rs` 在 `wake` 成功后显示 “Regen requested.”；
+  只有未连接 companion 时才显示 “Regen queued; Claude session not attached.”。
+  旧断言来自 #141：当时唤醒尚无 Rust companion（属 #142），只写邮件，所以断言的是
+  未连接文案；#144 的 driver 运行已有 mail-only companion，唤醒成功。权威断言仍是
+  `to-agent.edn` 中的 `:op :regen` 邮件，状态文案只描述唤醒结果。
+- `font_parity` 的 baseline 类 id：本仓库 IR 现在由 Rust 源码生成（policy
+  `:lang :rust`、`:sources crates/<crate>/src`），命名空间为 `uml.ir`，class id
+  为 `ir.graph`；LOVE 时代的 `uml` / `uml.application.detail` 在 Rust IR 中不再
+  存在。driver 因此下钻 `:ir` 并选中 `ir.graph`；断言本身（文字落在槽内、
+  质量诊断）没有变化。
 
 ## 5. 质量快照与 IR
 

@@ -1,0 +1,13 @@
+{:stack "uml-viewer egui/eframe 0.37 wgpu (#139/#143)" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync "eframe default (AutoVsync)" :dpi 1 :view-w 1500 :view-h 920 :scene-w 6723.773256520848 :scene-h 4118 :fit-zoom 0.2230890220078838 :classes 500 :edges 1617 :packages 5}
+phase=idle frames=1 fps=58.97 mean_ms=16.96 median_ms=16.96 p95_ms=16.96 p99_ms=16.96 max_ms=16.96 cpu_pct=0.40 app_cpu_ms_p95=4.22 zoom=-..-
+phase=pan-detail frames=579 fps=57.87 mean_ms=17.28 median_ms=16.94 p95_ms=18.08 p99_ms=27.41 max_ms=31.08 cpu_pct=55.38 app_cpu_ms_p95=6.53 zoom=1.00..1.00
+phase=zoom-detail frames=530 fps=52.98 mean_ms=18.87 median_ms=16.98 p95_ms=28.68 p99_ms=32.16 max_ms=56.89 cpu_pct=58.78 app_cpu_ms_p95=10.33 zoom=0.50..2.00
+phase=pan-fit frames=591 fps=59.05 mean_ms=16.93 median_ms=16.88 p95_ms=17.45 p99_ms=18.66 max_ms=19.61 cpu_pct=50.96 app_cpu_ms_p95=4.82 zoom=0.22..0.22
+phase=zoom-fit frames=558 fps=55.73 mean_ms=17.94 median_ms=16.91 p95_ms=26.98 p99_ms=29.12 max_ms=48.92 cpu_pct=63.22 app_cpu_ms_p95=9.33 zoom=0.22..0.89
+criterion name="renderer contains D3D12 (otherwise the run is void)" pass=true detail=D3D12 (NVIDIA GeForce GTX 1080 Ti)
+criterion name="idle CPU <= 2%" pass=true detail=cpu_pct=0.40
+criterion name="pan-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=57.87 >= 58 && p95_ms=18.08 <= 18.3
+criterion name="zoom-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=52.98 >= 58 && p95_ms=28.68 <= 18.3
+criterion name="pan-fit fps >= 58 && p95 <= 18.3ms" pass=true detail=fps=59.05 >= 58 && p95_ms=17.45 <= 18.3
+criterion name="zoom-fit fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=55.73 >= 58 && p95_ms=26.98 <= 18.3
+verdict=FAIL

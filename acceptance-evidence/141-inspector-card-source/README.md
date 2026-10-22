@@ -20,9 +20,11 @@ source-window.txt 改为 GUI 记录（EDN），Lua 为纯文本；pass marker �
 
 ## 2. 提案写回保留其他提案与 policy 内容
 
-inspector fixture 现带同级 `diagram.policy.edn`（`:lang :lua :src "love" :prefix "demo"
-:omit [:zzz]` + 两个提案 `:plan`/`:keep`）。改名后 driver 断言 policy 含新名
-`中文方案输入`、`:keep`/`保留方案`、`:omit [:zzz]`、`:lang :lua`、`:src "love"`，IR 含两个提案。
+inspector fixture 现带同级 `diagram.policy.edn`。本记录写成时（`a692019` 之前）它是
+`:lang :lua :src "love" :prefix "demo" :omit [:zzz]` + 两个提案 `:plan`/`:keep`；
+HEAD 上（#144 自举之后）driver fixture 已改为 `:lang :rust :src "crates"`，同一
+`:prefix "demo"` 与两个提案不变。改名后 driver 断言 policy 含新名
+`中文方案输入`、`:keep`/`保留方案`、`:omit [:zzz]`、`:lang :rust`、`:src "crates"`，IR 含两个提案。
 单测 `crates/viewer/tests/inspector.rs` 另覆盖写回保留键。写回会规范化提案（补
 `:omit []`、layer id），与 LOVE 相同。
 
@@ -64,6 +66,7 @@ navigation、search、source_jump、source_window。
 - WSLg 输入法组字输入中文提案名（driver 只注入 `Event::Text`，即 IME 提交入口）。
 - 源码选区 Ctrl+C 进入**系统剪贴板**（driver 断言的是 egui 收到的复制文本 `:copied`）。
 - 卡片窗口真实拖动改尺寸（driver 用 `:resize-card` 强制尺寸）。
-- 修改后的 inspector fixture 下 LOVE `--runtime love` 的 inspector driver：本 worktree 无
-  cimgui-love 绑定，未运行。
+- 本记录写成时（`a692019` 之前），修改后的 inspector fixture 下 LOVE `--runtime love`
+  的 inspector driver 因本 worktree 无 cimgui-love 绑定未运行。`a692019`（#144）删除
+  LOVE/Lua 运行时后，HEAD 上该项已不存在，也不再需要重跑。
 - Regen 唤醒 Claude 会话属 #142；此处只写 `:regen` 邮件并显示「Regen queued; Claude session not attached.」。
