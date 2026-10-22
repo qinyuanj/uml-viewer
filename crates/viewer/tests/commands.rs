@@ -365,48 +365,19 @@ fn the_fit_rule_holds_for_a_measure_that_snaps_to_the_pixel_grid() {
 }
 
 #[test]
-fn the_declutter_control_names_the_current_mode_and_sits_top_right() {
-    // Labels are those of `love/uml/application/strings.lua` declutter_modes.
+fn the_canvas_chrome_has_no_declutter_control() {
+    // #141 moved Declutter into the inspector sidebar (its labels are
+    // checked by the inspector tests); the canvas keeps only banner,
+    // return scope and popups.
     let doc =
         scene::ir::read_document("{:hierarchical true :classes [{:id :a.b} {:id :a.c}] :edges []}")
             .unwrap();
-    let mut state = scene::document::new_state(doc, None, None, None, &[], None);
-    let label = |state: &scene::document::ViewState| {
-        commands::chrome(state, 1500.0, 920.0)
-            .into_iter()
-            .find_map(|c| match c {
-                Command::Declutter { text, rect } => Some((text, rect)),
-                _ => None,
-            })
-            .expect("declutter control in the chrome")
-    };
-    let (text, rect) = label(&state);
-    assert_eq!("精简：无", text);
-    assert_eq!(rect, commands::declutter_rect(1500.0));
-    assert!(rect.right() <= 1500.0 && rect.x > 1000.0 && rect.y < 44.0);
-    let mut seen = vec![text];
-    for _ in 0..5 {
-        state = scene::events::cycle_declutter(&state);
-        seen.push(label(&state).0);
-    }
-    assert_eq!(
-        vec![
-            "精简：无",
-            "精简：箭头",
-            "移除箭头",
-            "精简：元素",
-            "精简：类",
-            "精简：无"
-        ],
-        seen
-    );
-    // A waiting canvas has no diagram to declutter.
-    let waiting = scene::document::waiting_state(None, 0);
-    assert!(
-        !commands::chrome(&waiting, 1500.0, 920.0)
-            .iter()
-            .any(|c| c.kind() == "declutter")
-    );
+    let state = scene::document::new_state(doc, None, None, None, &[], None);
+    let kinds: Vec<&str> = commands::chrome(&state, 1500.0, 920.0)
+        .iter()
+        .map(|c| c.kind())
+        .collect();
+    assert!(!kinds.contains(&"declutter"), "{kinds:?}");
 }
 
 #[test]

@@ -19,8 +19,10 @@ use crate::bench;
 use crate::commands::{self, Command};
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
+use crate::gui::{Action, Gui};
 use crate::search_box::SearchBox;
-use crate::{cli::Options, fonts, identity, metrics, paint, strings, theme, watch};
+use crate::{cli::Options, fonts, identity, inspector, metrics, paint, project_files, strings};
+use crate::{source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
 /// Default window in points (the LOVE viewer's 1500x920 view units); egui
@@ -327,6 +329,14 @@ struct Viewer {
     bench_geo: Option<bench::Geo>,
     /// Adapter name, backend, driver, driver info (protocol-1 environment).
     adapter: [String; 4],
+    /// Inspector sidebar, class card and source windows (#141).
+    gui: Gui,
+    /// Driver GUI events, one batch per frame through `raw_input_hook`.
+    gui_batches: std::collections::VecDeque<Vec<egui::Event>>,
+    /// Where replayed GUI pointer events are (screen points).
+    gui_pointer: egui::Pos2,
+    /// A batch reached egui this frame and the GUI has not drawn it yet.
+    gui_inflight: bool,
 }
 
 impl Viewer {
@@ -397,6 +407,10 @@ impl Viewer {
             bench: None,
             bench_geo: None,
             adapter,
+            gui: Gui::default(),
+            gui_batches: Default::default(),
+            gui_pointer: egui::Pos2::ZERO,
+            gui_inflight: false,
         };
         if let Some(evidence) = &setup.evidence {
             if let Some(info) = &renderer {
@@ -497,7 +511,7 @@ impl Viewer {
         Dims {
             window_w: screen.width() as f64,
             window_h: screen.height() as f64,
-            view_w: Some(screen.width() as f64),
+            view_w: Some(self.gui.canvas_width(screen.width() as f64)),
             control,
             shift,
             ..Dims::default()
@@ -553,6 +567,12 @@ impl Viewer {
                 ctrl,
                 shift,
             } => {
+                if self.gui.card_hovered() {
+                    // LOVE wheelmoved(0, -4) scrolls the card down four notches.
+                    let view_h = self.gui.card.view_h;
+                    self.state = inspector::scroll(&state, -dy, view_h);
+                    return;
+                }
                 if self
                     .driver_pointer
                     .or(state.pointer)
@@ -586,12 +606,17 @@ impl Viewer {
             Input::Text(text) => {
                 if self.search.active {
                     self.text_events.push(egui::Event::Text(text));
+                } else {
+                    // The focused egui field (proposal rename) takes it.
+                    self.gui_batches.push_back(vec![egui::Event::Text(text)]);
                 }
                 return;
             }
             Input::Paste(text) => {
                 if self.search.active {
                     self.text_events.push(egui::Event::Paste(text));
+                } else {
+                    self.gui_batches.push_back(vec![egui::Event::Paste(text)]);
                 }
                 return;
             }
@@ -613,14 +638,8 @@ impl Viewer {
             }
             self.search.close();
         }
-        if self.state.document.is_some()
-            && !self.state.waiting
-            && contains(commands::declutter_rect(self.window_w), x, y)
-        {
-            self.state = events::cycle_declutter(&self.state);
-            return true;
-        }
-        false
+        // The sidebar, the class card and source windows are egui's.
+        self.gui.captures(x, y, self.window_w)
     }
 
     fn search_key(&mut self, key: &str, dims: &Dims) {
@@ -700,6 +719,154 @@ impl Viewer {
         }
     }
 
+    /// Apply what the inspector, card and source windows asked for.
+    fn apply_actions(&mut self, actions: Vec<Action>, ctx: &egui::Context) {
+        if actions.is_empty() {
+            return;
+        }
+        let outbox = self.project_root.join(".uml-viewer/to-agent.edn");
+        for action in actions {
+            match action {
+                Action::Choose(id) => {
+                    let choice = inspector::choose(&self.state, id.as_ref());
+                    self.state = choice.state;
+                    let extra: Vec<(Value, Value)> = match &choice.context {
+                        Value::Map(entries) => entries.clone(),
+                        _ => Vec::new(),
+                    };
+                    if let Err(error) = project_files::append(&outbox, "context", &extra) {
+                        eprintln!("uml viewer: could not send the context: {error}");
+                    }
+                    self.state.discussion_context = Some(choice.context);
+                }
+                Action::NewProposal => {
+                    self.state =
+                        events::add_proposal(&self.state, None, Some(&project_files::Files));
+                    self.gui.invalidate();
+                }
+                Action::Declutter => self.state = events::cycle_declutter(&self.state),
+                Action::Regen => {
+                    // The companion wake-up is #142; the durable queue is
+                    // authoritative, as in the LOVE viewer.
+                    self.status = Some(match project_files::append(&outbox, "regen", &[]) {
+                        Ok(_) => "Regen queued; Claude session not attached.".into(),
+                        Err(_) => "Regen failed.".into(),
+                    });
+                }
+                Action::Rename(id, new_name) => {
+                    self.state = events::rename_proposal(
+                        &self.state,
+                        Some(&id),
+                        &new_name,
+                        Some(&project_files::Files),
+                    );
+                    self.gui.invalidate();
+                }
+                Action::Delete(id) => {
+                    self.state =
+                        events::delete_proposal(&self.state, Some(&id), Some(&project_files::Files));
+                    self.gui.invalidate();
+                }
+                Action::CloseCard => self.state = events::close_detail(&self.state),
+                Action::Locate(id) => self.locate(&id),
+                Action::OpenSource(ident) => {
+                    if let Err(reason) = self.gui.open_source(&ident, &self.project_root) {
+                        self.status = Some(strings::SOURCE_NOT_OPENED.replace("%s", &reason));
+                    }
+                }
+            }
+        }
+        self.publish();
+        ctx.request_repaint();
+    }
+
+    /// The point a GUI step targets, in screen points.
+    fn gui_target(&self, target: &driver::GuiTarget) -> Result<egui::Pos2, String> {
+        let origin = self.ctx.content_rect().min;
+        let (x, y) = match (&target.at, target.xy) {
+            (Some(key), _) => {
+                let r = self
+                    .gui
+                    .bounds
+                    .get(key)
+                    .ok_or_else(|| format!("missing GUI widget {key}"))?;
+                match &target.prefix {
+                    Some(prefix) => {
+                        let w = paint::measure(&self.ctx, theme::fonts::CODE, prefix);
+                        (r.x + w, r.y + r.h / 2.0)
+                    }
+                    None => (r.x + r.w / 2.0, r.y + r.h / 2.0),
+                }
+            }
+            (None, Some([x, y])) => (x, y),
+            (None, None) => return Err("GUI step without a target".into()),
+        };
+        Ok(egui::Pos2::new(
+            origin.x + (x + target.offset[0]) as f32,
+            origin.y + (y + target.offset[1]) as f32,
+        ))
+    }
+
+    fn gui_button_event(&self, secondary: bool, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos: self.gui_pointer,
+            button: if secondary {
+                egui::PointerButton::Secondary
+            } else {
+                egui::PointerButton::Primary
+            },
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Font source, role sizes and glyph coverage of the UI table plus
+    /// `UML_FONT_TEST_EXTRA` and an optional extra probe.
+    fn check_fonts(&mut self, extra: Option<&str>) -> Result<(), String> {
+        let source = self.font.as_ref().map(|(_, s)| *s).unwrap_or("none");
+        if let Some(expect) = env_nonempty("UML_FONT_TEST_EXPECT")
+            && expect != source
+        {
+            return Err(format!("font source {source} expected {expect}"));
+        }
+        let roles = [
+            ("body", theme::fonts::BODY, 18.0),
+            ("title", theme::fonts::TITLE, 18.0),
+            ("badge", theme::fonts::BADGE, 9.0),
+            ("level", theme::fonts::LEVEL, 11.0),
+            ("marker", theme::fonts::MARKER, 12.0),
+            ("code", theme::fonts::CODE, 13.0),
+        ];
+        let probe = strings::glyph_text()
+            + &env_nonempty("UML_FONT_TEST_EXTRA").unwrap_or_default()
+            + extra.unwrap_or_default();
+        let mut seen = Vec::new();
+        for c in probe.chars() {
+            if (c as u32) > 32 && !c.is_whitespace() && !seen.contains(&c) {
+                seen.push(c);
+            }
+        }
+        let mut missing = Vec::new();
+        for (role, size, expected) in roles {
+            if (size - expected).abs() > 0.01 {
+                return Err(format!("{role} font size {size}"));
+            }
+            let font = FontId::new(size, FontFamily::Monospace);
+            self.ctx.fonts_mut(|f| {
+                for &c in &seen {
+                    if !f.has_glyph(&font, c) {
+                        missing.push(format!("{role}:U+{:04X}", c as u32));
+                    }
+                }
+            });
+        }
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("missing glyphs {}", missing.join(" ")))
+        }
+    }
+
     /// Poll the IR and metrics stamps; reload when either changed.
     fn poll(&mut self) {
         // A companion launch shows the empty canvas until :display (#142).
@@ -752,7 +919,7 @@ impl Viewer {
     /// Undecorated fallback: the top strip drags, the edges resize. Returns
     /// true when the press was consumed by a window region.
     fn window_chrome_input(&mut self, ctx: &egui::Context) -> bool {
-        if self.decorated {
+        if self.decorated || self.driver.is_some() {
             return false;
         }
         let Some(pointer) = ctx.input(|i| i.pointer.hover_pos()) else {
@@ -817,7 +984,7 @@ impl Viewer {
             // View units: points from the canvas origin.
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
             let dragging = self.state.drag.is_some();
-            if !dragging && self.search.captures(x, y) {
+            if !dragging && (self.search.captures(x, y) || self.gui.captures(x, y, self.window_w)) {
                 // egui owns the search box; the canvas sees nothing.
                 self.state = events::on_leave(&self.state);
             } else if (pressed || double) && self.chrome_press(x, y) {
@@ -838,8 +1005,9 @@ impl Viewer {
             self.state = events::on_leave(&self.state);
         }
         let over_search = pos.is_some_and(|p| {
-            self.search
-                .captures((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64)
+            let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
+            self.search.captures(x, y)
+                || (self.gui.captures(x, y, self.window_w) && !self.gui.card_hovered())
         });
         // egui turns ctrl+wheel into a zoom factor; convert it back to wheel
         // notches so the canvas zooms by ZOOM_STEP^notches at the cursor.
@@ -874,6 +1042,13 @@ impl Viewer {
                 .collect()
         });
         let (ctrl, shift) = ctx.input(|i| (i.modifiers.ctrl, i.modifiers.shift));
+        // A focused rename field owns the keyboard (the search box routes its
+        // own keys through search_key).
+        let keys = if ctx.text_edit_focused() && !self.search.active {
+            Vec::new()
+        } else {
+            keys
+        };
         for key in keys {
             if key == egui::Key::F3 {
                 self.show_performance = !self.show_performance;
@@ -965,10 +1140,6 @@ fn key_name(key: egui::Key) -> &'static str {
     }
 }
 
-fn contains(r: Rect, x: f64, y: f64) -> bool {
-    x >= r.x && x <= r.right() && y >= r.y && y <= r.bottom()
-}
-
 /// An egui screen rect in view units (points from the canvas origin).
 fn view_rect(r: egui::Rect, origin: egui::Pos2) -> Rect {
     Rect::new(
@@ -1008,6 +1179,10 @@ fn write_png(target: &Path, image: &egui::ColorImage) -> Result<(), String> {
 }
 
 impl eframe::App for Viewer {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.take_gui_batch(raw_input);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
@@ -1063,7 +1238,8 @@ impl eframe::App for Viewer {
             self.state = events::settle(&self.state, &dims);
         }
 
-        let rect = ui.max_rect();
+        let full = ui.max_rect();
+        let rect = full.with_max_x(full.min.x + self.gui.canvas_width(full.width() as f64) as f32);
         let hint = self.hint.clone();
         let status = self.status.clone();
         let performance = self
@@ -1080,6 +1256,13 @@ impl eframe::App for Viewer {
             self.show_performance,
         );
         self.draw_search(ctx);
+        let actions = self.gui.draw(ctx, &self.state, self.frames);
+        self.apply_actions(actions, ctx);
+        self.gui_inflight = false;
+        if self.driver.is_some() || !self.gui_batches.is_empty() {
+            // Replayed input needs frames; a real session repaints on input.
+            ctx.request_repaint();
+        }
 
         // Evidence: a PNG at frame 4 plus driver-requested screenshots.
         if self.frames == 4 && self.evidence.is_some() && !self.render_shot {
@@ -1110,6 +1293,17 @@ impl eframe::App for Viewer {
 fn fps(ctx: &egui::Context) -> u32 {
     let dt = ctx.input(|i| i.stable_dt).max(1e-6);
     (1.0 / dt).round() as u32
+}
+
+impl Viewer {
+    /// Deliver one batch of replayed GUI events at the start of a frame, so
+    /// egui handles them as real input (the Lua drivers fed imgui's IO).
+    fn take_gui_batch(&mut self, raw_input: &mut egui::RawInput) {
+        if let Some(batch) = self.gui_batches.pop_front() {
+            raw_input.events.extend(batch);
+            self.gui_inflight = true;
+        }
+    }
 }
 
 impl driver::Host for Viewer {
@@ -1185,8 +1379,7 @@ impl driver::Host for Viewer {
 
     fn is_blank(&self, x: f64, y: f64) -> bool {
         let (wx, wy) = events::world_xy(&self.state, x, y);
-        hit::at(&self.state.scene, wx, wy).is_none()
-            && !contains(commands::declutter_rect(self.window_w), x, y)
+        hit::at(&self.state.scene, wx, wy).is_none() && !self.gui.captures(x, y, self.window_w)
     }
 
     fn click_class(&mut self, id: &str, double: bool) -> Result<(), String> {
@@ -1210,54 +1403,119 @@ impl driver::Host for Viewer {
     }
 
     fn click_declutter(&mut self) {
-        let r = commands::declutter_rect(self.window_w);
-        self.pending.push(Input::Click {
-            x: r.x + r.w / 2.0,
-            y: r.y + r.h / 2.0,
-        });
+        // The control lives in the inspector: a real egui click on it.
+        let target = driver::GuiTarget {
+            at: Some("declutter".into()),
+            xy: None,
+            offset: [0.0, 0.0],
+            prefix: None,
+        };
+        if let Err(error) = self.gui_click(&target, false) {
+            eprintln!("uml viewer: {error}");
+        }
     }
 
     fn assert_fonts(&mut self) -> Result<(), String> {
-        let source = self.font.as_ref().map(|(_, s)| *s).unwrap_or("none");
-        if let Some(expect) = env_nonempty("UML_FONT_TEST_EXPECT")
-            && expect != source
-        {
-            return Err(format!("font source {source} expected {expect}"));
+        self.check_fonts(None)
+    }
+
+    fn assert_fonts_with(&mut self, extra: Option<&str>) -> Result<(), String> {
+        self.check_fonts(extra)
+    }
+
+    fn busy(&self) -> bool {
+        // Until the GUI has drawn the last batch its effect is not visible.
+        !self.gui_batches.is_empty() || self.gui_inflight
+    }
+
+    fn gui_point(&mut self, target: &driver::GuiTarget) -> Result<(), String> {
+        let pos = self.gui_target(target)?;
+        self.gui_pointer = pos;
+        self.gui_batches.push_back(vec![egui::Event::PointerMoved(pos)]);
+        Ok(())
+    }
+
+    fn gui_button(&mut self, secondary: bool, pressed: bool) {
+        let event = self.gui_button_event(secondary, pressed);
+        self.gui_batches.push_back(vec![event]);
+    }
+
+    fn gui_click(&mut self, target: &driver::GuiTarget, secondary: bool) -> Result<(), String> {
+        let pos = self.gui_target(target)?;
+        self.gui_pointer = pos;
+        self.gui_batches.push_back(vec![egui::Event::PointerMoved(pos)]);
+        let press = self.gui_button_event(secondary, true);
+        let release = self.gui_button_event(secondary, false);
+        self.gui_batches.push_back(vec![press]);
+        self.gui_batches.push_back(vec![release]);
+        Ok(())
+    }
+
+    fn gui_key(&mut self, key: &str, ctrl: bool, shift: bool) {
+        let Some(code) = egui::Key::from_name(&key.to_uppercase())
+            .or_else(|| egui::Key::from_name(key))
+        else {
+            eprintln!("uml viewer: unknown driver key {key}");
+            return;
+        };
+        let modifiers = egui::Modifiers {
+            ctrl,
+            command: ctrl,
+            shift,
+            ..egui::Modifiers::NONE
+        };
+        let event = |pressed| egui::Event::Key {
+            key: code,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers,
+        };
+        let mut batch = vec![egui::Event::ModifiersChanged(modifiers), event(true)];
+        if ctrl && code == egui::Key::C {
+            batch.push(egui::Event::Copy);
         }
-        let roles = [
-            ("body", theme::fonts::BODY, 18.0),
-            ("title", theme::fonts::TITLE, 18.0),
-            ("badge", theme::fonts::BADGE, 9.0),
-            ("level", theme::fonts::LEVEL, 11.0),
-            ("marker", theme::fonts::MARKER, 12.0),
-        ];
-        let probe =
-            strings::glyph_text() + &env_nonempty("UML_FONT_TEST_EXTRA").unwrap_or_default();
-        let mut seen = Vec::new();
-        for c in probe.chars() {
-            if (c as u32) > 32 && !c.is_whitespace() && !seen.contains(&c) {
-                seen.push(c);
-            }
-        }
-        let mut missing = Vec::new();
-        for (role, size, expected) in roles {
-            if (size - expected).abs() > 0.01 {
-                return Err(format!("{role} font size {size}"));
-            }
-            let font = FontId::new(size, FontFamily::Monospace);
-            self.ctx.fonts_mut(|f| {
-                for &c in &seen {
-                    if !f.has_glyph(&font, c) {
-                        missing.push(format!("{role}:U+{:04X}", c as u32));
-                    }
-                }
-            });
-        }
-        if missing.is_empty() {
-            Ok(())
-        } else {
-            Err(format!("missing glyphs {}", missing.join(" ")))
-        }
+        batch.push(event(false));
+        batch.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+        self.gui_batches.push_back(batch);
+    }
+
+    fn gui_record(&self) -> Value {
+        let mut record = self.gui.record(&self.state);
+        record.assoc(
+            Value::keyword("status"),
+            self.status.clone().map_or(Value::Nil, Value::String),
+        );
+        record.assoc(
+            Value::keyword("window"),
+            Value::Map(vec![
+                (Value::keyword("w"), edn_number(self.window_w)),
+                (Value::keyword("h"), edn_number(self.window_h)),
+            ]),
+        );
+        record
+    }
+
+    fn open_source(&mut self, lang: &str, file: &str, name: Option<&str>) -> Result<(), String> {
+        let ident = source::Ident {
+            lang: Some(lang.into()),
+            file: Some(file.into()),
+            ns: None,
+            name: name.map(Into::into),
+        };
+        self.gui.open_source(&ident, &self.project_root)
+    }
+
+    fn resize_card(&mut self, w: f64, h: f64) {
+        self.gui.card.force = Some((egui::vec2(w as f32, h as f32), 3));
+    }
+
+    fn widget_pixels(&self, key: &str) -> Option<[f64; 4]> {
+        let r = self.gui.bounds.get(key)?;
+        let origin = self.ctx.content_rect().min;
+        let ppp = self.ctx.pixels_per_point() as f64;
+        let (x, y) = (origin.x as f64 + r.x, origin.y as f64 + r.y);
+        Some([x * ppp, y * ppp, (x + r.w) * ppp, (y + r.h) * ppp])
     }
 
     fn assert_text_fits(&mut self) -> Result<(), String> {
