@@ -10,3 +10,7 @@ name = "uml-viewer"
 path = "src/main.rs"
 
 [dependencies]
+scene = { path = "../scene" }
+
+[dev-dependencies]
+edn = { path = "../edn" }

@@ -22,7 +22,7 @@ const ROLES: &[(&str, &str, Entry)] = &[
     (
         "scene",
         "export scene geometry for each focus, headless",
-        unported,
+        |_, args| scene::run(args),
     ),
     ("companion-worker", "Herdr companion worker", unported),
     ("companion-runner", "Herdr companion runner", unported),
