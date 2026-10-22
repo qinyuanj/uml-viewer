@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 ir = { path = "../ir" }
 scene = { path = "../scene" }
+viewer = { path = "../viewer" }
 
 [dev-dependencies]
 edn = { path = "../edn" }

@@ -1,0 +1,9 @@
+{:version 1
+ :doc "类框视觉 driver（#139，原 test_love_class_boxes.lua 的 cimgui 顶点断言的 egui 等价）：
+       斜体名在真实字库里把字形顶点沿 x 剪切、基线不变；render.png 在第 4 帧自动捕获，
+       之后由 UML_VIEWER_TEST_SECONDS 超时退出 0。"
+ :steps [{:op :wait-frames :n 2}
+         {:op :assert-italic-glyphs
+          :message "egui italic shear: same glyph topology, unchanged baselines, shifted x"}
+         {:op :write :evidence "class-boxes-pass.txt"
+          :text "PASS egui italic shear: same glyph topology, unchanged baselines, shifted x\n"}]}

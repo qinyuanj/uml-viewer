@@ -87,6 +87,21 @@ def preflight(prefix, root, viewer_args):
         raise ValueError('后端 preflight 输出无效；未启动 viewer。' + (result.stderr or '').strip())
 
 
+# WSLg GPU path (ADR 0008): without these the Rust viewer falls back to
+# llvmpipe. The launcher sets defaults only; user values win.
+RENDER_DEFAULTS = {'GALLIUM_DRIVER': 'd3d12', 'WGPU_BACKEND': 'gl'}
+
+
+def viewer_env(runtime, environ):
+    """The spawn environment: render defaults for the rust runtime, user
+    values never overridden."""
+    env = dict(environ)
+    if runtime == 'rust':
+        for key, value in RENDER_DEFAULTS.items():
+            env.setdefault(key, value)
+    return env
+
+
 def forward_args(viewer_args):
     """只剥掉 preflight 消费的 --backend 选项对，其余 argv 原样保留。"""
     forwarded, index = [], 0
@@ -118,12 +133,13 @@ def launch(root, tool_root, viewer_args, restart=False, runtime='love'):
     # dispatches to its viewer role.
     rest = forwarded[1:] if forwarded and forwarded[0] == 'viewer' else forwarded
     command = ['--backend', 'herdr', *rest]
+    env = viewer_env(runtime, os.environ)
     log_path = state / 'viewer.log'
     log = open(log_path, 'ab')
     try:
         child = subprocess.Popen([*prefix, 'viewer', *command],
                                  cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                 start_new_session=True)
+                                 start_new_session=True, env=env)
     finally:
         log.close()
     observed = proc_identity(child.pid)

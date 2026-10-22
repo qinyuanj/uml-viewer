@@ -1,0 +1,989 @@
+//! Pure drawing model (port of `love/uml/adapters/class_boxes.lua` and
+//! `edges.lua`): scene EDN plus the selection/hover hits in, renderer
+//! commands out. No egui here; `paint` translates commands into shapes and
+//! owns LOD/culling. Colors are egui colors resolved through the theme;
+//! widths stay in points and scale with DPI at paint time, never with zoom.
+
+use edn::Value;
+use egui::Color32;
+use scene::config as C;
+use scene::document::ViewState;
+use scene::geom::{self, Rect, get, get_slice, name};
+use scene::highlight::Highlight;
+
+use crate::strings;
+use crate::theme::{self, Rgb, fonts};
+
+// Text keeps the layout's 12px side padding; package titles also clear the
+// C/M dots.
+pub const PAD: f64 = 12.0;
+pub const PACKAGE_TITLE_RESERVE: f64 = 48.0;
+// The corner band holds the level (top-left) and the C/M dots and α/I marker
+// (top-right); text whose slot reaches into it must stop short of the badges.
+pub const BAND_BOTTOM: f64 = 16.0;
+pub const DOTS_RESERVE: f64 = 32.0;
+pub const MARKER_RESERVE: f64 = 46.0;
+/// An unmeasured class reserves a bottom strip for its 无数据 marker.
+pub const NO_DATA_STRIP: f64 = 12.0;
+
+/// One popup row of the dependency hover list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopupRow {
+    pub text: String,
+    pub violating: bool,
+    pub color: Color32,
+}
+
+/// Renderer commands; every class-owned command carries its owner id and the
+/// dim flag of the relationship highlighting.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Command {
+    Package {
+        id: Option<Value>,
+        rect: Rect,
+        text: String,
+        band: &'static str,
+        red: bool,
+        size: f64,
+        max_w: f64,
+        missing: bool,
+        missing_count: i64,
+        grade: Option<f64>,
+        fill: Rgb,
+        stroke: Rgb,
+        selected: bool,
+    },
+    Class {
+        rect: Rect,
+        shape: String,
+        red: bool,
+        band: &'static str,
+        id: Option<Value>,
+        missing: bool,
+        grade: Option<f64>,
+        fill: Rgb,
+        stroke: Rgb,
+        selected: bool,
+        hovered: bool,
+        related: bool,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Quality {
+        owner: &'static str,
+        id: Option<Value>,
+        rect: Rect,
+        text: &'static str,
+        band: &'static str,
+        grade: Option<f64>,
+        radius: f64,
+        x: f64,
+        y: f64,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Marker {
+        rect: Rect,
+        text: String,
+        x: f64,
+        y: f64,
+        size: f64,
+        color: Color32,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Level {
+        rect: Rect,
+        text: String,
+        x: f64,
+        y: f64,
+        size: f64,
+        color: Color32,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    /// The 2px title band under the name slot, in the box stroke color.
+    Band {
+        rect: Rect,
+        x: f64,
+        w: f64,
+        y: f64,
+        color: Rgb,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Rule {
+        x: f64,
+        y: f64,
+        w: f64,
+        color: Rgb,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Text {
+        role: String,
+        italic: bool,
+        bold: bool,
+        center: bool,
+        box_w: f64,
+        x: f64,
+        y: f64,
+        text: String,
+        size: f64,
+        top: Option<f64>,
+        h: Option<f64>,
+        max_w: f64,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    NoData {
+        rect: Rect,
+        text: String,
+        right: f64,
+        y: f64,
+        size: f64,
+        color: Color32,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    ChildWash {
+        rect: Rect,
+        color: Color32,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    PortLink {
+        behind: [f64; 2],
+        tip: [f64; 2],
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    Port {
+        id: Option<Value>,
+        rect: Rect,
+        text: String,
+        marked: bool,
+        owner_id: Option<Value>,
+        dimmed: bool,
+    },
+    // Screen-space chrome (view coordinates, scaled by DPI at paint time).
+    Title {
+        text: String,
+        x: f64,
+        y: f64,
+        color: Color32,
+    },
+    ProposalBanner {
+        text: String,
+        x: f64,
+        y: f64,
+        color: Color32,
+    },
+    Back {
+        text: String,
+        x: f64,
+        y: f64,
+        color: Color32,
+    },
+    Status {
+        text: String,
+        x: f64,
+        y: f64,
+        color: Color32,
+    },
+    /// Empty-canvas / missing-file hint, centered on the canvas.
+    Hint { text: String },
+    DependencyPopup {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        rows: Vec<PopupRow>,
+    },
+}
+
+impl Command {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Command::Package { .. } => "package",
+            Command::Class { .. } => "class",
+            Command::Quality { .. } => "quality",
+            Command::Marker { .. } => "marker",
+            Command::Level { .. } => "level",
+            Command::Band { .. } => "band",
+            Command::Rule { .. } => "rule",
+            Command::Text { .. } => "text",
+            Command::NoData { .. } => "no-data",
+            Command::ChildWash { .. } => "child-wash",
+            Command::PortLink { .. } => "port-link",
+            Command::Port { .. } => "port",
+            Command::Title { .. } => "title",
+            Command::ProposalBanner { .. } => "proposal-banner",
+            Command::Back { .. } => "back",
+            Command::Status { .. } => "status",
+            Command::Hint { .. } => "hint",
+            Command::DependencyPopup { .. } => "dependency-popup",
+        }
+    }
+
+    /// A rough world-space extent for viewport culling; chrome returns None.
+    pub fn bounds(&self) -> Option<Rect> {
+        match self {
+            Command::Package { rect, .. }
+            | Command::Class { rect, .. }
+            | Command::Quality { rect, .. }
+            | Command::Marker { rect, .. }
+            | Command::Level { rect, .. }
+            | Command::Band { rect, .. }
+            | Command::NoData { rect, .. }
+            | Command::ChildWash { rect, .. }
+            | Command::Port { rect, .. } => Some(*rect),
+            Command::Rule { x, y, w, .. } => Some(Rect::new(*x, *y - 1.0, *w, 2.0)),
+            Command::Text {
+                x, y, box_w, size, ..
+            } => Some(Rect::new(*x, *y, *box_w, *size + 4.0)),
+            Command::PortLink { behind, tip, .. } => {
+                let x = behind[0].min(tip[0]);
+                let y = behind[1].min(tip[1]);
+                Some(Rect::new(
+                    x,
+                    y,
+                    (behind[0] - tip[0]).abs().max(1.0),
+                    (behind[1] - tip[1]).abs().max(1.0),
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Edge commands (port of `edges.lua`): strokes, oriented heads and the
+/// collapsed-leaf dependency indicators.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EdgeCommand {
+    Stroke {
+        from: Option<Value>,
+        to: Option<Value>,
+        points: Vec<[f64; 2]>,
+        color: Rgb,
+        width: f32,
+        hot: bool,
+        warm: bool,
+        dimmed: bool,
+    },
+    Head {
+        from: Option<Value>,
+        to: Option<Value>,
+        head: String,
+        tip: [f64; 2],
+        behind: [f64; 2],
+        color: Rgb,
+        width: f32,
+        hot: bool,
+        warm: bool,
+        dimmed: bool,
+    },
+    Indicator {
+        id: Option<Value>,
+        points: [[f64; 2]; 3],
+        violating: bool,
+        dimmed: bool,
+    },
+}
+
+fn bands(c: &Value) -> (&'static str, &'static str) {
+    (
+        match name(&C::crap_band(C::crap_risk(get(c, "crap")))).as_str() {
+            "green" => "green",
+            "yellow" => "yellow",
+            _ => "red",
+        },
+        match name(&C::mutation_band(C::mutation_ratio(c))).as_str() {
+            "green" => "green",
+            "yellow" => "yellow",
+            _ => "red",
+        },
+    )
+}
+
+fn worst_band(cb: &str, mb: &str) -> &'static str {
+    if cb == "red" || mb == "red" {
+        "red"
+    } else if cb == "yellow" || mb == "yellow" {
+        "yellow"
+    } else {
+        "green"
+    }
+}
+
+/// Missing means either metric is absent; it is decided from the nil
+/// metrics, never inferred from a red band.
+fn missing(c: &Value) -> bool {
+    C::crap_risk(get(c, "crap")).is_none() || C::mutation_ratio(c).is_none()
+}
+
+/// The 4e69e34 box grade: the average of the CRAP and mutation 1-10 grades.
+fn grade(c: &Value) -> Option<f64> {
+    C::combined_grade(
+        Some(C::crap_grade(C::crap_risk(get(c, "crap")))),
+        Some(C::mutation_grade(C::mutation_ratio(c))),
+    )
+}
+
+fn quality(commands: &mut Vec<Command>, c: &Value, owner: &'static str) {
+    let Some(r) = Rect::from_value(get(c, "rect").unwrap_or(&Value::Nil)) else {
+        return;
+    };
+    let (cb, mb) = bands(c);
+    for (i, b) in [cb, mb].into_iter().enumerate() {
+        commands.push(Command::Quality {
+            owner,
+            id: get(c, "id").cloned(),
+            rect: r,
+            text: if i == 0 { "C" } else { "M" },
+            band: b,
+            grade: Some(if i == 0 {
+                C::crap_grade(C::crap_risk(get(c, "crap")))
+            } else {
+                C::mutation_grade(C::mutation_ratio(c))
+            }),
+            radius: 6.0,
+            x: r.right() - 24.0 + i as f64 * 14.0,
+            y: r.y + 10.0,
+            owner_id: None,
+            dimmed: false,
+        });
+    }
+}
+
+/// Vertical slots for a class's text lines (port of `text_slots`): the
+/// layout keeps its golden 18px line pitch; nominal sizes when they fit,
+/// scaled down together when they do not, with even gaps.
+pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Command> {
+    let (x, ry, w, h) = (r.x, r.y, r.w, r.h);
+    let mut out = Vec::new();
+    let mut run: Vec<usize> = Vec::new();
+    let mut y = ry + 16.0;
+    let mut run_top = ry + if get(c, "level").is_some() { 14.0 } else { 4.0 };
+    let stereo = name(get(c, "stereotype").unwrap_or(&Value::Nil));
+    let flush = |out: &mut Vec<Command>,
+                 run: &mut Vec<usize>,
+                 run_top: f64,
+                 run_bottom: f64,
+                 marker: bool| {
+        let total: f64 = run
+            .iter()
+            .map(|&i| match &out[i] {
+                Command::Text { size, .. } => *size,
+                _ => 0.0,
+            })
+            .sum();
+        if !run.is_empty() {
+            let avail = run_bottom - run_top;
+            let k = (avail / total).min(1.0);
+            let gap = (avail - total * k) / (run.len() as f64 + 1.0);
+            let mut top = run_top + gap;
+            for &i in run.iter() {
+                if let Command::Text {
+                    size,
+                    top: t,
+                    h: hh,
+                    max_w,
+                    ..
+                } = &mut out[i]
+                {
+                    *t = Some(top);
+                    *hh = Some(*size * k);
+                    *max_w = w - 2.0 * PAD
+                        + if top < ry + BAND_BOTTOM {
+                            PAD - if marker { MARKER_RESERVE } else { DOTS_RESERVE }
+                        } else {
+                            0.0
+                        };
+                    top += *size * k + gap;
+                }
+            }
+        }
+        run.clear();
+    };
+    for line in get_slice(get(c, "lines")) {
+        let kind = name(get(line, "kind").unwrap_or(&Value::Nil));
+        if kind == "rule" {
+            flush(&mut out, &mut run, run_top, y - 5.0, marker);
+            out.push(Command::Rule {
+                x,
+                y: y - 4.0,
+                w,
+                color: theme::stroke(None),
+                owner_id: None,
+                dimmed: false,
+            });
+            run_top = y - 3.0;
+            y += 12.0;
+        } else {
+            let contents_len = match get(c, "contents") {
+                Some(Value::Vector(v)) => v.len(),
+                _ => 0,
+            };
+            let italic = kind == "name"
+                && ((!stereo.is_empty() && stereo != "class")
+                    || get(c, "drill?") == Some(&Value::Bool(true))
+                    || contents_len > 0);
+            out.push(Command::Text {
+                role: kind.clone(),
+                italic,
+                bold: kind == "name",
+                center: kind == "name",
+                box_w: w,
+                x: x + PAD,
+                y,
+                text: match get(line, "text") {
+                    Some(Value::String(s)) => s.clone(),
+                    _ => String::new(),
+                },
+                size: if kind == "name" {
+                    fonts::TITLE as f64
+                } else {
+                    fonts::BODY as f64
+                },
+                top: None,
+                h: None,
+                max_w: w - 2.0 * PAD,
+                owner_id: None,
+                dimmed: false,
+            });
+            run.push(out.len() - 1);
+            y += 18.0;
+        }
+    }
+    let bottom = ry + h - 4.0 - if unmeasured { NO_DATA_STRIP } else { 0.0 };
+    flush(&mut out, &mut run, run_top, bottom, marker);
+    out
+}
+
+fn marked(view_hit: Option<&Value>, kind: &str, id: Option<&Value>) -> bool {
+    view_hit.is_some_and(|hit| {
+        name(get(hit, "kind").unwrap_or(&Value::Nil)) == kind && get(hit, "id") == id
+    })
+}
+
+/// The class boxes, packages, badges and ports of one scene.
+pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) -> Vec<Command> {
+    let sel_id = selected.and_then(|s| get(s, "id"));
+    let h = Highlight::new(scene, selected, hover);
+    let hover_id = h.hover.clone();
+    let mut out = Vec::new();
+    for p in get_slice(get(scene, "packages")) {
+        let (cb, mb) = bands(p);
+        let band = worst_band(cb, mb);
+        let Some(pr) = Rect::from_value(get(p, "rect").unwrap_or(&Value::Nil)) else {
+            continue;
+        };
+        // Pooled package CRAP substitutes mu=20 for unmeasured members, so
+        // missing is counted from the member classes themselves.
+        let mut count = 0i64;
+        for c in get_slice(get(scene, "classes")) {
+            if get(c, "package") == get(p, "id") && missing(c) {
+                count += 1;
+            }
+        }
+        let g = grade(p);
+        out.push(Command::Package {
+            id: get(p, "id").cloned(),
+            rect: pr,
+            text: match get(p, "title").or_else(|| get(p, "label")) {
+                Some(Value::String(s)) => s.clone(),
+                Some(v) => name(v),
+                None => String::new(),
+            },
+            band,
+            red: band == "red",
+            size: fonts::TITLE as f64,
+            max_w: pr.w - PACKAGE_TITLE_RESERVE,
+            missing: count > 0,
+            missing_count: count,
+            grade: g,
+            fill: theme::fill(g),
+            stroke: theme::stroke(g),
+            selected: sel_id.is_some() && get(p, "id") == sel_id,
+        });
+        quality(&mut out, p, "package");
+    }
+    for c in get_slice(get(scene, "classes")) {
+        let Some(r) = Rect::from_value(get(c, "rect").unwrap_or(&Value::Nil)) else {
+            continue;
+        };
+        let (cb, mb) = bands(c);
+        let band = worst_band(cb, mb);
+        let id = get(c, "id").cloned();
+        let unmeasured = missing(c);
+        let g = if unmeasured {
+            Some(C::GRADE_WORST)
+        } else {
+            grade(c)
+        };
+        let dimmed = id.as_ref().is_some_and(|id| h.dimmed(id));
+        let tag = |command: &mut Command| match command {
+            Command::Class {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Quality {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Marker {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Level {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Band {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Rule {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Text {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::NoData {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::ChildWash {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::PortLink {
+                owner_id,
+                dimmed: d,
+                ..
+            }
+            | Command::Port {
+                owner_id,
+                dimmed: d,
+                ..
+            } => {
+                *owner_id = id.clone();
+                *d = dimmed;
+            }
+            _ => {}
+        };
+        let mut class_commands = Vec::new();
+        class_commands.push(Command::Class {
+            rect: r,
+            shape: name(get(c, "shape").unwrap_or(&Value::Nil)),
+            red: band == "red",
+            band,
+            id: id.clone(),
+            missing: unmeasured,
+            grade: g,
+            fill: theme::fill(g),
+            stroke: theme::stroke(g),
+            selected: h.focus.is_some() && h.focus == id,
+            hovered: hover_id.is_some() && hover_id == id,
+            related: id.as_ref().is_some_and(|id| h.related(id)),
+            owner_id: None,
+            dimmed: false,
+        });
+        quality(&mut class_commands, c, "class");
+        let stereo = name(get(c, "stereotype").unwrap_or(&Value::Nil));
+        let marker = stereo == "abstract" || stereo == "interface";
+        if marker {
+            class_commands.push(Command::Marker {
+                rect: r,
+                text: if stereo == "abstract" {
+                    "α".into()
+                } else {
+                    "I".into()
+                },
+                x: r.right() - 44.0,
+                y: r.y + 3.0,
+                size: fonts::MARKER as f64,
+                color: Color32::WHITE,
+                owner_id: None,
+                dimmed: false,
+            });
+        }
+        if let Some(level) = get(c, "level") {
+            class_commands.push(Command::Level {
+                rect: r,
+                text: match level {
+                    Value::Integer(n) => n.to_string(),
+                    Value::Float(x) => format!("{x}"),
+                    _ => name(level),
+                },
+                x: r.x + 4.0,
+                y: r.y + 3.0,
+                size: fonts::LEVEL as f64,
+                color: theme::MUTED.color32(),
+                owner_id: None,
+                dimmed: false,
+            });
+        }
+        let mut slots = text_slots(c, r, marker, unmeasured);
+        // The 2px title band runs under the name slot in the box stroke color.
+        for s in &slots {
+            if let Command::Text {
+                role,
+                top: Some(top),
+                h: Some(sh),
+                ..
+            } = s
+                && role == "name"
+            {
+                class_commands.push(Command::Band {
+                    rect: r,
+                    x: r.x + 6.0,
+                    w: r.w - 12.0,
+                    y: (r.bottom() - 2.0).min(top + sh + 1.0),
+                    color: theme::stroke(g),
+                    owner_id: None,
+                    dimmed: false,
+                });
+                break;
+            }
+        }
+        let lines = get_slice(get(c, "lines"));
+        for (i, mut line) in slots.drain(..).enumerate() {
+            if let Command::Text {
+                role,
+                top,
+                h: sh,
+                y,
+                ..
+            } = &line
+                && role == "child"
+            {
+                let source_id = lines.get(i).and_then(|l| get(l, "id"));
+                if marked(selected, "child", source_id) || marked(hover, "child", source_id) {
+                    class_commands.push(Command::ChildWash {
+                        rect: Rect::new(
+                            r.x + 5.0,
+                            top.unwrap_or(*y) - 1.0,
+                            r.w - 10.0,
+                            sh.unwrap_or(18.0),
+                        ),
+                        color: theme::CHILD_WASH.with_alpha(theme::ALPHA_CHILD_WASH),
+                        owner_id: None,
+                        dimmed: false,
+                    });
+                }
+            }
+            if let Command::Rule { color, .. } = &mut line {
+                *color = theme::stroke(g);
+            }
+            class_commands.push(line);
+        }
+        for dir in ["in", "out"] {
+            for p in get_slice(get(c, &format!("{dir}-ports"))) {
+                let Some(pr) = Rect::from_value(get(p, "rect").unwrap_or(&Value::Nil)) else {
+                    continue;
+                };
+                let px = pr.cx();
+                let bx = (r.x + 6.0).max(px.min(r.right() - 6.0));
+                let behind = if dir == "in" {
+                    [px, pr.bottom()]
+                } else {
+                    [bx, r.bottom()]
+                };
+                let tip = if dir == "in" { [bx, r.y] } else { [px, pr.y] };
+                class_commands.push(Command::PortLink {
+                    behind,
+                    tip,
+                    owner_id: None,
+                    dimmed: false,
+                });
+                class_commands.push(Command::Port {
+                    id: get(p, "id").cloned(),
+                    rect: pr,
+                    text: match get(p, "name") {
+                        Some(Value::String(s)) => s.clone(),
+                        _ => name(get(p, "id").unwrap_or(&Value::Nil)),
+                    },
+                    marked: marked(selected, "port", get(p, "id"))
+                        || marked(hover, "port", get(p, "id")),
+                    owner_id: None,
+                    dimmed: false,
+                });
+            }
+        }
+        if unmeasured {
+            class_commands.push(Command::NoData {
+                rect: r,
+                text: strings::NO_DATA.into(),
+                right: r.right() - PAD,
+                y: r.bottom() - NO_DATA_STRIP - 2.0,
+                size: fonts::LEVEL as f64,
+                color: theme::band_color("red").color32(),
+                owner_id: None,
+                dimmed: false,
+            });
+        }
+        for command in &mut class_commands {
+            tag(command);
+        }
+        out.extend(class_commands);
+    }
+    out
+}
+
+/// Violation semantics win: a violating edge keeps its red family when hot,
+/// and a hover lift never thins it below its violation width.
+fn edge_style(violating: bool, hot: bool, warm: bool) -> (Rgb, f32) {
+    use theme::widths as W;
+    if violating {
+        return (
+            if hot {
+                theme::EDGE_VIOLATING_HOT
+            } else if warm {
+                theme::EDGE_VIOLATING_WARM
+            } else {
+                theme::EDGE_VIOLATING
+            },
+            if hot {
+                W::EDGE_VIOLATING_HOT
+            } else {
+                W::EDGE_VIOLATING
+            },
+        );
+    }
+    if hot {
+        return (theme::EDGE_HOT, W::EDGE_HOT);
+    }
+    if warm {
+        return (theme::EDGE_WARM, W::EDGE_WARM);
+    }
+    (theme::EDGE, W::EDGE)
+}
+
+fn points_of(v: Option<&Value>) -> Vec<[f64; 2]> {
+    get_slice(v).iter().filter_map(geom::vec2).collect()
+}
+
+/// The edge strokes, arrowheads and collapsed dependency indicators.
+pub fn edge_commands(
+    scene: &Value,
+    selected: Option<&Value>,
+    hover: Option<&Value>,
+) -> Vec<EdgeCommand> {
+    let h = Highlight::new(scene, selected, hover);
+    let mut out = Vec::new();
+    let hide = get(scene, "diagram").and_then(|d| get(d, "hide-edges")) == Some(&Value::Bool(true));
+    if hide {
+        for ind in get_slice(get(scene, "dep-indicators")) {
+            let points = points_of(get(ind, "triangle"));
+            if points.len() != 3 {
+                continue;
+            }
+            let violating = get(ind, "violating") == Some(&Value::Bool(true));
+            out.push(EdgeCommand::Indicator {
+                id: get(ind, "id").cloned(),
+                points: [points[0], points[1], points[2]],
+                violating,
+                dimmed: get(ind, "id").is_some_and(|id| h.dimmed(id)),
+            });
+        }
+        return out;
+    }
+    for e in get_slice(get(scene, "edges")) {
+        let hot = h.hot(e, hover);
+        let warm = !hot && h.warm(e);
+        let dimmed = h.focus.is_some() && !hot;
+        let violating = get(e, "violating") == Some(&Value::Bool(true));
+        let (color, width) = edge_style(violating, hot, warm);
+        let from = get(e, "from").cloned();
+        let to = get(e, "to").cloned();
+        for ps in get_slice(get(e, "strokes")) {
+            out.push(EdgeCommand::Stroke {
+                from: from.clone(),
+                to: to.clone(),
+                points: points_of(Some(ps)),
+                color,
+                width,
+                hot,
+                warm,
+                dimmed,
+            });
+        }
+        if let (Some(head), Some(tip), Some(behind)) = (
+            get(e, "head"),
+            geom::vec2(get(e, "tip").unwrap_or(&Value::Nil)),
+            geom::vec2(get(e, "behind").unwrap_or(&Value::Nil)),
+        ) {
+            out.push(EdgeCommand::Head {
+                from,
+                to,
+                head: name(head),
+                tip,
+                behind,
+                color,
+                width,
+                hot,
+                warm,
+                dimmed,
+            });
+        }
+    }
+    out
+}
+
+/// Natural advance fallback: the layout's 8px/char monospace estimate at
+/// 16px, scaled. The real measure comes from egui at paint time.
+pub fn estimate_w(text: &str, size: f64) -> f64 {
+    scene::layout::text_w(Some(text)) / 16.0 * size
+}
+
+/// The layout's 8px/char estimate fixes box widths (JVM goldens); an 18px
+/// name may be wider, so the drawn size shrinks until the text, bold offset
+/// and italic shear fit inside `max_w`. Never grows past the nominal size.
+pub fn fit(
+    measure: impl Fn(f64, &str) -> f64,
+    size: f64,
+    text: &str,
+    max_w: f64,
+    bold: bool,
+    italic: bool,
+) -> f64 {
+    let extra = if bold { size * 0.05 } else { 0.0 } + if italic { size * 0.2 } else { 0.0 };
+    let natural = measure(size, text) + extra;
+    if natural > max_w && natural > 0.0 {
+        return size * max_w.max(0.0) / natural;
+    }
+    size
+}
+
+/// Text ink by role: crap lines gold, stereotypes muted, everything else ink.
+pub fn text_color(role: &str) -> Rgb {
+    match role {
+        "crap" => theme::GOLD,
+        "stereo" => theme::MUTED,
+        _ => theme::INK,
+    }
+}
+
+/// A centered canvas hint command (waiting for :display, missing file).
+pub fn hint(text: &str) -> Command {
+    Command::Hint { text: text.into() }
+}
+
+/// Screen-space canvas chrome (port of `class_boxes.chrome`): the waiting
+/// hint, the diagram banner, return scope and the leaf-dependency popup.
+pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
+    let mut out = Vec::new();
+    if state.waiting {
+        out.push(hint(strings::WAITING_DISPLAY));
+        return out;
+    }
+    let diagram = get(&state.scene, "diagram")
+        .cloned()
+        .unwrap_or(Value::Map(vec![]));
+    let title = get(&diagram, "title");
+    if get(&diagram, "proposal") == Some(&Value::Bool(true)) {
+        let mut proposal_name: Option<String> = None;
+        if let Some(doc) = &state.document {
+            for p in &scene::hierarchy::named_proposals(doc) {
+                if get(p, "id") == get(&state.extra, "proposal-id") {
+                    proposal_name = Some(match get(p, "name") {
+                        Some(Value::String(s)) => s.clone(),
+                        _ => name(get(p, "id").unwrap_or(&Value::Nil)),
+                    });
+                }
+            }
+        }
+        out.push(Command::ProposalBanner {
+            text: format!(
+                "{}{}",
+                strings::PROPOSAL_BANNER,
+                proposal_name.map(|n| format!(" · {n}")).unwrap_or_default()
+            ),
+            x: 12.0,
+            y: 8.0,
+            color: theme::GOLD.color32(),
+        });
+    } else if let Some(Value::String(title)) = title {
+        out.push(Command::Title {
+            text: title.clone(),
+            x: 12.0,
+            y: 8.0,
+            color: theme::MUTED.color32(),
+        });
+    }
+    if !state.focus.is_empty() || get(&state.extra, "open-layer").is_some() {
+        let parts: Vec<String> = state.focus.iter().map(name).collect();
+        let scope = if !parts.is_empty() {
+            parts.join(".")
+        } else {
+            title
+                .map(|t| match t {
+                    Value::String(s) => s.clone(),
+                    other => name(other),
+                })
+                .unwrap_or_else(|| name(get(&state.extra, "open-layer").unwrap_or(&Value::Nil)))
+        };
+        out.push(Command::Back {
+            text: format!("{} · {scope}", strings::BACK),
+            x: 12.0,
+            y: 28.0,
+            color: theme::GOLD.color32(),
+        });
+    }
+    let hover_kind = state
+        .hover
+        .as_ref()
+        .map(|hv| name(get(hv, "kind").unwrap_or(&Value::Nil)))
+        .unwrap_or_default();
+    let deps = state.hover.as_ref().and_then(|hv| get(hv, "deps"));
+    if (hover_kind == "edge" || hover_kind == "dep")
+        && let Some(Value::Vector(deps)) = deps
+        && !deps.is_empty()
+        && let Some((mx, my)) = state.pointer
+    {
+        let mut rows: Vec<PopupRow> = deps
+            .iter()
+            .map(|d| {
+                let from = name(get(d, "from").unwrap_or(&Value::Nil));
+                let to = name(get(d, "to").unwrap_or(&Value::Nil));
+                let violating = get(d, "violating") == Some(&Value::Bool(true));
+                PopupRow {
+                    text: format!("{from} -> {to}"),
+                    violating,
+                    color: if violating {
+                        theme::VIOLATION.color32()
+                    } else {
+                        theme::INK.color32()
+                    },
+                }
+            })
+            .collect();
+        rows.sort_by(|a, b| b.violating.cmp(&a.violating).then(a.text.cmp(&b.text)));
+        let mut tw = 40.0f64;
+        for row in &rows {
+            tw = tw.max(estimate_w(&row.text, fonts::BODY as f64));
+        }
+        let w = (tw + 16.0).min((16.0f64).max(width - 16.0));
+        let h = 16.0 + rows.len() as f64 * (fonts::BODY as f64 + 2.0);
+        let x = (8.0f64).max(mx.min(width - w - 8.0));
+        let mut y = my + 16.0;
+        if y + h > height {
+            y = (8.0f64).max(my - h - 8.0);
+        }
+        out.push(Command::DependencyPopup { x, y, w, h, rows });
+    }
+    out
+}

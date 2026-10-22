@@ -1,0 +1,7 @@
+{
+  "driver": "class_boxes",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 s2juvplm",
+  "evidence": "/tmp/ev-class-boxes",
+  "ok": true
+}

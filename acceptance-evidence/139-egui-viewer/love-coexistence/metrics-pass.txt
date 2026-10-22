@@ -1,0 +1,1 @@
+PASS metric-only reload with an equal-byte-length snapshot; IR untouched

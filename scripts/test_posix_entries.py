@@ -732,5 +732,32 @@ class PosixEntries(unittest.TestCase):
         self.assertIn('Lua 5.4', result.stderr)
         self.assertFalse((self.root / '.uml-viewer').exists())
 
+class ViewerLaunchEnv(unittest.TestCase):
+    """#139: the launcher sets the WSLg render defaults for the rust runtime
+    without overriding user values; the love runtime is untouched."""
+
+    @classmethod
+    def setUpClass(cls):
+        # check.py runs this file with python -I: import by directory.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+    def test_rust_runtime_gets_render_defaults(self):
+        from uml_launch import viewer_env
+        env = viewer_env('rust', {})
+        self.assertEqual('d3d12', env['GALLIUM_DRIVER'])
+        self.assertEqual('gl', env['WGPU_BACKEND'])
+
+    def test_user_values_win(self):
+        from uml_launch import viewer_env
+        env = viewer_env('rust', {'GALLIUM_DRIVER': 'virgl'})
+        self.assertEqual('virgl', env['GALLIUM_DRIVER'])
+        self.assertEqual('gl', env['WGPU_BACKEND'])
+
+    def test_love_runtime_is_untouched(self):
+        from uml_launch import viewer_env
+        env = viewer_env('love', {'PATH': '/usr/bin'})
+        self.assertNotIn('GALLIUM_DRIVER', env)
+        self.assertNotIn('WGPU_BACKEND', env)
+
 if __name__ == '__main__':
     unittest.main()

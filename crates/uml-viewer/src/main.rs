@@ -13,7 +13,9 @@ type Entry = fn(&'static str, &[OsString]) -> ExitCode;
 /// Role table. A later ticket that ports a role replaces `unported` with
 /// a wrapper around its crate's `run`, e.g. `|_, args| ir::run(args)`.
 const ROLES: &[(&str, &str, Entry)] = &[
-    ("viewer", "egui viewer (default)", unported),
+    ("viewer", "egui viewer (default)", |_, args| {
+        viewer::run(args)
+    }),
     (
         "ir",
         "generate IR from a policy and source tree, headless",

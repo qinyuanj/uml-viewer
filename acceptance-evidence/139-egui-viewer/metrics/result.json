@@ -1,0 +1,7 @@
+{
+  "driver": "metrics",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 irjmmo0b",
+  "evidence": "/tmp/ev-metrics",
+  "ok": true
+}

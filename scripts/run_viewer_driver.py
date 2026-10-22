@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""在原生 LOVE 里运行一个既有 GUI 行为 driver，断言可观察结果。
+"""在真实 viewer 里运行一个 GUI 行为 driver，断言可观察结果。
 
-既有的 `scripts/test_love_*.lua` driver 都是平台无关的：它们通过
-`UML_VIEWER_TEST_DRIVER` 驱动真实 LOVE 回调并写入证据文件。原先每个 driver
-配一个包装器（设环境变量、启动 love、检查证据）；那些 PowerShell 包装器已随
-Windows 原生支持退役（ADR 0007），本脚本是它们唯一的 POSIX 替代，
-因此断言本身不丢失。
+driver 有声明式 EDN 脚本（`scripts/drivers/<name>.edn`，由 #139 的 egui
+viewer 重放）时用 Rust viewer；否则沿用 `scripts/test_love_*.lua` 在原生
+LOVE 里重放（两实现并存到 #144）。两类 driver 都通过
+`UML_VIEWER_TEST_DRIVER` 拿脚本路径、写入证据文件，并遵守同样的退出契约。
+原先每个 driver 配一个包装器（设环境变量、启动 viewer、检查证据）；那些
+PowerShell 包装器已随 Windows 原生支持退役（ADR 0007），本脚本是它们唯一的
+POSIX 替代，因此断言本身不丢失。
 
 用法：
-    python3 -I scripts/run_love_driver.py navigation
-    python3 -I scripts/run_love_driver.py navigation --evidence DIR --seconds 60
+    python3 -I scripts/run_viewer_driver.py metrics
+    python3 -I scripts/run_viewer_driver.py navigation --runtime love
+    python3 -I scripts/run_viewer_driver.py metrics --evidence DIR --seconds 60
 """
 import argparse
 import json
@@ -284,6 +287,8 @@ DRIVERS = {
     'review_fixes': {'seconds': 30, 'evidence': []},
     'mail': {'seconds': 20, 'evidence': []},
     'metrics': {'seconds': 20, 'evidence': ['metrics-pass.txt', 'scene-1.edn', 'scene-2.edn']},
+    'lod_shots': {'seconds': 30, 'evidence': ['lod-blocks.png', 'lod-frames.png',
+                                              'lod-full.png', 'renderer.txt']},
     'fonts': {'seconds': 30, 'evidence': []},
     'font_parity': {'seconds': 30, 'evidence': []},
     'dpi_window': {'seconds': 30, 'evidence': []},
@@ -298,24 +303,53 @@ def love_executable():
     return love
 
 
-def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run'):
+def edn_script(name):
+    """The declarative script of a driver ported to the Rust viewer (#139)."""
+    path = REPO / f'scripts/drivers/{name}.edn'
+    return path if path.is_file() else None
+
+
+def lua_driver(name):
+    path = REPO / f'scripts/test_love_{name}.lua'
+    return path if path.is_file() else None
+
+
+def rust_executable():
+    configured = os.environ.get('UML_VIEWER_RUST_EXECUTABLE')
+    if configured:
+        return configured
+    for profile in ('release', 'debug'):
+        binary = REPO / 'target' / profile / 'uml-viewer'
+        if binary.is_file():
+            return str(binary)
+    raise ValueError('the Rust uml-viewer binary is missing: run cargo build --release '
+                     '(or set UML_VIEWER_RUST_EXECUTABLE)')
+
+
+def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run', runtime='love'):
     """Launch the real viewer once and require success plus its pass marker."""
-    runtime = Path(tempfile.mkdtemp(prefix='uml-love-xdg-'))
+    xdg = Path(tempfile.mkdtemp(prefix='uml-viewer-xdg-'))
     env = dict(os.environ,
-               XDG_CONFIG_HOME=str(runtime / 'config'), XDG_DATA_HOME=str(runtime / 'data'),
-               XDG_CACHE_HOME=str(runtime / 'cache'), XDG_STATE_HOME=str(runtime / 'state'),
+               XDG_CONFIG_HOME=str(xdg / 'config'), XDG_DATA_HOME=str(xdg / 'data'),
+               XDG_CACHE_HOME=str(xdg / 'cache'), XDG_STATE_HOME=str(xdg / 'state'),
                UML_VIEWER_PROJECT_ROOT=str(project), UML_VIEWER_EVIDENCE=str(evidence),
                UML_VIEWER_TEST_SECONDS=str(seconds),
                UML_VIEWER_TEST_DRIVER=str(driver),
                UML_MAIL_TEST_ROOT=str(project), UML_COMPANION_NO_ATTACH='1')
     env.pop('UML_CIMGUI_DIRECTORY', None)
+    if runtime == 'rust':
+        argv = [rust_executable(), 'viewer', *diagram]
+        # WSLg: without these the viewer falls back to llvmpipe (ADR 0008).
+        env.setdefault('GALLIUM_DRIVER', 'd3d12')
+        env.setdefault('WGPU_BACKEND', 'gl')
+    else:
+        argv = [love_executable(), str(REPO / 'love'), 'viewer', *diagram]
     env.update(extra_env)
     try:
-        process = subprocess.run([love_executable(), str(REPO / 'love'), 'viewer', *diagram],
-                                 cwd=project, env=env, capture_output=True, text=True,
+        process = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True,
                                  timeout=seconds + 120)
     finally:
-        shutil.rmtree(runtime, ignore_errors=True)
+        shutil.rmtree(xdg, ignore_errors=True)
     (evidence / f'{tag}-stdout.txt').write_text(process.stdout or '')
     (evidence / f'{tag}-stderr.txt').write_text(process.stderr or '')
     return process
@@ -330,21 +364,33 @@ def main():
     parser.add_argument('--diagram', help='initial diagram, relative to the project root')
     parser.add_argument('--pass-marker', action='append', default=[],
                         help='evidence file the driver must create (repeatable)')
+    parser.add_argument('--runtime', choices=['love', 'rust'], default=None,
+                        help='force a runtime; default picks rust when an EDN script exists')
     arguments = parser.parse_args()
 
     spec = DRIVERS.get(arguments.driver, {'seconds': 90, 'evidence': []})
     seconds = arguments.seconds or spec['seconds']
     markers = list(arguments.pass_marker) or list(spec['evidence'])
-    driver = REPO / f'scripts/test_love_{arguments.driver}.lua'
-    if not driver.is_file():
-        print(f'no driver: {driver}', file=sys.stderr)
-        return 2
+    script = edn_script(arguments.driver)
+    runtime = arguments.runtime or ('rust' if script else 'love')
+    if runtime == 'rust':
+        if not script:
+            print(f'no EDN driver: scripts/drivers/{arguments.driver}.edn', file=sys.stderr)
+            return 2
+        driver = script
+    else:
+        driver = lua_driver(arguments.driver)
+        if not driver:
+            print(f'no driver: {REPO}/scripts/test_love_{arguments.driver}.lua', file=sys.stderr)
+            return 2
+    result_runtime = runtime
     evidence = Path(arguments.evidence or tempfile.mkdtemp(prefix='uml-love-evidence-'))
     evidence.mkdir(parents=True, exist_ok=True)
     temporary_project = arguments.project_root is None
     project = Path(arguments.project_root) if arguments.project_root else \
         Path(tempfile.mkdtemp(prefix='uml love 项目 '))
-    result = {'driver': arguments.driver, 'project': str(project), 'evidence': str(evidence)}
+    result = {'driver': arguments.driver, 'runtime': result_runtime,
+              'project': str(project), 'evidence': str(evidence)}
     try:
         if temporary_project:
             (project / '.uml-viewer').mkdir(parents=True)
@@ -374,7 +420,8 @@ def main():
                     else DRIVER_ENV.get(arguments.driver, lambda p, e: {})(project, evidence)
             except AssertionError as error:
                 raise DriverSkipped(str(error))
-            process = run_viewer(project, evidence, seconds, driver, diagram, extra, tag=tag)
+            process = run_viewer(project, evidence, seconds, driver, diagram, extra,
+                                 tag=tag, runtime=runtime)
             expected = scenario.get('markers', markers)
             for marker in expected:
                 assert (evidence / marker).exists() or (project / marker).exists(), \

@@ -68,9 +68,10 @@ def native_driver(name, timeout):
     python = interpreter('python3')
     if not python:
         return 'skipped', 0, 'python3 not on PATH'
-    if not interpreter(os.environ.get('UML_LOVE_EXECUTABLE', 'love')):
+    from run_viewer_driver import edn_script
+    if not edn_script(name) and not interpreter(os.environ.get('UML_LOVE_EXECUTABLE', 'love')):
         return 'skipped', 0, 'LOVE not on PATH'
-    code, output = run([python, '-I', str(REPO / 'scripts/run_love_driver.py'), name], timeout=timeout)
+    code, output = run([python, '-I', str(REPO / 'scripts/run_viewer_driver.py'), name], timeout=timeout)
     if code == 0 and output.strip().startswith('SKIP'):
         # A driver whose precondition is absent (e.g. a font the installer has
         # not provisioned) verified nothing; it must not read as a pass.
@@ -94,7 +95,7 @@ def main():
     ]
     if arguments.native:
         sys.path.insert(0, str(REPO / 'scripts'))
-        from run_love_driver import DRIVERS
+        from run_viewer_driver import DRIVERS
         for name in sorted(DRIVERS):
             checks.append((f'native {name}',
                            lambda name=name: native_driver(name, arguments.native_timeout)))

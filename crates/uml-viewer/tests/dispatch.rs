@@ -18,7 +18,6 @@ fn stderr(output: &Output) -> String {
 #[test]
 fn every_role_from_the_spec_is_a_subcommand() {
     for role in [
-        "viewer",
         "companion-worker",
         "companion-runner",
         "companion-controller",
@@ -52,11 +51,35 @@ fn ir_is_ported_and_reports_bad_arguments_on_stderr() {
 
 #[test]
 fn arguments_without_a_subcommand_go_to_the_viewer() {
-    for args in [&[][..], &["diagram with spaces.edn"][..]] {
-        let output = run(args);
-        assert_eq!(Some(69), output.status.code());
-        assert!(stderr(&output).contains("`viewer`"), "{}", stderr(&output));
-    }
+    // #139 ports the viewer, so it is reached instead of EX_UNAVAILABLE. A
+    // real positional path would open a window and block the test; an
+    // option-looking argument exercises the same dispatch and fails usage.
+    let output = run(&["-x"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(
+        stderr(&output).contains("usage: uml-viewer viewer"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn viewer_is_ported_and_reports_usage_errors_without_opening_a_window() {
+    // #139: the viewer role parses argv before creating a window.
+    let output = run(&["viewer", "--bogus"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(
+        stderr(&output).contains("usage: uml-viewer viewer"),
+        "{}",
+        stderr(&output)
+    );
+    let output = run(&["viewer", "--backend", "tmux"]);
+    assert_eq!(Some(2), output.status.code());
+    assert!(
+        stderr(&output).contains("Unknown or duplicate companion backend"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]
