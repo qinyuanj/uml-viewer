@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from uml_posix import atomic_write, love_command
+from uml_posix import RUNTIMES, atomic_write, runtime_argv
 
 LAUNCHER = 'viewer-process.json'
 IDENTITY = 'viewer-process-identity.json'
@@ -68,25 +68,23 @@ def verify_previous(state, root, restart):
         started = record.get('started')
         if type(pid) is not int or pid < 1 or not isinstance(started, str) or not started.isdigit():
             raise ValueError(f'{label} 进程身份记录无效；拒绝 restart。')
-        if record.get('runtime', 'love') != 'love':
-            raise ValueError(f"{label} 记录的运行时 {record['runtime']!r} 已移除；请 fresh 启动 LOVE viewer。")
+        if record.get('runtime', 'love') not in RUNTIMES:
+            raise ValueError(f"{label} 记录的运行时 {record['runtime']!r} 已移除；请 fresh 启动 viewer。")
         observed = proc_identity(pid)
         if observed is not None and observed['start'] != started:
             raise ValueError(f'{label} 进程身份已变化；拒绝 restart。')
     return launcher, viewer
 
 
-def preflight(tool_root, root, viewer_args):
-    """只读 Herdr 选择；失败时不启动 viewer。"""
-    love = love_command()
-    result = subprocess.run([love, str(tool_root / 'love'), 'companion-preflight', str(root), *viewer_args],
+def preflight(prefix, root, viewer_args):
+    """只读 Herdr 选择；失败时不启动 viewer。prefix 来自 runtime_argv。"""
+    result = subprocess.run([*prefix, 'companion-preflight', str(root), *viewer_args],
                             capture_output=True, text=True)
     if result.returncode != 0:
-        raise ValueError((result.stderr or 'LOVE companion preflight failed without diagnostic.').strip())
+        raise ValueError((result.stderr or 'companion preflight failed without diagnostic.').strip())
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     if lines != ['herdr']:
         raise ValueError('后端 preflight 输出无效；未启动 viewer。' + (result.stderr or '').strip())
-    return love
 
 
 def forward_args(viewer_args):
@@ -101,13 +99,14 @@ def forward_args(viewer_args):
     return forwarded
 
 
-def launch(root, tool_root, viewer_args, restart=False):
+def launch(root, tool_root, viewer_args, restart=False, runtime='love'):
     state = root / '.uml-viewer'
     state.mkdir(exist_ok=True)
     # Refuse an unusable identity before spending seconds on a preflight that
     # would otherwise run first.
     launcher, viewer = verify_previous(state, root, restart)
-    love = preflight(tool_root, root, viewer_args)
+    prefix = runtime_argv(runtime, tool_root)
+    preflight(prefix, root, viewer_args)
     forwarded = forward_args(viewer_args)
     if restart:
         # 旧进程必须在 preflight 之后、替换之前才等待；核对已经发生。
@@ -115,25 +114,26 @@ def launch(root, tool_root, viewer_args, restart=False):
             await_exit(launcher, 'launcher')
         if viewer:
             await_exit(viewer, 'LOVE viewer')
-    # LOVE takes the game directory first, then this game's own arguments; the
-    # subcommand must lead them so the runtime dispatches to the viewer.
+    # The subcommand leads the viewer's own arguments so either runtime
+    # dispatches to its viewer role.
     rest = forwarded[1:] if forwarded and forwarded[0] == 'viewer' else forwarded
     command = ['--backend', 'herdr', *rest]
     log_path = state / 'viewer.log'
     log = open(log_path, 'ab')
     try:
-        child = subprocess.Popen([love, str(tool_root / 'love'), 'viewer', *command],
+        child = subprocess.Popen([*prefix, 'viewer', *command],
                                  cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                  start_new_session=True)
     finally:
         log.close()
     observed = proc_identity(child.pid)
     if observed is None:
-        raise ValueError('LOVE viewer 在写入身份前已退出；请查看 .uml-viewer/viewer.log。')
+        raise ValueError('viewer 在写入身份前已退出；请查看 .uml-viewer/viewer.log。')
     write_record(state / LAUNCHER,
-                 {'pid': observed['pid'], 'started': observed['start'], 'runtime': 'love',
+                 {'pid': observed['pid'], 'started': observed['start'], 'runtime': runtime,
                   'cwd': str(root), 'argv': ['viewer', *command]})
-    print(f'UML LOVE viewer starting (launcher pid {child.pid}). Log: {log_path}')
+    label = 'LOVE' if runtime == 'love' else 'Rust'
+    print(f'UML {label} viewer starting (launcher pid {child.pid}). Log: {log_path}')
     return 0
 
 

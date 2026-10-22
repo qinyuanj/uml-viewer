@@ -464,13 +464,70 @@ class PosixEntries(unittest.TestCase):
         self.assertIn('Clojure alias 已移除', result.stderr)
         self.assertFalse((self.root / '.uml-viewer/quality-result.json').exists())
 
-    def test_removed_runtime_option_is_refused(self):
-        # Ported from the retired suite: --runtime accepts only love.
-        for args in (('--runtime',), ('--runtime', 'invalid'), ('--runtime', 'jvm')):
+    def test_unknown_runtime_values_are_refused_with_the_accepted_ones(self):
+        # #135: --runtime accepts love or rust while both coexist; anything
+        # else (including the removed jvm) is refused before any dispatch.
+        for args in (('--runtime',), ('--runtime', 'invalid'), ('--runtime', 'jvm'),
+                     ('--runtime', 'love', '--runtime', 'rust'), ('--runtime', 'rust', 'ir', '--runtime', 'x')):
             with self.subTest(args=args):
                 result = self.entry(*args)
-                self.assertNotEqual(0, result.returncode)
-                self.assertIn('runtime', result.stderr)
+                self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                self.assertIn('--runtime', result.stderr)
+                self.assertIn('love', result.stderr)
+                self.assertIn('rust', result.stderr)
+                self.assertIsNone(self.launcher_record())
+
+    def rust_stub(self):
+        """A stand-in Rust binary: records argv, answers the preflight."""
+        stub = self.root / 'rust stub'
+        record = self.root / 'rust-argv.txt'
+        stub.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = companion-preflight ]; then printf "herdr\\n"; exit 0; fi\n'
+            f'printf "%s\\n" "$@" > {str(record)!r}\n'
+            'if [ "$1" = viewer ]; then sleep 30; fi\n'
+            'exit 7\n')
+        stub.chmod(0o755)
+        return record, dict(self.env, UML_VIEWER_RUST_EXECUTABLE=str(stub))
+
+    def test_rust_runtime_dispatches_headless_subcommands_to_the_rust_binary(self):
+        record, env = self.rust_stub()
+        arguments = ['ir', 'policy.edn', '结果 图.edn', 'literal;$value']
+        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', *arguments], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(7, result.returncode, result.stderr)
+        self.assertEqual(arguments, record.read_text().splitlines())
+
+    def test_rust_runtime_launches_the_rust_viewer_and_records_the_runtime(self):
+        record, env = self.rust_stub()
+        result = subprocess.run([str(self.root / 'uml'), 'diagram with spaces.edn', '--runtime', 'rust'],
+                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        launcher = self.launcher_record()
+        self.addCleanup(self.stop_stub, launcher)
+        self.assertEqual('rust', launcher['runtime'])
+        self.assertEqual(['viewer', '--backend', 'herdr', 'diagram with spaces.edn'], launcher['argv'])
+        observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        self.assertEqual(observed, launcher['started'])
+
+    def test_rust_runtime_without_a_built_binary_names_the_build_step(self):
+        env = dict(self.env, UML_VIEWER_RUST_EXECUTABLE=str(self.root / 'missing'))
+        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', 'ir'], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('cargo build --release --locked', result.stderr)
+
+    def test_rust_runtime_reaches_the_real_binary(self):
+        binary = REPO / 'target/release/uml-viewer'
+        if not binary.is_file():
+            self.skipTest('run cargo build --release --locked first')
+        env = dict(self.env)
+        env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
+        result = subprocess.run([str(self.root / 'uml'), '--runtime', 'rust', 'scene'], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        # The Rust `scene` role is a placeholder until it is ported (#134).
+        self.assertEqual(69, result.returncode, result.stderr)
+        self.assertIn('`scene`', result.stderr)
 
     def love_stub(self, preflight='herdr'):
         """A native stand-in for LOVE: records argv, answers the preflight."""

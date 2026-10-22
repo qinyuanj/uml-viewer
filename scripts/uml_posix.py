@@ -50,6 +50,38 @@ def love_command():
     return executable
 
 
+# Both implementations coexist until parity (#134); love stays the default.
+RUNTIMES = ('love', 'rust')
+
+
+def take_runtime(args):
+    """Strip one `--runtime love|rust` pair; refuse anything else."""
+    if '--runtime' not in args:
+        return 'love', args
+    index = args.index('--runtime')
+    value = args[index + 1] if index + 1 < len(args) else None
+    if value not in RUNTIMES or args.count('--runtime') != 1:
+        raise ValueError('--runtime 只接受 love 或 rust（默认 love）；JVM 已移除。')
+    return value, args[:index] + args[index + 2:]
+
+
+def rust_command(tool_root):
+    configured = os.environ.get('UML_VIEWER_RUST_EXECUTABLE')
+    executable = Path(configured) if configured else Path(tool_root) / 'target/release/uml-viewer'
+    if not (executable.is_file() and os.access(executable, os.X_OK)):
+        raise ValueError(f'缺少 Rust 二进制 {executable}；请在 {tool_root} 运行 '
+                         'cargo build --release --locked，或设置 UML_VIEWER_RUST_EXECUTABLE。')
+    return str(executable)
+
+
+def runtime_argv(runtime, tool_root):
+    """argv prefix that precedes a subcommand (`viewer`, `ir`, …) for a runtime."""
+    if runtime == 'rust':
+        return [rust_command(tool_root)]
+    # LOVE takes the game directory first, then the game's own arguments.
+    return [love_command(), str(Path(tool_root) / 'love')]
+
+
 # Quality tools analyze source as Lua 5.4 and require the pinned cluacov that
 # LuaCov loads, so the preflight rejects any other interpreter or cluacov.
 LUA_PROBE = ('pcall(require, "luarocks.loader"); require("lfs"); require("luacov"); '
@@ -333,16 +365,13 @@ def command(root, args):
     root = root.resolve()
     os.chdir(root)
     if args in (['--help'], ['-h']):
-        print('usage: uml [--runtime love] [--backend herdr] [--restart | ir | crap | mutate | dry] [args]')
+        print('usage: uml [--runtime love|rust] [--backend herdr] [--restart | ir | scene | crap | mutate | dry] [args]\n'
+              '  scene 仅用于 --runtime rust。')
         return 0
     host()
-    if '--runtime' in args:
-        index = args.index('--runtime')
-        if args[index:index + 2] != ['--runtime', 'love'] or args.count('--runtime') != 1:
-            raise ValueError('--runtime 仅接受 love；JVM 已移除。')
-        args = args[:index] + args[index + 2:]
+    runtime, args = take_runtime(args)
     tool_root = Path(os.environ.get('UML_VIEWER_TOOL_ROOT', root / '.uml-viewer/uml-viewer')).resolve()
-    if not (tool_root / 'love/main.lua').is_file():
+    if runtime == 'love' and not (tool_root / 'love/main.lua').is_file():
         raise ValueError('缺少 viewer 安装副本；请运行 get-uml-viewer，或设置 UML_VIEWER_TOOL_ROOT 指向开发仓库。')
     if args and args[0] == 'ir':
         values = args[1:]
@@ -361,14 +390,17 @@ def command(root, args):
             if not policy.is_file():
                 raise ValueError('没有 policy；请创建 policy.edn 或 examples/*.policy.edn。')
             args = ['ir', str(policy.relative_to(root)), *args[1:]]
-        return subprocess.call([love_command(), str(tool_root / 'love'), *args], cwd=root)
+        return subprocess.call([*runtime_argv(runtime, tool_root), *args], cwd=root)
+    if runtime == 'rust' and args and args[0] == 'scene':
+        # Headless scene export exists only in the Rust binary (#134).
+        return subprocess.call([*runtime_argv(runtime, tool_root), *args], cwd=root)
     if args and args[0] in ('crap', 'mutate', 'dry'):
         # 质量分发实现与安装器共用入口，独立模块保留协议边界。
         from uml_quality import dispatch
         return dispatch(root, args[0], args[1:])
     # 其余路径都是 viewer 生命周期：默认 fresh、--restart 替换、--backend herdr。
     from uml_launch import launch
-    return launch(root, tool_root, args, restart='--restart' in args)
+    return launch(root, tool_root, args, restart='--restart' in args, runtime=runtime)
 
 
 def main():
