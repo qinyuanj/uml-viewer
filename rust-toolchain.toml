@@ -1,0 +1,5 @@
+# The installer runs `cargo build --release --locked` with exactly this
+# toolchain (#134); bump it deliberately, together with Cargo.lock.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
