@@ -7,5 +7,15 @@ name = "edn"
 version = "0.1.0"
 
 [[package]]
+name = "ir"
+version = "0.1.0"
+dependencies = [
+ "edn",
+]
+
+[[package]]
 name = "uml-viewer"
 version = "0.1.0"
+dependencies = [
+ "ir",
+]

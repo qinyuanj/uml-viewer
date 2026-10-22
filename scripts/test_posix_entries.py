@@ -529,6 +529,47 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(69, result.returncode, result.stderr)
         self.assertIn('`scene`', result.stderr)
 
+    def test_rust_ir_matches_all_four_language_goldens(self):
+        # #136: the ported ir role reproduces the JVM goldens structurally
+        # for every fixture project through the public entry.
+        binary = REPO / 'target/release/uml-viewer'
+        if not binary.is_file():
+            self.skipTest('run cargo build --release --locked first')
+        env = dict(self.env)
+        env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
+        for language in ('lua', 'typescript', 'rust', 'python'):
+            with self.subTest(language=language):
+                output = self.root / f'{language}.golden-result.edn'
+                result = subprocess.run(
+                    [str(self.root / 'uml'), '--runtime', 'rust', 'ir',
+                     '--root', str(REPO / f'{language}-fixture'),
+                     '--policy', 'policy.edn', '--output', str(output)],
+                    cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(0, result.returncode, result.stderr)
+                comparison = subprocess.run(
+                    ['lua', str(REPO / 'scripts/compare_ir.lua'), str(output),
+                     str(REPO / 'fixtures/jvm-goldens' / f'{language}.ir.edn')],
+                    cwd=REPO, capture_output=True, text=True)
+                self.assertEqual(0, comparison.returncode, comparison.stdout + comparison.stderr)
+
+    def test_rust_ir_runs_on_this_repository(self):
+        # #136: `./uml --runtime rust ir` generates IR for this repository's
+        # own Lua source tree.
+        binary = REPO / 'target/release/uml-viewer'
+        if not binary.is_file():
+            self.skipTest('run cargo build --release --locked first')
+        env = dict(self.env)
+        env.pop('UML_VIEWER_RUST_EXECUTABLE', None)
+        output = self.root / 'repo.edn'
+        result = subprocess.run(
+            [str(self.root / 'uml'), '--runtime', 'rust', 'ir', '--root', str(REPO),
+             '--policy', 'examples/uml-viewer.policy.edn', '--output', str(output)],
+            cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        document = output.read_text()
+        self.assertIn(':lang :lua', document)
+        self.assertIn('"love.uml.edn"', document)
+
     def love_stub(self, preflight='herdr'):
         """A native stand-in for LOVE: records argv, answers the preflight."""
         stub = self.root / 'love stub'
