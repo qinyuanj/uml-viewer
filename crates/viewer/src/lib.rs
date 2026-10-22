@@ -22,6 +22,7 @@ pub mod mailbox;
 pub mod metrics;
 pub mod paint;
 pub mod project_files;
+pub mod render_cache;
 pub mod search_box;
 pub mod session;
 pub mod signal;

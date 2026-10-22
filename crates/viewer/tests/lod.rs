@@ -56,3 +56,17 @@ fn font_px_quantizes_to_whole_points() {
     assert_eq!(14.0, lod::font_px(9.4, 1.5));
     assert_eq!(1.0, lod::font_px(0.01, 0.5));
 }
+
+#[test]
+fn simplify_drops_collinear_interior_points_and_keeps_corners() {
+    // An L route sampled every 20 units: only the corner carries shape.
+    let mut line: Vec<[f64; 2]> = (0..=10).map(|i| [i as f64 * 20.0, 0.0]).collect();
+    line.extend((1..=10).map(|i| [200.0, i as f64 * 20.0]));
+    assert_eq!(
+        vec![[0.0, 0.0], [200.0, 0.0], [200.0, 200.0]],
+        lod::simplify(&line, 8.0, 0.5)
+    );
+    // A point off the chord by more than the tolerance survives.
+    let bent = [[0.0, 0.0], [50.0, 3.0], [100.0, 0.0]];
+    assert_eq!(bent.to_vec(), lod::simplify(&bent, 8.0, 0.5));
+}

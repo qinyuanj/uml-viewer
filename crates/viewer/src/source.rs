@@ -112,7 +112,9 @@ fn compile(pattern: &[u8]) -> Vec<(Class, Quant)> {
                     if pattern[i] == b'%' && i + 1 < pattern.len() {
                         items.push(SetItem::Class(escape_class(pattern[i + 1])));
                         i += 2;
-                    } else if i + 2 < pattern.len() && pattern[i + 1] == b'-' && pattern[i + 2] != b']'
+                    } else if i + 2 < pattern.len()
+                        && pattern[i + 1] == b'-'
+                        && pattern[i + 2] != b']'
                     {
                         items.push(SetItem::Range(pattern[i], pattern[i + 2]));
                         i += 3;
@@ -249,7 +251,11 @@ pub fn pattern_start(text: &str, name: &str, groups: &[Vec<String>]) -> Option<u
 }
 
 pub fn line_number(text: &str, start: usize) -> usize {
-    text.as_bytes()[..start].iter().filter(|&&b| b == b'\n').count() + 1
+    text.as_bytes()[..start]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count()
+        + 1
 }
 
 fn trim_end(s: &str) -> String {
@@ -293,7 +299,9 @@ impl FileSource {
         let first = pattern_start(text, name, &self.groups)?;
         if self.attribute {
             let name_at = text[first..].find(name).map_or(first, |i| first + i);
-            let end = text[name_at..].find('\n').map_or(text.len(), |i| name_at + i);
+            let end = text[name_at..]
+                .find('\n')
+                .map_or(text.len(), |i| name_at + i);
             return Some(trim_end(&text[first..end]));
         }
         Some(declaration_line(text, first))
@@ -305,7 +313,11 @@ impl FileSource {
     }
 
     pub fn title(&self, ident: &Ident) -> String {
-        let base = ident.file.clone().or_else(|| ident.ns.clone()).unwrap_or_default();
+        let base = ident
+            .file
+            .clone()
+            .or_else(|| ident.ns.clone())
+            .unwrap_or_default();
         match &ident.name {
             Some(name) => format!("{base}/{name}"),
             None => base,
@@ -359,7 +371,10 @@ pub fn lookup(lang: &str) -> Option<FileSource> {
         "lua" => FileSource {
             groups: groups(&[
                 &["function%s+@:[A-Za-z_][%w_]*", "function%s+@"],
-                &["local%s+function%s+@:[A-Za-z_][%w_]*", "local%s+function%s+@"],
+                &[
+                    "local%s+function%s+@:[A-Za-z_][%w_]*",
+                    "local%s+function%s+@",
+                ],
                 &["@%s*=%s*function"],
                 &["local%s+@%s*=%s*function"],
             ]),
@@ -479,7 +494,11 @@ pub fn display(text: &str) -> Display {
     while i < bytes.len() {
         let n = char_size(bytes[i]).min(bytes.len() - i);
         to_display[i] = out.len();
-        let painted = if bytes[i] == b'\t' { "  " } else { &text[i..i + n] };
+        let painted = if bytes[i] == b'\t' {
+            "  "
+        } else {
+            &text[i..i + n]
+        };
         for _ in 0..painted.len() {
             to_source.push(i);
         }
@@ -587,10 +606,18 @@ pub fn selected(rows: &[String], a: Option<Pos>, b: Option<Pos>) -> String {
     };
     let (a, b) = ordered(a, b);
     let mut out = Vec::new();
-    for i in a.row..=b.row.min(rows.len().saturating_sub(1)) {
-        let text = &rows[i];
+    for (i, text) in rows
+        .iter()
+        .enumerate()
+        .take(b.row.min(rows.len().saturating_sub(1)) + 1)
+        .skip(a.row)
+    {
         let from = if i == a.row { a.col.min(text.len()) } else { 0 };
-        let to = if i == b.row { b.col.min(text.len()) } else { text.len() };
+        let to = if i == b.row {
+            b.col.min(text.len())
+        } else {
+            text.len()
+        };
         out.push(text.get(from..to.max(from)).unwrap_or_default());
     }
     out.join("\n")

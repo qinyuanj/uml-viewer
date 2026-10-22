@@ -105,7 +105,9 @@ pub fn model(scene: &Value, id: &Value) -> Option<Model> {
     Some(Model {
         class: c.clone(),
         ns: string(get(c, "ns")).or_else(|| get(c, "id").map(name)),
-        package: get(c, "package").and_then(|p| named(scene, "packages", p)).cloned(),
+        package: get(c, "package")
+            .and_then(|p| named(scene, "packages", p))
+            .cloned(),
         title: get(scene, "diagram").and_then(|d| string(get(d, "title"))),
         lang: get(c, "lang").cloned(),
         file: string(get(c, "file")),
@@ -149,10 +151,10 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
         }
     }
     let add_view = |classes: &mut Vec<Value>,
-                        seen: &mut Vec<Value>,
-                        edges: &mut Vec<Value>,
-                        seen_edges: &mut Vec<Value>,
-                        view: &Value| {
+                    seen: &mut Vec<Value>,
+                    edges: &mut Vec<Value>,
+                    seen_edges: &mut Vec<Value>,
+                    view: &Value| {
         add_edges(edges, seen_edges, get_slice(get(view, "edges")));
         for p in get_slice(get(view, "packages")) {
             for c in get_slice(get(p, "classes")) {
@@ -184,7 +186,13 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
         parent.pop();
         if !parent.is_empty() {
             let target = scene::hierarchy::view_at(&doc, &parent);
-            add_view(&mut classes, &mut seen, &mut edges, &mut seen_edges, &target);
+            add_view(
+                &mut classes,
+                &mut seen,
+                &mut edges,
+                &mut seen_edges,
+                &target,
+            );
             for p in get_slice(get(&target, "packages")) {
                 for c in get_slice(get(p, "classes")) {
                     if get(c, "id") != Some(id) || get(c, "drill?") != Some(&Value::Bool(true)) {
@@ -211,7 +219,11 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             }
         }
     }
-    add_edges(&mut edges, &mut seen_edges, get_slice(get(&state.scene, "edges")));
+    add_edges(
+        &mut edges,
+        &mut seen_edges,
+        get_slice(get(&state.scene, "edges")),
+    );
     for c in get_slice(get(&state.scene, "classes")) {
         add(&mut classes, &mut seen, c);
     }
@@ -366,13 +378,26 @@ pub fn rows(model: &Model) -> Vec<Row> {
         *y += r.h;
         rows.push(r);
     };
-    emit(&mut rows, &mut y, row("name", string(get(c, "name")).unwrap_or_default(), 0.0, 20.0));
+    emit(
+        &mut rows,
+        &mut y,
+        row(
+            "name",
+            string(get(c, "name")).unwrap_or_default(),
+            0.0,
+            20.0,
+        ),
+    );
     if let Some(level) = get(c, "level").filter(|v| **v != Value::Nil) {
         let text = format!("{}{}", strings::LEVEL, number_text(level));
         emit(&mut rows, &mut y, row("muted", text, 0.0, 18.0));
     }
     if let Some(stereo) = get(c, "stereotype") {
-        emit(&mut rows, &mut y, row("muted", format!("«{}»", name(stereo)), 0.0, 18.0));
+        emit(
+            &mut rows,
+            &mut y,
+            row("muted", format!("«{}»", name(stereo)), 0.0, 18.0),
+        );
     }
     let base = model
         .file
@@ -394,7 +419,11 @@ pub fn rows(model: &Model) -> Vec<Row> {
         .and_then(|p| string(get(p, "label")))
         .or_else(|| get(c, "package").map(name))
         .unwrap_or_default();
-    emit(&mut rows, &mut y, row("muted", format!("{}{package}", strings::PACKAGE), 0.0, 18.0));
+    emit(
+        &mut rows,
+        &mut y,
+        row("muted", format!("{}{package}", strings::PACKAGE), 0.0, 18.0),
+    );
     if let Some(title) = &model.title {
         emit(&mut rows, &mut y, row("muted", title.clone(), 0.0, 18.0));
     }
@@ -424,7 +453,12 @@ pub fn rows(model: &Model) -> Vec<Row> {
         y += 6.0;
         emit(&mut rows, &mut y, row("group-header", "", 0.0, 18.0));
         emit(&mut rows, &mut y, row("col-header", "", 0.0, 18.0));
-        let mut stats = row("stats", string(get(c, "name")).unwrap_or_default(), 0.0, 18.0);
+        let mut stats = row(
+            "stats",
+            string(get(c, "name")).unwrap_or_default(),
+            0.0,
+            18.0,
+        );
         stats.cells = cells(c, true);
         emit(&mut rows, &mut y, stats);
         for op in ops {
@@ -444,7 +478,11 @@ pub fn rows(model: &Model) -> Vec<Row> {
     let fields = get_slice(get(c, "fields"));
     if !fields.is_empty() {
         y += 12.0;
-        emit(&mut rows, &mut y, row("heading", strings::FIELDS, 0.0, 18.0));
+        emit(
+            &mut rows,
+            &mut y,
+            row("heading", strings::FIELDS, 0.0, 18.0),
+        );
         for f in fields {
             let text = match f {
                 Value::String(s) => s.clone(),
@@ -455,10 +493,23 @@ pub fn rows(model: &Model) -> Vec<Row> {
     }
     if !model.rels.is_empty() {
         y += 12.0;
-        emit(&mut rows, &mut y, row("heading", strings::RELATIONSHIPS, 0.0, 18.0));
+        emit(
+            &mut rows,
+            &mut y,
+            row("heading", strings::RELATIONSHIPS, 0.0, 18.0),
+        );
         for rel in &model.rels {
-            let label = rel.label.as_ref().map(|l| format!("  «{l}»")).unwrap_or_default();
-            let mut r = row("rel", format!("{}  {}{label}", rel.phrase, rel.name), 0.0, 18.0);
+            let label = rel
+                .label
+                .as_ref()
+                .map(|l| format!("  «{l}»"))
+                .unwrap_or_default();
+            let mut r = row(
+                "rel",
+                format!("{}  {}{label}", rel.phrase, rel.name),
+                0.0,
+                18.0,
+            );
             r.id = Some(rel.id.clone());
             emit(&mut rows, &mut y, r);
         }
@@ -495,11 +546,14 @@ pub fn highlight<'a>(rows: &'a [Row], hover: Option<&Hover>) -> Option<&'a Row> 
 }
 
 fn at(rows: &[Row], y: f64) -> impl Iterator<Item = &Row> {
-    rows.iter().filter(move |r| y >= r.y && y <= r.y + r.h - 1.0)
+    rows.iter()
+        .filter(move |r| y >= r.y && y <= r.y + r.h - 1.0)
 }
 
 pub fn rel_at(rows: &[Row], y: f64) -> Option<Value> {
-    at(rows, y).find(|r| r.kind == "rel").and_then(|r| r.id.clone())
+    at(rows, y)
+        .find(|r| r.kind == "rel")
+        .and_then(|r| r.id.clone())
 }
 
 pub fn member_at(rows: &[Row], y: f64) -> Option<String> {
@@ -662,7 +716,10 @@ fn cell_text(c: &Cells, id: &str) -> Option<String> {
 }
 
 fn tip(id: &str) -> Option<&'static str> {
-    strings::COLUMN_TIPS.iter().find(|(k, _)| *k == id).map(|(_, t)| *t)
+    strings::COLUMN_TIPS
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map(|(_, t)| *t)
 }
 
 /// The paint plan for `rows` at a content width (points).

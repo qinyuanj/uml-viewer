@@ -522,7 +522,9 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
         GuiCheck::Le(n) => number().is_some_and(|x| x <= *n + EPSILON),
         GuiCheck::Contains(text) => match found {
             Some(Value::String(s)) => s.contains(text.as_str()),
-            Some(other) => edn::encode(other).unwrap_or_default().contains(text.as_str()),
+            Some(other) => edn::encode(other)
+                .unwrap_or_default()
+                .contains(text.as_str()),
             None => false,
         },
         GuiCheck::NotContains(text) => match found {
@@ -532,7 +534,11 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
         },
         GuiCheck::Count(n) => matches!(found, Some(Value::Vector(items)) if items.len() == *n),
     };
-    if ok { Ok(()) } else { Err(format!("observed {}", shown())) }
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("observed {}", shown()))
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -725,7 +731,11 @@ fn rgb(v: Option<&Value>) -> Option<[u8; 3]> {
 fn gui_target(step: &Value) -> Result<GuiTarget, String> {
     let at = get(step, "at");
     let target = GuiTarget {
-        at: if matches!(at, Some(Value::Vector(_))) { None } else { text(at) },
+        at: if matches!(at, Some(Value::Vector(_))) {
+            None
+        } else {
+            text(at)
+        },
         xy: pair(get(step, "xy")).or_else(|| pair(at)),
         offset: pair(get(step, "offset")).unwrap_or([0.0, 0.0]),
         prefix: text(get(step, "prefix")),
@@ -740,7 +750,8 @@ fn gui_check(step: &Value) -> Result<GuiCheck, String> {
     if let Some(v) = get(step, "equals") {
         return Ok(GuiCheck::Equals(v.clone()));
     }
-    let numeric: [(&str, fn(f64) -> GuiCheck); 4] = [
+    type NumericCheck = (&'static str, fn(f64) -> GuiCheck);
+    let numeric: [NumericCheck; 4] = [
         ("gt", GuiCheck::Gt),
         ("ge", GuiCheck::Ge),
         ("lt", GuiCheck::Lt),
@@ -1044,8 +1055,8 @@ fn check_pixels(
         }
     }
     if let Some(ink) = ink {
-        let found = (y0..y1)
-            .any(|y| (x0..x1).any(|x| near_rgb(&image.get_pixel(x, y).0, ink, tolerance)));
+        let found =
+            (y0..y1).any(|y| (x0..x1).any(|x| near_rgb(&image.get_pixel(x, y).0, ink, tolerance)));
         if !found {
             return Err(format!("no pixel near ink {ink:?}"));
         }

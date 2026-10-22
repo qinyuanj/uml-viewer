@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use edn::Value;
@@ -20,6 +20,7 @@ use crate::commands::{self, Command};
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
 use crate::gui::{Action, Gui};
+use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::{
     cli::Options, fonts, identity, inspector, mail, mail_watch, mailbox, metrics, paint,
@@ -316,6 +317,13 @@ struct Viewer {
     bench_geo: Option<bench::Geo>,
     /// Adapter name, backend, driver, driver info (protocol-1 environment).
     adapter: [String; 4],
+    /// Class/edge geometry, rebuilt only when the scene, selection, hover or
+    /// LOD tier changes (#143).
+    render_cache: RenderCache,
+    /// Canvas text layouts across frames (#143).
+    text_cache: paint::TextCache,
+    /// Stops the idle wake thread when the viewer is dropped.
+    wake_stop: Arc<AtomicBool>,
     /// Inspector sidebar, class card and source windows (#141).
     gui: Gui,
     /// Driver GUI events, one batch per frame through `raw_input_hook`.
@@ -339,6 +347,35 @@ struct Viewer {
     stop_deadline: Option<Instant>,
     /// The change-only mailbox waker thread.
     waker: Option<mail_watch::Waker>,
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.wake_stop.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Idle wake-ups (#143): a stat-only watcher repaints only when the diagram,
+/// metrics or mailbox stamp changes, so an idle viewer does not redraw on the
+/// poll cadence. The woken frame's `poll` does the actual reload.
+fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<AtomicBool> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let spawned = std::thread::Builder::new()
+        .name("uml-viewer-wake".into())
+        .spawn(move || {
+            let mut wake = watch::Wake::new(&diagram, &root);
+            while !flag.load(Ordering::SeqCst) {
+                std::thread::sleep(POLL_INTERVAL);
+                if wake.poll() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        eprintln!("uml viewer: could not start the idle watcher: {error}");
+    }
+    stop
 }
 
 impl Viewer {
@@ -415,6 +452,13 @@ impl Viewer {
             bench: None,
             bench_geo: None,
             adapter,
+            render_cache: RenderCache::default(),
+            text_cache: paint::TextCache::default(),
+            wake_stop: spawn_wake(
+                cc.egui_ctx.clone(),
+                setup.diagram.clone(),
+                setup.project_root.clone(),
+            ),
             gui: Gui::default(),
             gui_batches: Default::default(),
             gui_pointer: egui::Pos2::ZERO,
@@ -814,8 +858,11 @@ impl Viewer {
                     self.gui.invalidate();
                 }
                 Action::Delete(id) => {
-                    self.state =
-                        events::delete_proposal(&self.state, Some(&id), Some(&project_files::Files));
+                    self.state = events::delete_proposal(
+                        &self.state,
+                        Some(&id),
+                        Some(&project_files::Files),
+                    );
                     self.gui.invalidate();
                 }
                 Action::CloseCard => self.state = events::close_detail(&self.state),
@@ -1344,6 +1391,8 @@ impl Viewer {
         }
         if step.continuous {
             ctx.request_repaint();
+        } else if let Some(seconds) = step.wake_s {
+            ctx.request_repaint_after(Duration::from_secs_f64(seconds));
         }
         if step.finished {
             let code = if passed == Some(true) { 0 } else { 1 };
@@ -1518,6 +1567,8 @@ impl eframe::App for Viewer {
             status.as_deref(),
             performance,
             self.show_performance,
+            &mut self.render_cache,
+            &mut self.text_cache,
         );
         self.draw_search(ctx);
         let actions = self.gui.draw(ctx, &self.state, self.frames);
@@ -1559,7 +1610,15 @@ impl eframe::App for Viewer {
             // stopped here and `settle_normal_quit` closes the window.
             self.begin_normal_quit(ctx);
         }
-        ctx.request_repaint_after(POLL_INTERVAL);
+        // Idle: no cadence; input and the wake watcher repaint. Drivers,
+        // timed runs and pending screenshots keep the poll cadence.
+        let shots_pending = self.shots_requested.len() > self.shots_sent.len()
+            || (self.evidence.is_some() && self.frames < 4);
+        if self.bench.is_none()
+            && (self.driver.is_some() || self.test_seconds.is_some() || shots_pending)
+        {
+            ctx.request_repaint_after(POLL_INTERVAL);
+        }
     }
 }
 
@@ -1730,7 +1789,8 @@ impl driver::Host for Viewer {
     fn gui_point(&mut self, target: &driver::GuiTarget) -> Result<(), String> {
         let pos = self.gui_target(target)?;
         self.gui_pointer = pos;
-        self.gui_batches.push_back(vec![egui::Event::PointerMoved(pos)]);
+        self.gui_batches
+            .push_back(vec![egui::Event::PointerMoved(pos)]);
         Ok(())
     }
 
@@ -1742,7 +1802,8 @@ impl driver::Host for Viewer {
     fn gui_click(&mut self, target: &driver::GuiTarget, secondary: bool) -> Result<(), String> {
         let pos = self.gui_target(target)?;
         self.gui_pointer = pos;
-        self.gui_batches.push_back(vec![egui::Event::PointerMoved(pos)]);
+        self.gui_batches
+            .push_back(vec![egui::Event::PointerMoved(pos)]);
         let press = self.gui_button_event(secondary, true);
         let release = self.gui_button_event(secondary, false);
         self.gui_batches.push_back(vec![press]);
@@ -1751,8 +1812,8 @@ impl driver::Host for Viewer {
     }
 
     fn gui_key(&mut self, key: &str, ctrl: bool, shift: bool) {
-        let Some(code) = egui::Key::from_name(&key.to_uppercase())
-            .or_else(|| egui::Key::from_name(key))
+        let Some(code) =
+            egui::Key::from_name(&key.to_uppercase()).or_else(|| egui::Key::from_name(key))
         else {
             eprintln!("uml viewer: unknown driver key {key}");
             return;

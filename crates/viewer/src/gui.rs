@@ -13,8 +13,7 @@ use std::path::Path;
 
 use edn::Value;
 use egui::{
-    Align2, Color32, CursorIcon, FontFamily, FontId, Id, Pos2, Rect as ERect, RichText, Sense,
-    Vec2,
+    Align2, Color32, CursorIcon, FontFamily, FontId, Id, Pos2, Rect as ERect, RichText, Sense, Vec2,
 };
 use scene::document::ViewState;
 use scene::events;
@@ -111,6 +110,8 @@ pub struct Gui {
     empty_help: bool,
     pub card: Card,
     cache: Option<(CardKey, detail::Model, Vec<detail::Row>)>,
+    entries_key: Option<(u64, u64)>,
+    entries_cache: Vec<inspector::Entry>,
     generation: u64,
     pub sources: Vec<SourceWindow>,
     serial: u64,
@@ -162,9 +163,13 @@ fn themed_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let visuals = &mut ui.visuals_mut().widgets;
     visuals.hovered.weak_bg_fill = rgb(theme::BUTTON_HOVER);
     visuals.active.weak_bg_fill = rgb(theme::BUTTON_ACTIVE);
-    let button = egui::Button::new(RichText::new(label).color(rgb(theme::GOLD)).font(body_font()))
-        .fill(rgb(theme::LINE))
-        .min_size(Vec2::new(ui.available_width(), 0.0));
+    let button = egui::Button::new(
+        RichText::new(label)
+            .color(rgb(theme::GOLD))
+            .font(body_font()),
+    )
+    .fill(rgb(theme::LINE))
+    .min_size(Vec2::new(ui.available_width(), 0.0));
     ui.add(button)
 }
 
@@ -235,6 +240,34 @@ impl Gui {
         self.sources.pop();
     }
 
+    /// The diagram list, cached on the state revision: recomputing it walks
+    /// and clones the whole document (10 ms on 2000 classes, every frame).
+    fn entries(&mut self, state: &ViewState) -> Vec<inspector::Entry> {
+        let key = (state.revision, self.generation);
+        if self.entries_key != Some(key) {
+            self.entries_cache = inspector::entries(state);
+            self.entries_key = Some(key);
+        }
+        self.entries_cache.clone()
+    }
+
+    /// The diagram list plus whether this call had to rebuild it.
+    pub fn entries_for(&mut self, state: &ViewState) -> (Vec<inspector::Entry>, bool) {
+        let key = (state.revision, self.generation);
+        let rebuilt = self.entries_key != Some(key);
+        (self.entries(state), rebuilt)
+    }
+
+    /// `entries` for the read-only record.
+    fn cached_entries(&self, state: &ViewState) -> Vec<inspector::Entry> {
+        let key = (state.revision, self.generation);
+        if self.entries_key == Some(key) {
+            self.entries_cache.clone()
+        } else {
+            inspector::entries(state)
+        }
+    }
+
     fn card_for(
         &mut self,
         state: &ViewState,
@@ -270,10 +303,10 @@ impl Gui {
             self.edge(ctx, screen);
             self.sidebar(ctx, state, screen, frame, &mut actions);
             self.card_window(ctx, state, origin, &mut actions);
+            self.source_windows(ctx, origin);
         } else {
             self.card.open = false;
         }
-        self.source_windows(ctx, origin);
         self.element_mail_menu(ctx, state, origin, &mut actions);
         actions
     }
@@ -406,11 +439,16 @@ impl Gui {
         let width = inspector::clamp_width(self.width, screen.width() as f64) as f32;
         let left = screen.max.x - width;
         let mut bounds: Vec<(String, ERect)> = Vec::new();
-        let entries = inspector::entries(state);
+        let entries = self.entries(state);
         let mut summary_id = state.selected.as_ref().and_then(|s| get(s, "id").cloned());
         let summary = summary_id.take().and_then(|id| {
-            let kind = state.selected.as_ref().and_then(|s| get(s, "kind")).map(name);
-            self.card_for(state, &id).map(|c| (id.clone(), Some(c), kind.clone()))
+            let kind = state
+                .selected
+                .as_ref()
+                .and_then(|s| get(s, "kind"))
+                .map(name);
+            self.card_for(state, &id)
+                .map(|c| (id.clone(), Some(c), kind.clone()))
                 .or(Some((id, None, kind)))
         });
         let mut menu_request = None;
@@ -433,20 +471,33 @@ impl Gui {
                         );
                         for (n, entry) in entries.iter().enumerate() {
                             if n == 1 {
-                                ui.label(RichText::new(strings::PROPOSALS_LABEL).color(rgb(theme::MUTED)));
+                                ui.label(
+                                    RichText::new(strings::PROPOSALS_LABEL)
+                                        .color(rgb(theme::MUTED)),
+                                );
                             }
-                            let text = RichText::new(&entry.label).font(body_font()).color(rgb(theme::INK));
-                            let row = ui.add(egui::Button::selectable(entry.active, text).min_size(Vec2::new(ui.available_width(), 0.0)));
+                            let text = RichText::new(&entry.label)
+                                .font(body_font())
+                                .color(rgb(theme::INK));
+                            let row = ui.add(
+                                egui::Button::selectable(entry.active, text)
+                                    .min_size(Vec2::new(ui.available_width(), 0.0)),
+                            );
                             if row.clicked() {
                                 actions.push(Action::Choose(entry.id.clone()));
                             }
                             if let Some(id) = &entry.id
                                 && row.secondary_clicked()
                             {
-                                let at = ctx.input(|i| i.pointer.interact_pos()).unwrap_or(row.rect.center());
+                                let at = ctx
+                                    .input(|i| i.pointer.interact_pos())
+                                    .unwrap_or(row.rect.center());
                                 menu_request = Some((id.clone(), at));
                             }
-                            let key = entry.id.as_ref().map_or("real".to_string(), |id| format!("proposal:{}", name(id)));
+                            let key = entry
+                                .id
+                                .as_ref()
+                                .map_or("real".to_string(), |id| format!("proposal:{}", name(id)));
                             bounds.push((key, row.rect));
                         }
                         let new = themed_button(ui, strings::NEW_PROPOSAL);
@@ -461,7 +512,9 @@ impl Gui {
                         bounds.push(("declutter".into(), declutter.rect));
                         if let Some(rename) = &mut self.rename {
                             ui.separator();
-                            ui.label(RichText::new(strings::PROPOSAL_NAME).color(rgb(theme::MUTED)));
+                            ui.label(
+                                RichText::new(strings::PROPOSAL_NAME).color(rgb(theme::MUTED)),
+                            );
                             let field = ui.add(
                                 egui::TextEdit::singleline(&mut rename.name)
                                     .id(Id::unique("uml-proposal-name"))
@@ -478,7 +531,8 @@ impl Gui {
                             let cancel = ui.button(strings::CANCEL);
                             bounds.push(("cancel-rename".into(), cancel.rect));
                             if ok.clicked() {
-                                actions.push(Action::Rename(rename.id.clone(), rename.name.clone()));
+                                actions
+                                    .push(Action::Rename(rename.id.clone(), rename.name.clone()));
                             }
                             if ok.clicked() || cancel.clicked() {
                                 self.rename = None;
@@ -641,14 +695,25 @@ impl Gui {
                     for (n, it) in items.iter().enumerate() {
                         let top = rect.min.y + (it.y - scroll) as f32;
                         let h = it.h as f32;
-                        let row = ERect::from_min_size(Pos2::new(rect.min.x, top), Vec2::new(plan_w as f32, h));
+                        let row = ERect::from_min_size(
+                            Pos2::new(rect.min.x, top),
+                            Vec2::new(plan_w as f32, h),
+                        );
                         if it.stripe {
                             painter.rect_filled(row, 0.0, rgb(theme::PANEL));
                         }
                         if it.clickable && row.intersects(clip) {
-                            let response = ui.interact(row.intersect(clip), ui.scope_id().with(("card-row", n)), Sense::click());
+                            let response = ui.interact(
+                                row.intersect(clip),
+                                ui.scope_id().with(("card-row", n)),
+                                Sense::click(),
+                            );
                             if response.hovered() {
-                                painter.rect_filled(row, 0.0, theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH));
+                                painter.rect_filled(
+                                    row,
+                                    0.0,
+                                    theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH),
+                                );
                                 hover = if it.module {
                                     Some(Hover::Module)
                                 } else {
@@ -658,7 +723,10 @@ impl Gui {
                             if response.clicked() {
                                 actions.push(match &it.rel {
                                     Some(rel) if it.kind == "rel" => Action::Locate(rel.clone()),
-                                    _ => Action::OpenSource(detail::member_ident(&model, it.op_name.as_deref())),
+                                    _ => Action::OpenSource(detail::member_ident(
+                                        &model,
+                                        it.op_name.as_deref(),
+                                    )),
                                 });
                             }
                             let key = if it.module {
@@ -685,11 +753,21 @@ impl Gui {
                         if let Some(text) = &it.text {
                             let p = match it.clip_right {
                                 Some(right) => painter.with_clip_rect(
-                                    ERect::from_min_max(Pos2::new(rect.min.x, top), Pos2::new(px(right), top + h)).intersect(clip),
+                                    ERect::from_min_max(
+                                        Pos2::new(rect.min.x, top),
+                                        Pos2::new(px(right), top + h),
+                                    )
+                                    .intersect(clip),
                                 ),
                                 None => painter.clone(),
                             };
-                            p.text(Pos2::new(px(it.x), top + h / 2.0), Align2::LEFT_CENTER, text, font.clone(), rgb(it.color));
+                            p.text(
+                                Pos2::new(px(it.x), top + h / 2.0),
+                                Align2::LEFT_CENTER,
+                                text,
+                                font.clone(),
+                                rgb(it.color),
+                            );
                         }
                         for c in &it.cells {
                             let (x, align) = if c.center {
@@ -697,22 +775,43 @@ impl Gui {
                             } else {
                                 (px(c.right), Align2::RIGHT_CENTER)
                             };
-                            painter.text(Pos2::new(x, top + h / 2.0), align, &c.text, code_font(), rgb(c.color));
+                            painter.text(
+                                Pos2::new(x, top + h / 2.0),
+                                align,
+                                &c.text,
+                                code_font(),
+                                rgb(c.color),
+                            );
                             if let (Some(tip), Some(p)) = (c.tip, pointer)
-                                && ERect::from_min_max(Pos2::new(px(c.left), top), Pos2::new(px(c.right), top + h)).contains(p)
+                                && ERect::from_min_max(
+                                    Pos2::new(px(c.left), top),
+                                    Pos2::new(px(c.right), top + h),
+                                )
+                                .contains(p)
                                 && clip.contains(p)
                             {
-                                egui::Tooltip::always_open(ctx.clone(), ui.layer_id(), Id::unique("uml-col-tip"), egui::PopupAnchor::Pointer)
-                                    .show(|ui| ui.label(tip));
+                                egui::Tooltip::always_open(
+                                    ctx.clone(),
+                                    ui.layer_id(),
+                                    Id::unique("uml-col-tip"),
+                                    egui::PopupAnchor::Pointer,
+                                )
+                                .show(|ui| ui.label(tip));
                             }
                         }
                         for b in &it.bars {
                             let y = top + h - BAR;
-                            let track = ERect::from_min_max(Pos2::new(px(b.left), y), Pos2::new(px(b.right), y + BAR));
+                            let track = ERect::from_min_max(
+                                Pos2::new(px(b.left), y),
+                                Pos2::new(px(b.right), y + BAR),
+                            );
                             painter.rect_filled(track, BAR / 2.0, rgb(theme::LINE));
                             let fill = ERect::from_min_max(
                                 track.min,
-                                Pos2::new(px(b.left + (b.right - b.left) * b.fraction.clamp(0.0, 1.0)), y + BAR),
+                                Pos2::new(
+                                    px(b.left + (b.right - b.left) * b.fraction.clamp(0.0, 1.0)),
+                                    y + BAR,
+                                ),
                             );
                             painter.rect_filled(fill, BAR / 2.0, rgb(b.color));
                         }
@@ -762,7 +861,13 @@ impl Gui {
                 .id(Id::unique(("uml-source", w.serial)))
                 .open(&mut open)
                 .default_size(SOURCE_SIZE)
-                .default_pos(origin + Vec2::new(80.0 + 24.0 * (w.serial % 8) as f32, 60.0 + 24.0 * (w.serial % 8) as f32))
+                .default_pos(
+                    origin
+                        + Vec2::new(
+                            80.0 + 24.0 * (w.serial % 8) as f32,
+                            60.0 + 24.0 * (w.serial % 8) as f32,
+                        ),
+                )
                 .collapsible(false)
                 .frame(egui::Frame::window(&ctx.global_style()).fill(rgb(theme::SOURCE_BG)))
                 .show(ctx, |ui| {
@@ -790,7 +895,8 @@ impl Gui {
                             .map_or(0.0, |l| ((l - 1) as f32 * line_h - 0.25 * avail_h).max(0.0));
                         area = area.vertical_scroll_offset(target);
                     }
-                    let total = Vec2::new(GUTTER + INSET + max_w + 16.0, w.rows.len() as f32 * line_h);
+                    let total =
+                        Vec2::new(GUTTER + INSET + max_w + 16.0, w.rows.len() as f32 * line_h);
                     let out = area.show_viewport(ui, |ui, viewport| {
                         let (rect, response) = ui.allocate_exact_size(
                             total.max(Vec2::new(ui.available_width(), 0.0)),
@@ -798,7 +904,8 @@ impl Gui {
                         );
                         let painter = ui.painter_at(ui.clip_rect());
                         let first = (viewport.min.y / line_h).floor().max(0.0) as usize;
-                        let last = ((viewport.max.y / line_h).ceil() as usize + 1).min(w.rows.len());
+                        let last =
+                            ((viewport.max.y / line_h).ceil() as usize + 1).min(w.rows.len());
                         let text_x = rect.min.x + GUTTER + INSET;
                         let position = |p: Pos2| -> Option<source::Pos> {
                             let row = ((p.y - rect.min.y) / line_h).floor();
@@ -817,7 +924,10 @@ impl Gui {
                                 }
                                 col = i + c.len_utf8();
                             }
-                            Some(source::Pos { row, col: d.to_source[col] })
+                            Some(source::Pos {
+                                row,
+                                col: d.to_source[col],
+                            })
                         };
                         // egui reports drag_started only after the pointer moved
                         // past the threshold: anchor at where the press began.
@@ -843,7 +953,10 @@ impl Gui {
                             let row = &w.rows[i];
                             let d = &w.displays[i];
                             let top = rect.min.y + i as f32 * line_h;
-                            let line = ERect::from_min_size(Pos2::new(rect.min.x, top), Vec2::new(rect.width(), line_h));
+                            let line = ERect::from_min_size(
+                                Pos2::new(rect.min.x, top),
+                                Vec2::new(rect.width(), line_h),
+                            );
                             if row.highlight {
                                 painter.rect_filled(line, 0.0, rgb(theme::SOURCE_HIGHLIGHT));
                                 target_rect = Some(line);
@@ -864,12 +977,23 @@ impl Gui {
                                 && i >= a.row
                                 && i <= b.row
                             {
-                                let left = if i == a.row { d.to_display[a.col.min(d.to_display.len() - 1)] } else { 0 };
-                                let right = if i == b.row { d.to_display[b.col.min(d.to_display.len() - 1)] } else { d.text.len() };
+                                let left = if i == a.row {
+                                    d.to_display[a.col.min(d.to_display.len() - 1)]
+                                } else {
+                                    0
+                                };
+                                let right = if i == b.row {
+                                    d.to_display[b.col.min(d.to_display.len() - 1)]
+                                } else {
+                                    d.text.len()
+                                };
                                 let lx = text_w(ctx, &font, &d.text[..left]);
                                 let rx = text_w(ctx, &font, &d.text[..right.max(left)]);
                                 painter.rect_filled(
-                                    ERect::from_min_max(Pos2::new(text_x + lx, top), Pos2::new(text_x + rx, top + line_h)),
+                                    ERect::from_min_max(
+                                        Pos2::new(text_x + lx, top),
+                                        Pos2::new(text_x + rx, top + line_h),
+                                    ),
                                     0.0,
                                     rgb(theme::SOURCE_SELECTION),
                                 );
@@ -882,14 +1006,26 @@ impl Gui {
                                     "comment" => theme::SOURCE_COMMENT,
                                     _ => theme::SOURCE_INK,
                                 };
-                                let galley = ctx.fonts_mut(|f| f.layout_no_wrap(run.text.clone(), font.clone(), rgb(color)));
+                                let galley = ctx.fonts_mut(|f| {
+                                    f.layout_no_wrap(run.text.clone(), font.clone(), rgb(color))
+                                });
                                 let advance = galley.size().x;
                                 painter.galley(Pos2::new(x, top), galley, rgb(color));
                                 x += advance;
                             }
-                            lines.push((row.number, ERect::from_min_size(Pos2::new(text_x, top), Vec2::new(rect.max.x - text_x, line_h))));
+                            lines.push((
+                                row.number,
+                                ERect::from_min_size(
+                                    Pos2::new(text_x, top),
+                                    Vec2::new(rect.max.x - text_x, line_h),
+                                ),
+                            ));
                         }
-                        (target_rect, lines, response.is_pointer_button_down_on() || response.clicked())
+                        (
+                            target_rect,
+                            lines,
+                            response.is_pointer_button_down_on() || response.clicked(),
+                        )
                     });
                     let (target_rect, lines, touched) = out.inner;
                     w.scroll_y = out.state.clamped_offset().y as f64;
@@ -942,7 +1078,7 @@ impl Gui {
                 .collect(),
         );
         let entries = Value::Vector(
-            inspector::entries(state)
+            self.cached_entries(state)
                 .iter()
                 .map(|e| {
                     Value::Map(vec![
@@ -975,7 +1111,13 @@ impl Gui {
             ),
             (
                 kw("row-heights"),
-                Value::Vector(self.card.row_heights.iter().map(|h| Value::Float(*h)).collect()),
+                Value::Vector(
+                    self.card
+                        .row_heights
+                        .iter()
+                        .map(|h| Value::Float(*h))
+                        .collect(),
+                ),
             ),
         ]);
         let sources = Value::Vector(
@@ -985,7 +1127,10 @@ impl Gui {
                     Value::Map(vec![
                         (kw("title"), Value::String(w.title.clone())),
                         (kw("file"), Value::String(w.file.clone())),
-                        (kw("line"), w.line.map_or(Value::Nil, |l| Value::Integer(l as i64))),
+                        (
+                            kw("line"),
+                            w.line.map_or(Value::Nil, |l| Value::Integer(l as i64)),
+                        ),
                         (kw("rows"), Value::Integer(w.rows.len() as i64)),
                         (
                             kw("highlighted"),
@@ -1025,14 +1170,16 @@ impl Gui {
             (kw("bounds"), bounds),
             (kw("card"), card),
             (kw("sources"), sources),
-            (kw("copied"), self.copied.clone().map_or(Value::Nil, Value::String)),
             (
-                kw("focus"),
-                Value::Vector(state.focus.clone()),
+                kw("copied"),
+                self.copied.clone().map_or(Value::Nil, Value::String),
             ),
+            (kw("focus"), Value::Vector(state.focus.clone())),
             (
                 kw("proposal-id"),
-                get(&state.extra, "proposal-id").cloned().unwrap_or(Value::Nil),
+                get(&state.extra, "proposal-id")
+                    .cloned()
+                    .unwrap_or(Value::Nil),
             ),
             (
                 kw("proposal"),
@@ -1043,11 +1190,18 @@ impl Gui {
 }
 
 fn label(ui: &mut egui::Ui, text: impl Into<String>, color: Rgb) {
-    ui.label(RichText::new(text.into()).color(rgb(color)).font(body_font()));
+    ui.label(
+        RichText::new(text.into())
+            .color(rgb(color))
+            .font(body_font()),
+    );
 }
 
 fn mutation_line(c: &Value) -> Option<String> {
-    let (k, s) = (get(c, "killed").and_then(num), get(c, "survived").and_then(num));
+    let (k, s) = (
+        get(c, "killed").and_then(num),
+        get(c, "survived").and_then(num),
+    );
     if k.is_none() && s.is_none() {
         return None;
     }
@@ -1094,7 +1248,11 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
         .unwrap_or_else(|| "foreign".into());
     label(ui, format!("{}{package}", strings::PACKAGE), theme::MUTED);
     if let Some(level) = get(c, "level").filter(|v| **v != Value::Nil) {
-        label(ui, format!("{}{}", strings::LEVEL, text(Some(level))), theme::MUTED);
+        label(
+            ui,
+            format!("{}{}", strings::LEVEL, text(Some(level))),
+            theme::MUTED,
+        );
     }
     if let Some(stereo) = get(c, "stereotype") {
         label(ui, format!("«{}»", name(stereo)), theme::MUTED);

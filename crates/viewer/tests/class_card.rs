@@ -32,7 +32,9 @@ fn texts(rows: &[Row]) -> Vec<&str> {
 }
 
 fn op<'a>(rows: &'a [Row], name: &str) -> &'a Row {
-    rows.iter().find(|r| r.op_name.as_deref() == Some(name)).unwrap()
+    rows.iter()
+        .find(|r| r.op_name.as_deref() == Some(name))
+        .unwrap()
 }
 
 #[test]
@@ -47,13 +49,19 @@ fn reserves_a_20px_title_row_followed_by_18px_rows() {
 fn lays_out_six_metric_columns_and_two_group_spans() {
     let cols = detail::column_layout(None);
     let labels: Vec<&str> = cols.iter().map(|c| c.label).collect();
-    assert_eq!(labels, ["Crap", "CC", "Cov", "killed", "survived", "uncovered"]);
+    assert_eq!(
+        labels,
+        ["Crap", "CC", "Cov", "killed", "survived", "uncovered"]
+    );
     assert_eq!(cols[0].left, 252.0);
     assert_eq!(cols[5].right, 624.0);
     let groups = detail::group_layout(None);
     assert_eq!((groups[0].left, groups[0].right), (252.0, 404.0));
     assert_eq!((groups[1].left, groups[1].right), (414.0, 624.0));
-    assert_eq!((groups[0].label, groups[1].label), ("--crap--", "--mutation--"));
+    assert_eq!(
+        (groups[0].label, groups[1].label),
+        ("--crap--", "--mutation--")
+    );
 }
 
 #[test]
@@ -88,7 +96,10 @@ fn preserves_identity_mutation_and_source_label_rules() {
     }
     let crap = rows.iter().find(|r| r.kind == "crap").unwrap();
     assert_eq!(crap.text, "Crap μ 14.2 max 134.6 σ 34.9");
-    let cls = rows.iter().find(|r| r.cells.crap_s.as_deref() == Some("14.2μ")).unwrap();
+    let cls = rows
+        .iter()
+        .find(|r| r.cells.crap_s.as_deref() == Some("14.2μ"))
+        .unwrap();
     assert_eq!(cls.cells.cc_s, None);
     assert_eq!(cls.cells.mut_note, None);
     assert_eq!(cls.cells.killed_s.as_deref(), Some("5"));
@@ -142,8 +153,17 @@ fn retains_aggregate_and_leaf_relationships_across_root_and_focus() {
     state.focus = vec![kw("alpha")];
     state.scene = scene::document::compile_view(&doc, &[], &state.focus, &Value::Map(vec![]));
     assert!(detail::for_state(&state, &kw("alpha.deep")).is_some());
-    assert_eq!(detail::for_state(&state, &kw("alpha")).unwrap().rels.len(), 1);
-    assert_eq!(detail::for_state(&state, &kw("alpha.deep.parser")).unwrap().rels.len(), 1);
+    assert_eq!(
+        detail::for_state(&state, &kw("alpha")).unwrap().rels.len(),
+        1
+    );
+    assert_eq!(
+        detail::for_state(&state, &kw("alpha.deep.parser"))
+            .unwrap()
+            .rels
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -167,7 +187,10 @@ fn highlights_only_the_hovered_operation_or_module_row() {
     assert_eq!(hl(Hover::Op("A".into())), None);
     assert_eq!(hl(Hover::Op("absent".into())), None);
     assert_eq!(detail::highlight(&rows, None).map(|r| r.y), None);
-    assert_eq!(hl(Hover::Module), Some(rows.iter().find(|r| r.module).unwrap().y));
+    assert_eq!(
+        hl(Hover::Module),
+        Some(rows.iter().find(|r| r.module).unwrap().y)
+    );
 }
 
 #[test]
@@ -176,10 +199,17 @@ fn shows_class_and_member_quality_source_identity_and_relationships() {
     assert_eq!(model.ns.as_deref(), Some("demo.a"));
     assert_eq!(rows[0].kind, "name");
     assert_eq!(rows[0].text, "A");
-    let cls = rows.iter().find(|r| r.cells.crap_s.as_deref() == Some("1.2μ")).unwrap();
+    let cls = rows
+        .iter()
+        .find(|r| r.cells.crap_s.as_deref() == Some("1.2μ"))
+        .unwrap();
     assert_eq!(cls.cells.cov_s.as_deref(), Some("90%"));
     assert_eq!(cls.cells.cc_s, None);
-    assert_eq!(cls.cells.killed_s.as_deref(), Some("7"), "class sums its ops' killed");
+    assert_eq!(
+        cls.cells.killed_s.as_deref(),
+        Some("7"),
+        "class sums its ops' killed"
+    );
     let go = op(&rows, "go");
     assert_eq!(go.text, "+ go(x) : void");
     assert_eq!(go.cells.cov_s.as_deref(), Some("75%"));
@@ -189,7 +219,10 @@ fn shows_class_and_member_quality_source_identity_and_relationships() {
     let hide = op(&rows, "hide");
     assert_eq!(hide.text, "- hide");
     assert!(hide.private);
-    assert_eq!(hide.cells.mut_note.as_deref(), Some("---无 mutation 位点---"));
+    assert_eq!(
+        hide.cells.mut_note.as_deref(),
+        Some("---无 mutation 位点---")
+    );
     let rel = rows.iter().find(|r| r.kind == "rel").unwrap();
     assert_eq!(rel.text, "依赖  B");
     assert_eq!(detail::rel_at(&rows, rel.y + 1.0), Some(kw("b")));
@@ -197,7 +230,10 @@ fn shows_class_and_member_quality_source_identity_and_relationships() {
     assert!(detail::module_at(&rows, module.y));
     assert!(!detail::module_at(&rows, go.y));
     let ident = detail::member_ident(&model, Some("go"));
-    assert_eq!((ident.ns.as_deref(), ident.name.as_deref()), (Some("demo.a"), Some("go")));
+    assert_eq!(
+        (ident.ns.as_deref(), ident.name.as_deref()),
+        (Some("demo.a"), Some("go"))
+    );
     assert_eq!(detail::member_ident(&model, Some("")).name, None);
     assert!(detail::model(&scene_of(TINY), &kw("absent")).is_none());
 }
@@ -208,7 +244,10 @@ fn view(width: Option<f64>) -> Vec<detail::Item> {
 }
 
 fn item<'a>(items: &'a [detail::Item], name: &str) -> &'a detail::Item {
-    items.iter().find(|it| it.op_name.as_deref() == Some(name)).unwrap()
+    items
+        .iter()
+        .find(|it| it.op_name.as_deref() == Some(name))
+        .unwrap()
 }
 
 fn cell<'a>(it: &'a detail::Item, id: &str) -> Option<&'a detail::Cell> {
@@ -229,12 +268,22 @@ fn view_keeps_title_and_rows_at_fixed_right_aligned_columns() {
     let header = items.iter().find(|it| it.kind == "col-header").unwrap();
     assert_eq!(header.text.as_deref(), Some("成员"));
     assert_eq!(header.cells.len(), 6);
-    assert!(header.cells.iter().all(|c| c.color == theme::GOLD && c.tip.is_some()));
+    assert!(
+        header
+            .cells
+            .iter()
+            .all(|c| c.color == theme::GOLD && c.tip.is_some())
+    );
 }
 
 #[test]
 fn view_uses_available_width_with_a_scrollable_minimum() {
-    for (width, right) in [(300.0, 560.0), (576.0, 576.0), (624.0, 624.0), (900.0, 900.0)] {
+    for (width, right) in [
+        (300.0, 560.0),
+        (576.0, 576.0),
+        (624.0, 624.0),
+        (900.0, 900.0),
+    ] {
         let items = view(Some(width));
         let go = item(&items, "go");
         assert_eq!(cell(go, "uncovered").unwrap().right, right);
@@ -246,7 +295,10 @@ fn view_uses_available_width_with_a_scrollable_minimum() {
 fn view_colors_cells_with_the_semantic_rules() {
     let items = view(None);
     let go = item(&items, "go");
-    assert_eq!(cell(go, "crap").unwrap().color, theme::stroke(Some(config::crap_grade(Some(1.8)))));
+    assert_eq!(
+        cell(go, "crap").unwrap().color,
+        theme::stroke(Some(config::crap_grade(Some(1.8))))
+    );
     assert_eq!(cell(go, "cc").unwrap().color, theme::MUTED);
     assert_eq!(cell(go, "cov").unwrap().color, theme::GOLD);
     assert_eq!(cell(go, "killed").unwrap().color, theme::WHITE);
@@ -255,12 +307,18 @@ fn view_colors_cells_with_the_semantic_rules() {
     let low = item(&items, "low");
     assert_eq!(cell(low, "cov").unwrap().color, theme::WARN);
     assert_eq!(cell(low, "survived").unwrap().color, theme::GOOD);
-    assert_eq!(items.iter().find(|it| it.kind == "crap").unwrap().color, theme::GOLD);
+    assert_eq!(
+        items.iter().find(|it| it.kind == "crap").unwrap().color,
+        theme::GOLD
+    );
     assert_eq!(item(&items, "hide").color, theme::MUTED);
     assert_eq!(go.color, theme::INK);
     let note = cell(item(&items, "hide"), "mut-note").unwrap();
     let groups = detail::group_layout(None);
-    assert_eq!((note.left, note.right, note.center), (groups[1].left, groups[1].right, true));
+    assert_eq!(
+        (note.left, note.right, note.center),
+        (groups[1].left, groups[1].right, true)
+    );
     assert!(cell(item(&items, "hide"), "killed").is_none());
 }
 

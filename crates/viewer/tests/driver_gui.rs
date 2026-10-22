@@ -79,7 +79,12 @@ impl Host for GuiHost {
 }
 
 fn run(runner: &mut Runner, host: &mut GuiHost, frame: u64) -> Result<Progress, String> {
-    runner.run(frame, Some(std::env::temp_dir().as_path()), std::path::Path::new("."), host)
+    runner.run(
+        frame,
+        Some(std::env::temp_dir().as_path()),
+        std::path::Path::new("."),
+        host,
+    )
 }
 
 #[test]
@@ -109,10 +114,8 @@ fn gui_pointer_and_key_steps_reach_the_host() {
 
 #[test]
 fn the_runner_waits_until_a_staged_click_is_delivered() {
-    let script = Script::parse(
-        r#"{:steps [{:op :gui-click :at "regen"} {:op :quit :code 0}]}"#,
-    )
-    .unwrap();
+    let script =
+        Script::parse(r#"{:steps [{:op :gui-click :at "regen"} {:op :quit :code 0}]}"#).unwrap();
     let mut runner = Runner::new(script);
     let mut host = GuiHost::default();
     assert_eq!(run(&mut runner, &mut host, 1).unwrap(), Progress::Running);
@@ -139,11 +142,29 @@ fn assert_gui_compares_the_record_and_reports_the_step_message() {
     assert!(ok("[:inspector :width]", GuiCheck::Equals(Value::Integer(340))).is_ok());
     assert!(ok("[:card :scroll]", GuiCheck::Equals(Value::Integer(192))).is_ok());
     assert!(ok("[:card :horizontal :maximum]", GuiCheck::Lt(1.0)).is_ok());
-    assert!(ok("[:card :hover]", GuiCheck::Equals(Value::String("op8".into()))).is_ok());
-    assert!(ok("[:sources 0 :selection]", GuiCheck::Equals(Value::String("function".into()))).is_ok());
+    assert!(
+        ok(
+            "[:card :hover]",
+            GuiCheck::Equals(Value::String("op8".into()))
+        )
+        .is_ok()
+    );
+    assert!(
+        ok(
+            "[:sources 0 :selection]",
+            GuiCheck::Equals(Value::String("function".into()))
+        )
+        .is_ok()
+    );
     assert!(ok("[:sources]", GuiCheck::Count(2)).is_ok());
     assert!(ok("[:sources 1 :line]", GuiCheck::Present(false)).is_ok());
-    assert!(ok("[:inspector :menu-open]", GuiCheck::Equals(Value::Bool(true))).is_ok());
+    assert!(
+        ok(
+            "[:inspector :menu-open]",
+            GuiCheck::Equals(Value::Bool(true))
+        )
+        .is_ok()
+    );
     let err = ok("[:card :scroll]", GuiCheck::Gt(200.0)).unwrap_err();
     assert!(err.contains("192"), "{err}");
 
