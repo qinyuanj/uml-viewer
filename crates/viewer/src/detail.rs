@@ -148,7 +148,7 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             add(classes, seen, child);
         }
     }
-    let mut add_view = |classes: &mut Vec<Value>,
+    let add_view = |classes: &mut Vec<Value>,
                         seen: &mut Vec<Value>,
                         edges: &mut Vec<Value>,
                         seen_edges: &mut Vec<Value>,
@@ -361,7 +361,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
     let c = &model.class;
     let mut rows: Vec<Row> = Vec::new();
     let mut y = 0.0;
-    let mut emit = |rows: &mut Vec<Row>, y: &mut f64, mut r: Row| {
+    let emit = |rows: &mut Vec<Row>, y: &mut f64, mut r: Row| {
         r.y = *y;
         *y += r.h;
         rows.push(r);

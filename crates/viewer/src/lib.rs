@@ -12,6 +12,7 @@ pub mod detail;
 pub mod driver;
 pub mod evidence;
 pub mod fonts;
+pub mod gui;
 pub mod identity;
 pub mod inspector;
 pub mod lod;
