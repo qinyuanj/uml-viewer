@@ -1,13 +1,13 @@
 {:stack "uml-viewer egui/eframe 0.37 wgpu (#139/#143)" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync "eframe default (AutoVsync)" :dpi 1 :view-w 1500 :view-h 920 :scene-w 11244.298048606353 :scene-h 8325.429856684394 :fit-zoom 0.11050480465718444 :classes 2000 :edges 6495 :packages 10}
-phase=idle frames=1 fps=15.44 mean_ms=64.78 median_ms=64.78 p95_ms=64.78 p99_ms=64.78 max_ms=64.78 cpu_pct=19.81 app_cpu_ms_p95=63.39 zoom=-..-
-phase=pan-detail frames=124 fps=12.37 mean_ms=80.81 median_ms=79.73 p95_ms=96.67 p99_ms=104.48 max_ms=104.67 cpu_pct=79.04 app_cpu_ms_p95=70.01 zoom=1.00..1.00
-phase=zoom-detail frames=101 fps=10.04 mean_ms=99.63 median_ms=97.40 p95_ms=128.25 p99_ms=147.21 max_ms=192.99 cpu_pct=81.09 app_cpu_ms_p95=101.77 zoom=0.50..2.00
-phase=pan-fit frames=54 fps=5.38 mean_ms=185.74 median_ms=185.03 p95_ms=222.58 p99_ms=262.30 max_ms=262.30 cpu_pct=82.45 app_cpu_ms_p95=183.07 zoom=0.11..0.11
-phase=zoom-fit frames=56 fps=5.59 mean_ms=178.86 median_ms=171.23 p95_ms=255.84 p99_ms=292.76 max_ms=292.76 cpu_pct=83.17 app_cpu_ms_p95=213.80 zoom=0.11..0.44
+phase=idle frames=1 fps=59.59 mean_ms=16.78 median_ms=16.78 p95_ms=16.78 p99_ms=16.78 max_ms=16.78 cpu_pct=0.40 app_cpu_ms_p95=5.98 zoom=-..-
+phase=pan-detail frames=590 fps=58.94 mean_ms=16.97 median_ms=16.79 p95_ms=17.59 p99_ms=19.72 max_ms=32.19 cpu_pct=52.25 app_cpu_ms_p95=6.57 zoom=1.00..1.00
+phase=zoom-detail frames=586 fps=58.50 mean_ms=17.09 median_ms=16.78 p95_ms=17.91 p99_ms=26.43 max_ms=54.65 cpu_pct=57.90 app_cpu_ms_p95=9.22 zoom=0.50..2.00
+phase=pan-fit frames=589 fps=58.87 mean_ms=16.99 median_ms=16.87 p95_ms=17.59 p99_ms=18.76 max_ms=31.08 cpu_pct=42.78 app_cpu_ms_p95=4.04 zoom=0.11..0.11
+phase=zoom-fit frames=532 fps=53.19 mean_ms=18.80 median_ms=16.82 p95_ms=29.85 p99_ms=36.38 max_ms=45.81 cpu_pct=58.39 app_cpu_ms_p95=14.49 zoom=0.11..0.44
 criterion name="renderer contains D3D12 (otherwise the run is void)" pass=true detail=D3D12 (NVIDIA GeForce GTX 1080 Ti)
-criterion name="idle CPU <= 2%" pass=false detail=cpu_pct=19.81
-criterion name="pan-detail p95 <= 33.3ms" pass=false detail=p95_ms=96.67 <= 33.3
-criterion name="zoom-detail p95 <= 33.3ms" pass=false detail=p95_ms=128.25 <= 33.3
-criterion name="pan-fit p95 <= 33.3ms" pass=false detail=p95_ms=222.58 <= 33.3
-criterion name="zoom-fit p95 <= 33.3ms" pass=false detail=p95_ms=255.84 <= 33.3
-verdict=FAIL
+criterion name="idle CPU <= 2%" pass=true detail=cpu_pct=0.40
+criterion name="pan-detail p95 <= 33.3ms" pass=true detail=p95_ms=17.59 <= 33.3
+criterion name="zoom-detail p95 <= 33.3ms" pass=true detail=p95_ms=17.91 <= 33.3
+criterion name="pan-fit p95 <= 33.3ms" pass=true detail=p95_ms=17.59 <= 33.3
+criterion name="zoom-fit p95 <= 33.3ms" pass=true detail=p95_ms=29.85 <= 33.3
+verdict=PASS

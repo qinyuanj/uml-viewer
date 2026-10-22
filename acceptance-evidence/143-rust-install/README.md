@@ -11,9 +11,9 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 |---|---|---|
 | 缺依赖时给出明确提示 | 通过 | `scripts/test_posix_entries.py`：缺 cargo（提示 rustup / `UML_CARGO_EXECUTABLE`，且不创建 `.uml-viewer/`）、缺 git、cargo 版本与 `rust-toolchain.toml` 不符（同时列出要求版本与实际版本）、构建未产出二进制；缺 libxkbcommon-x11 只警告不拒绝（#139 选定 Wayland 无装饰） |
 | 重复安装幂等 | 通过 | `test_reinstall_is_idempotent_and_provisions_all_three_tools`：两次安装都成功；policy（含 `:proposals`）字节不变；每次都在 `.uml-viewer/uml-viewer` 中执行 `build --release --locked`；`install.json` 的 `rust` 指向 `target/release/uml-viewer`。已有 ownership/recovery 记录时拒绝（`test_install_refuses_existing_ownership`），脏工具副本仍被保留（`test_installer_preserves_dirty_tool_checkout`） |
-| 2000 类平移/缩放 p95 ≤ 33.3 ms | **未通过** | `rust-2000-d3d12/summary.txt`：p95 为 96.7 / 128.3 / 222.6 / 255.8 ms |
-| 500 类稳定 60 fps | **未通过** | `rust-500-d3d12/summary.txt`：fps 为 30.6 / 20.8 / 22.3 / 14.6 |
-| 空闲 CPU 近零（≤ 2%） | **未通过** | 500：6.41%；2000：19.81% |
+| 2000 类平移/缩放 p95 ≤ 33.3 ms | 通过（修复后） | `rust-2000-d3d12/summary.txt`：p95 为 17.59 / 17.91 / 17.59 / 29.85 ms，`verdict=PASS`，`run_rust.sh` 退出 0 |
+| 500 类稳定 60 fps | **未通过（差边缘）** | `rust-500-d3d12/summary.txt`：fps 为 59.12 / 57.86 / 59.32 / 57.05；pan-detail、pan-fit 通过，zoom-detail（57.86 fps，p95 18.10 ms）和 zoom-fit（57.05 fps，p95 19.05 ms）略低于 58 fps / 18.3 ms 门槛 |
+| 空闲 CPU 近零（≤ 2%） | 通过（修复后） | 500：0.40%；2000：0.40% |
 | 大图首帧不崩溃 | 通过 | 2000 类完整跑完 warmup 与五个相位，stderr 中没有 panic；`rust-2000-d3d12/render.png` 是第 4 帧截图 |
 | 测量结果与结论写入验收证据 | 通过 | 本文件与两个结果目录 |
 
@@ -22,6 +22,27 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 窗口 1500 × 920，DPI 1，vsync 用 eframe 默认值（AutoVsync）。
 
 ## Protocol 1 结果（Rust viewer，D3D12）
+
+### 修复后（`ticket/143-perf`）
+
+两次完整运行（500、2000 各一次），与 #141 agent 的 driver 运行同时进行，共享 GPU/WSLg。
+
+| 场景 | 相位 | fps | p95 ms | 进程 CPU% |
+|---|---|---|---|---|
+| 500 | idle | — | — | 0.40 |
+| 500 | pan-detail | 59.12 | 17.52 | 44.2 |
+| 500 | zoom-detail | 57.86 | 18.10 | 49.8 |
+| 500 | pan-fit | 59.32 | 17.70 | 39.4 |
+| 500 | zoom-fit | 57.05 | 19.05 | 53.9 |
+| 2000 | idle | — | — | 0.40 |
+| 2000 | pan-detail | 58.94 | 17.59 | 52.3 |
+| 2000 | zoom-detail | 58.50 | 17.91 | 57.9 |
+| 2000 | pan-fit | 58.87 | 17.59 | 42.8 |
+| 2000 | zoom-fit | 53.19 | 29.85 | 58.4 |
+
+2000 类 stderr 中没有 panic，首帧截图 `rust-2000-d3d12/render.png`。
+
+### 修复前（原始测量，结果目录已被上表覆盖）
 
 | 场景 | 相位 | fps | p95 ms | 进程 CPU% |
 |---|---|---|---|---|
@@ -42,23 +63,21 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 
 ## 结论与原因
 
-viewer 的性能**未**达到 protocol 1 门槛。#131 原型在同一台机器上达标
-（2000 类 p95 ≤ 26.6 ms），所以差距在 viewer 的实现，而不在平台。
-`app_cpu_ms_p95`（eframe 每帧 CPU）与帧间隔基本一致，说明瓶颈在 CPU 端：
+修复前的瓶颈（CPU 端）：`paint()` 每帧从场景 `Value` 重建全部类/边命令；文字按非整数字号拟合，绕过 egui 的 galley 缓存；
+总览档的 feathered 曲线和圆角矩形细分很贵；Blocks 档仍画全部边；空闲时按 250 ms 轮询节奏重绘。
 
-- `crates/viewer/src/paint.rs` 中的 `paint()` 每帧都要从 EDN 场景 `Value`
-  重建完整的 `commands::commands(...)`（第 343 行）和 `commands::edge_commands(...)`
-  （第 754 行），之后才做视口剔除。这正是 ADR 0008 认定的瓶颈：每帧在 CPU 上
-  重建全部几何。原型是一次性预先计算几何和每条边的包围盒。
-- 空闲 CPU 是同一种开销按 250 ms 轮询节奏触发的结果：`app.rs` 每帧都会调用
-  `request_repaint_after(POLL_INTERVAL)`，所以空闲时每秒重绘约 4 次，每次都要
-  重建完整的命令列表（500 类约 15 ms，2000 类约 63 ms）。
+修复（`crates/viewer/src/render_cache.rs`、`paint.rs`、`watch.rs`、`app.rs`、`bench.rs`）：
 
-这里没有修复。修复需要按场景 revision/选中/悬停缓存命令列表（在 `paint.rs`/`app.rs`），
-而这两个文件属于并行的 #140；我也不在验收工单里重设计 viewer 的渲染路径。
-建议另开工单：缓存命令与边几何（含预先计算的包围盒），只在 revision、选中或悬停
-变化时失效；并且只在 mtime 变化时才重绘，而不是按轮询节奏重绘。修复后用下面的
-命令复测即可。
+- 命令只在场景（revision/focus/extra）、选中或悬停变化时重建；LOD 档或总览缩放的四分之一倍频程台阶变化时只重新简化边折线
+  （距离 8 px 加 0.5 px 弦偏差）。平移和缩放只改变换。
+- 文字按整数像素拟合，排版结果跨帧缓存（图集清空或 DPI 变化时失效）；小于 5 px 的画布文字不画。
+- Frames/Blocks 档的类框、C/M 圆点、边合成一个无 feather 的 mesh；Blocks 不画边（spec #134 渲染）；小于 2 px 的圆角改为直角；
+  缩放 < 0.6 时 Full 档的边也走 mesh。
+- 空闲：后台线程只 stat IR、`.metrics/**` 和 `to-viewer.edn`，戳变化才请求重绘；driver、计时运行和待截图仍保留 250 ms 节奏。
+  bench 的 idle 相位自己安排结束时的唤醒。
+
+仍未通过：500 类的 zoom-detail 和 zoom-fit 略低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
+Full 档 feather 细分）。2000 类全部通过。
 
 ## 复现
 
