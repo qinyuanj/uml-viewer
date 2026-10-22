@@ -184,8 +184,9 @@ class PosixEntries(unittest.TestCase):
         tools = {}
         for tool in ('crapper', 'mutator', 'dryer'):
             tools[tool] = self.tool_fixture(self.root / f'{tool} source', tool)
+        cargo, cargo_calls = self.cargo_stub()
         env = dict(self.env, UML_VIEWER_TOOL_ROOT='', UML_VIEWER_REPO_URL=str(source),
-                   UML_VIEWER_REF='main',
+                   UML_VIEWER_REF='main', UML_CARGO_EXECUTABLE=str(cargo),
                    **{f'{tool.upper()}_REPO_URL': str(path) for tool, path in tools.items()},
                    **{f'{tool.upper()}_REF': 'main' for tool in tools})
         (self.root / '.gitignore').write_text('')
@@ -197,6 +198,14 @@ class PosixEntries(unittest.TestCase):
             self.assertTrue((self.root / 'uml').is_file())
             self.assertEqual(policy, (self.root / 'policy.edn').read_bytes())
         self.assertEqual(1, (self.root / '.gitignore').read_text().count('# BEGIN UML-VIEWER'))
+        # #143: each install ran the pinned release build in the checkout, and
+        # the binary the rust runtime dispatch expects exists afterwards.
+        builds = [line.rsplit('|', 1)[-1] for line in cargo_calls.read_text().splitlines()]
+        self.assertEqual(['build --release --locked'] * 2, builds)
+        self.assertTrue(all('.uml-viewer/uml-viewer' in line
+                            for line in cargo_calls.read_text().splitlines()))
+        binary = self.root / '.uml-viewer/uml-viewer/target/release/uml-viewer'
+        self.assertTrue(binary.is_file() and os.access(binary, os.X_OK))
         for tool in ('crapper', 'mutator', 'dryer'):
             directory = self.root / '.uml-viewer' / tool
             self.assertTrue((directory / '.git').exists(), tool)
@@ -207,6 +216,7 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(0, check.returncode, check.stdout + check.stderr)
         installed = json.loads((self.root / '.uml-viewer/install.json').read_text())
         self.assertEqual('love', 'love' if installed['love'] else 'missing')
+        self.assertEqual(str(binary), installed['rust'])
         self.assertTrue(all(installed['repositories'][name]['commit'] for name in
                             ('uml-viewer', 'crapper', 'mutator', 'dryer')))
 
@@ -665,7 +675,9 @@ class PosixEntries(unittest.TestCase):
                        check=True, capture_output=True)
         tools = {tool: self.tool_fixture(self.root / f'{tool} source', tool)
                  for tool in ('crapper', 'mutator', 'dryer')}
+        cargo, _ = self.cargo_stub()
         base = dict(self.env, UML_VIEWER_TOOL_ROOT='', UML_VIEWER_REPO_URL=str(source),
+                    UML_CARGO_EXECUTABLE=str(cargo),
                     **{f'{tool.upper()}_REPO_URL': str(path) for tool, path in tools.items()})
         for name in ('UML_VIEWER_REF', 'CRAPPER_REF', 'MUTATOR_REF', 'DRYER_REF'):
             base.pop(name, None)
@@ -730,6 +742,117 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('cluacov 1.0.0', result.stderr)
         self.assertIn('Lua 5.4', result.stderr)
+        self.assertFalse((self.root / '.uml-viewer').exists())
+
+    def installer_module(self):
+        import importlib.util
+        specification = importlib.util.spec_from_file_location(
+            'uml_posix', REPO / 'scripts/uml_posix.py')
+        installer = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(installer)
+        return installer
+
+    def cargo_stub(self, version='1.99.1'):
+        """A stand-in cargo: answers --version, records builds, emits a binary."""
+        stub = self.root / 'cargo stub'
+        record = self.root / 'cargo-calls.txt'
+        stub.write_text(
+            '#!/bin/sh\n'
+            f'if [ "$1" = --version ]; then printf "cargo {version} (stub)\\n"; exit 0; fi\n'
+            f'printf "%s|%s\\n" "$(pwd -P)" "$*" >> {str(record)!r}\n'
+            'mkdir -p target/release\n'
+            'printf "#!/bin/sh\\n" > target/release/uml-viewer\n'
+            'chmod +x target/release/uml-viewer\n')
+        stub.chmod(0o755)
+        return stub, record
+
+    def test_installer_preflight_names_a_missing_cargo(self):
+        # #143: the installer preflights the Rust toolchain; a missing cargo
+        # names the fix instead of surfacing an OS error mid-install.
+        installer = self.installer_module()
+        env = dict(os.environ)
+        env.pop('UML_CARGO_EXECUTABLE', None)
+        with unittest.mock.patch.dict(os.environ, env, clear=True), \
+                unittest.mock.patch.object(installer.shutil, 'which', return_value=None):
+            with self.assertRaises(ValueError) as caught:
+                installer.cargo_command()
+        message = str(caught.exception)
+        self.assertIn('cargo', message)
+        self.assertIn('rustup', message)
+
+    def test_installer_preflight_requires_git(self):
+        installer = self.installer_module()
+        with unittest.mock.patch.object(installer.shutil, 'which', return_value=None):
+            with self.assertRaises(ValueError) as caught:
+                installer.git_command()
+        self.assertIn('git', str(caught.exception))
+
+    def test_rust_toolchain_channel_comes_from_the_toolchain_file(self):
+        installer = self.installer_module()
+        checkout = self.root / 'checkout'
+        checkout.mkdir()
+        (checkout / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n')
+        self.assertEqual('1.99.1', installer.rust_channel(checkout))
+        (checkout / 'rust-toolchain.toml').unlink()
+        with self.assertRaises(ValueError) as caught:
+            installer.rust_channel(checkout)
+        self.assertIn('rust-toolchain.toml', str(caught.exception))
+
+    def test_installer_rejects_a_cargo_mismatched_with_the_toolchain_pin(self):
+        installer = self.installer_module()
+        checkout = self.root / 'checkout'
+        checkout.mkdir()
+        (checkout / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n')
+        cargo, _ = self.cargo_stub(version='1.98.0')
+        with self.assertRaises(ValueError) as caught:
+            installer.check_rust_toolchain(str(cargo), checkout)
+        message = str(caught.exception)
+        self.assertIn('1.99.1', message)
+        self.assertIn('1.98.0', message)
+        (checkout / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.98.0"\n')
+        self.assertEqual('1.98.0', installer.check_rust_toolchain(str(cargo), checkout))
+
+    def test_rust_build_runs_the_locked_release_build(self):
+        installer = self.installer_module()
+        checkout = self.root / 'checkout'
+        checkout.mkdir()
+        (checkout / 'rust-toolchain.toml').write_text('[toolchain]\nchannel = "1.99.1"\n')
+        cargo, record = self.cargo_stub()
+        binary = installer.rust_build(str(cargo), checkout)
+        self.assertEqual(['build --release --locked'],
+                         [line.rsplit('|', 1)[-1] for line in record.read_text().splitlines()])
+        self.assertIn(str(checkout), record.read_text())
+        self.assertEqual(checkout / 'target/release/uml-viewer', binary)
+        self.assertTrue(os.access(binary, os.X_OK))
+        # A build that produces no binary is an installer failure, not a pass.
+        quiet = self.root / 'cargo quiet'
+        quiet.write_text('#!/bin/sh\n'
+                         'if [ "$1" = --version ]; then printf "cargo 1.99.1 (stub)\\n"; exit 0; fi\n'
+                         'exit 0\n')
+        quiet.chmod(0o755)
+        (checkout / 'target/release/uml-viewer').unlink()
+        with self.assertRaises(ValueError) as caught:
+            installer.rust_build(str(quiet), checkout)
+        self.assertIn('uml-viewer', str(caught.exception))
+
+    def test_x11_library_absence_is_a_warning_not_a_requirement(self):
+        # #139 chose the Wayland-undecorated window because libxkbcommon-x11
+        # is absent on the delivery host; the installer only warns (#143).
+        installer = self.installer_module()
+        self.assertEqual([], installer.x11_warnings(present=True))
+        warnings = installer.x11_warnings(present=False)
+        self.assertTrue(warnings)
+        self.assertIn('libxkbcommon-x11', warnings[0])
+        self.assertIn('Wayland', warnings[0])
+
+    def test_install_names_a_missing_cargo_before_touching_state(self):
+        entry = str(REPO / 'scripts/get-uml-viewer')
+        env = dict(self.env, UML_CARGO_EXECUTABLE='/missing/cargo')
+        result = subprocess.run([entry, '--install-only'], cwd=self.root, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('cargo', result.stderr)
+        self.assertIn('rustup', result.stderr)
         self.assertFalse((self.root / '.uml-viewer').exists())
 
 class ViewerLaunchEnv(unittest.TestCase):

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import urllib.request
 import zipfile
 
@@ -50,6 +51,91 @@ def love_command():
     return executable
 
 
+def git_command():
+    """The installer fetches every tool repository with a literal `git`."""
+    executable = shutil.which('git')
+    if not executable:
+        raise ValueError('需要 git（安装器用它获取工具仓库）：sudo apt install git。')
+    return executable
+
+
+def cargo_command():
+    """Locate a runnable cargo; the pinned version is checked per checkout."""
+    executable = shutil.which(os.environ.get('UML_CARGO_EXECUTABLE', 'cargo'))
+    if not executable:
+        raise ValueError('需要 Rust 工具链（cargo）：用 rustup 安装（https://rustup.rs），'
+                         '或设置 UML_CARGO_EXECUTABLE。所需版本见工具仓库的 rust-toolchain.toml。')
+    try:
+        result = subprocess.run([executable, '--version'], capture_output=True, text=True)
+    except OSError as error:
+        raise ValueError(f'cargo 不可执行：{executable}（{error}）') from error
+    if result.returncode != 0 or not re.match(r'cargo \d+\.\d+\.\d+', result.stdout):
+        raise ValueError(f'cargo 不可用：{executable} --version 输出 '
+                         f'{(result.stdout or result.stderr).strip()!r}')
+    return executable
+
+
+def rust_channel(tool_root):
+    """The toolchain pin every build must honour (#134): rust-toolchain.toml."""
+    pin = Path(tool_root) / 'rust-toolchain.toml'
+    if not pin.is_file():
+        raise ValueError(f'工具仓库缺少 rust-toolchain.toml：{pin}；安装副本不完整。')
+    channel = tomllib.loads(pin.read_text()).get('toolchain', {}).get('channel')
+    if not channel:
+        raise ValueError(f'{pin} 没有 toolchain.channel；安装副本不完整。')
+    return channel
+
+
+def check_rust_toolchain(cargo, tool_root):
+    """The installed toolchain must match the checkout's pin.
+
+    A rustup shim resolves rust-toolchain.toml per directory, so the probe
+    runs inside the checkout; a plain distro cargo must match on its own.
+    """
+    channel = rust_channel(tool_root)
+    result = subprocess.run([cargo, '--version'], cwd=tool_root,
+                            capture_output=True, text=True)
+    match = re.match(r'cargo (\d+\.\d+\.\d+)', result.stdout or '')
+    if result.returncode != 0 or not match:
+        raise ValueError(f'无法确认 Rust 工具链（rust-toolchain.toml 要求 {channel}）：'
+                         f'{(result.stderr or result.stdout).strip()}')
+    if re.fullmatch(r'\d+\.\d+\.\d+', channel) and match.group(1) != channel:
+        raise ValueError(f'Rust 工具链版本不符：rust-toolchain.toml 要求 {channel}，'
+                         f'实际 {match.group(1)}；rustup toolchain install {channel}。')
+    return channel
+
+
+def rust_build(cargo, tool_root):
+    """Build the single uml-viewer binary the entry dispatch expects (#143)."""
+    check_rust_toolchain(cargo, tool_root)
+    run([cargo, 'build', '--release', '--locked'], cwd=tool_root)
+    binary = Path(tool_root) / 'target/release/uml-viewer'
+    if not (binary.is_file() and os.access(binary, os.X_OK)):
+        raise ValueError(f'cargo build 未产出可执行文件 {binary}')
+    return binary
+
+
+def x11_library_present():
+    """Probe libxkbcommon-x11 without elevating (mirrors the viewer's)."""
+    name = 'libxkbcommon-x11.so.0'
+    if any((Path(directory) / name).exists() for directory in
+           ('/usr/lib/x86_64-linux-gnu', '/usr/lib/aarch64-linux-gnu', '/usr/lib')):
+        return True
+    result = subprocess.run(['ldconfig', '-p'], capture_output=True, text=True)
+    return name in result.stdout
+
+
+def x11_warnings(present=None):
+    """X11 libs are optional: #139 chose the Wayland-undecorated window on the
+    delivery host, so an absent libxkbcommon-x11 is a hint, never a refusal."""
+    if present is None:
+        present = x11_library_present()
+    if present:
+        return []
+    return ['未找到 libxkbcommon-x11.so.0：viewer 将使用 Wayland 无装饰窗口（#139 已实测）；'
+            '需要 X11 标题栏可安装 libxkbcommon-x11-0（sudo apt install libxkbcommon-x11-0）。']
+
+
 # Both implementations coexist until parity (#134); love stays the default.
 RUNTIMES = ('love', 'rust')
 
@@ -78,8 +164,8 @@ def rust_command(tool_root):
     configured = os.environ.get('UML_VIEWER_RUST_EXECUTABLE')
     executable = Path(configured) if configured else Path(tool_root) / 'target/release/uml-viewer'
     if not (executable.is_file() and os.access(executable, os.X_OK)):
-        raise ValueError(f'缺少 Rust 二进制 {executable}；请在 {tool_root} 运行 '
-                         'cargo build --release --locked，或设置 UML_VIEWER_RUST_EXECUTABLE。')
+        raise ValueError(f'缺少 Rust 二进制 {executable}；请运行 get-uml-viewer 构建（或在 {tool_root} '
+                         '运行 cargo build --release --locked），或设置 UML_VIEWER_RUST_EXECUTABLE。')
     return str(executable)
 
 
@@ -311,9 +397,11 @@ def install(args):
     if args not in ([], ['--install-only']):
         raise ValueError('usage: get-uml-viewer [--install-only]')
     host()
+    git_command()
     love = love_command()
     lua_command()
     herdr = select_herdr()
+    cargo = cargo_command()
     root = Path.cwd().resolve()
     state = root / '.uml-viewer'
     state.mkdir(exist_ok=True)
@@ -354,6 +442,12 @@ def install(args):
             packages += ['-e', str(state / 'crapper')]
         run([python, '-I', '-m', 'pip', 'install', '--disable-pip-version-check', *packages])
         run([python, '-I', '-m', 'pip', 'check'])
+    # The Rust build comes last: the checkout must be complete, and a refusal
+    # in any earlier step must not leave a half-built tree behind. `target/`
+    # is gitignored, so a rebuild never reads as a local modification.
+    binary = rust_build(cargo, state / 'uml-viewer')
+    for warning in x11_warnings():
+        print(f'提示：{warning}', file=sys.stderr)
     ignore = root / '.gitignore'
     text = ignore.read_text() if ignore.exists() else ''
     text = re.sub(r'(?ms)^# BEGIN UML-VIEWER\n.*?^# END UML-VIEWER\n?', '', text)
@@ -365,7 +459,7 @@ def install(args):
     shutil.copy2(state / 'uml-viewer/scripts/uml', entry)
     entry.chmod(0o755)
     atomic_write(state / 'install.json', json.dumps({'version': 1, 'projectRoot': str(root),
-                 'love': love, 'herdr': str(herdr), 'repositories': versions}, ensure_ascii=False, indent=2) + '\n')
+                 'love': love, 'rust': str(binary), 'herdr': str(herdr), 'repositories': versions}, ensure_ascii=False, indent=2) + '\n')
     print('已安装 ./uml；使用 ./uml ir 生成 EDN。')
     return 0 if args else command(root, [])
 
