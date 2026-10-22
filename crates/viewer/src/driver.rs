@@ -283,6 +283,32 @@ pub enum Step {
     WaitFile {
         evidence: String,
     },
+    /// Wait until a project file exists and (when given) contains every
+    /// needle: the driver's stand-in for a slow external step (a companion
+    /// helper reaching ready).
+    WaitProject {
+        project: String,
+        contains: Vec<String>,
+    },
+    /// Write the restart session snapshot the viewer would save, without
+    /// quitting (the file the replacement viewer restores).
+    DumpSession {
+        evidence: String,
+    },
+    /// Copy a project file (a mail queue) into the evidence directory.
+    DumpProject {
+        evidence: String,
+        project: String,
+    },
+    /// Wall-clock timers: the companion helper's readiness is asynchronous,
+    /// so a driver needs real elapsed time, not frames.
+    StartTimer {
+        name: String,
+    },
+    WaitTimer {
+        name: String,
+        ms: f64,
+    },
     ReadEvidence {
         evidence: String,
         name: String,
@@ -294,6 +320,10 @@ pub enum Step {
         contains: Vec<String>,
         contains_any: Vec<String>,
         differs_from: Option<String>,
+        same_as: Option<String>,
+        /// Keys compared away by `:same-as` (the schema keeps derived fields
+        /// that a validator adds, e.g. `:proposal`).
+        except: Vec<String>,
         message: String,
     },
     Edit {
@@ -328,6 +358,8 @@ pub enum Step {
     Write {
         evidence: String,
         text: String,
+        /// Write into the project (a mail queue) instead of the evidence dir.
+        project: Option<String>,
     },
     DumpView {
         evidence: String,
@@ -347,6 +379,8 @@ pub enum Step {
     ClickClass {
         id: String,
         double: bool,
+        /// Right-click instead of left (opens the element mail menu).
+        secondary: bool,
     },
     ClickDeclutter,
     AssertFonts {
@@ -395,6 +429,15 @@ pub enum Step {
         check: GuiCheck,
         message: String,
     },
+    /// Wait (wall clock) until a GUI record check passes; fail at the
+    /// deadline. The companion's readiness is asynchronous, so the driver
+    /// cannot count frames for it.
+    WaitGui {
+        path: Vec<Value>,
+        check: GuiCheck,
+        message: String,
+        seconds: f64,
+    },
     OpenSource {
         lang: String,
         file: String,
@@ -435,6 +478,8 @@ pub enum GuiCheck {
     Le(f64),
     Present(bool),
     Contains(String),
+    /// The observed text must not contain this (a failure marker).
+    NotContains(String),
     Count(usize),
 }
 
@@ -479,6 +524,11 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
             Some(Value::String(s)) => s.contains(text.as_str()),
             Some(other) => edn::encode(other).unwrap_or_default().contains(text.as_str()),
             None => false,
+        },
+        GuiCheck::NotContains(text) => match found {
+            Some(Value::String(s)) => !s.contains(text.as_str()),
+            Some(other) => !edn::encode(other).unwrap_or_default().contains(text.as_str()),
+            None => true,
         },
         GuiCheck::Count(n) => matches!(found, Some(Value::Vector(items)) if items.len() == *n),
     };
@@ -707,10 +757,13 @@ fn gui_check(step: &Value) -> Result<GuiCheck, String> {
     if let Some(t) = text(get(step, "contains")) {
         return Ok(GuiCheck::Contains(t));
     }
+    if let Some(t) = text(get(step, "not-contains")) {
+        return Ok(GuiCheck::NotContains(t));
+    }
     if let Some(n) = number(get(step, "count")) {
         return Ok(GuiCheck::Count(n as usize));
     }
-    Err("assert-gui needs :equals, :gt, :ge, :lt, :le, :present, :contains or :count".into())
+    Err("assert-gui needs :equals, :gt, :ge, :lt, :le, :present, :contains, :not-contains or :count".into())
 }
 
 fn parse_step(step: &Value) -> Result<Step, String> {
@@ -724,6 +777,25 @@ fn parse_step(step: &Value) -> Result<Step, String> {
                 .ok_or("wait-frames needs :n")?
                 .max(0.0) as u64,
         ),
+        "wait-project" => Step::WaitProject {
+            project: text(Some(required(step, "project")?)).ok_or("wait-project needs :project")?,
+            contains: strings(get(step, "contains")),
+        },
+        "dump-session" => Step::DumpSession {
+            evidence: evidence_name(step)?,
+        },
+        "dump-project" => Step::DumpProject {
+            evidence: evidence_name(step)?,
+            project: text(Some(required(step, "project")?))
+                .ok_or("dump-project needs :project")?,
+        },
+        "start-timer" => Step::StartTimer {
+            name: text(Some(required(step, "as")?)).ok_or("start-timer needs :as")?,
+        },
+        "wait-timer" => Step::WaitTimer {
+            name: text(Some(required(step, "as")?)).ok_or("wait-timer needs :as")?,
+            ms: number(get(step, "ms")).ok_or("wait-timer needs :ms")?,
+        },
         "wait-file" => Step::WaitFile {
             evidence: evidence_name(step)?,
         },
@@ -737,6 +809,8 @@ fn parse_step(step: &Value) -> Result<Step, String> {
             contains: strings(get(step, "contains")),
             contains_any: strings(get(step, "contains-any")),
             differs_from: text(get(step, "differs-from")),
+            same_as: text(get(step, "same-as")),
+            except: strings(get(step, "except")),
             message: message(step, "driver assertion failed"),
         },
         "edit" => Step::Edit {
@@ -767,6 +841,14 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         "write" => Step::Write {
             evidence: evidence_name(step)?,
             text: text(get(step, "text")).ok_or("write needs :text")?,
+            project: None,
+        },
+        "write-project" => Step::Write {
+            evidence: String::new(),
+            text: text(get(step, "text")).ok_or("write-project needs :text")?,
+            project: Some(
+                text(Some(required(step, "project")?)).ok_or("write-project needs :project")?,
+            ),
         },
         "dump-view" => Step::DumpView {
             evidence: evidence_name(step)?,
@@ -786,6 +868,7 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         "click-class" | "double-click-class" => Step::ClickClass {
             id: text(Some(required(step, "id")?)).ok_or("click-class needs :id")?,
             double: op == "double-click-class",
+            secondary: text(get(step, "button")).as_deref() == Some("secondary"),
         },
         "click-declutter" => Step::ClickDeclutter,
         "assert-fonts" => Step::AssertFonts {
@@ -821,6 +904,15 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         },
         "dump-gui" => Step::DumpGui {
             evidence: evidence_name(step)?,
+        },
+        "wait-gui" => Step::WaitGui {
+            path: match get(step, "path") {
+                Some(Value::Vector(items)) => items.clone(),
+                _ => return Err("wait-gui needs :path [..]".into()),
+            },
+            check: gui_check(step)?,
+            message: message(step, "GUI wait failed"),
+            seconds: number(get(step, "seconds")).unwrap_or(60.0),
         },
         "assert-gui" => Step::AssertGui {
             path: match get(step, "path") {
@@ -867,8 +959,8 @@ pub trait Host {
     fn is_fitted(&self) -> bool;
     /// No scene element under this screen point.
     fn is_blank(&self, x: f64, y: f64) -> bool;
-    /// Click (or double-click) a few points inside a rendered class box.
-    fn click_class(&mut self, id: &str, double: bool) -> Result<(), String>;
+    /// Click (or double-click, or right-click) inside a rendered class box.
+    fn click_class(&mut self, id: &str, double: bool, secondary: bool) -> Result<(), String>;
     /// Click the centre of the declutter control through the input path.
     fn click_declutter(&mut self);
     /// Font source, role sizes and glyph coverage (env-driven expectations).
@@ -919,6 +1011,10 @@ pub trait Host {
         let _ = key;
         None
     }
+    /// The restart session snapshot the viewer would save (`:dump-session`).
+    fn session_record(&self) -> Value {
+        Value::Nil
+    }
 }
 
 fn near_rgb(a: &[u8], b: [u8; 3], tolerance: u8) -> bool {
@@ -965,6 +1061,8 @@ pub struct Runner {
     waiting_since: Option<(usize, u64)>,
     values: HashMap<String, String>,
     records: HashMap<String, ViewRecord>,
+    /// `:start-timer` origins, by name.
+    timers: HashMap<String, std::time::Instant>,
 }
 
 /// Outcome of one frame's worth of driver work.
@@ -1021,6 +1119,42 @@ impl Runner {
                         return Ok(Progress::Running);
                     }
                 }
+                Step::WaitProject {
+                    project: rel,
+                    contains,
+                } => {
+                    let path = project.join(&rel);
+                    let ready = std::fs::read_to_string(&path)
+                        .is_ok_and(|body| contains.iter().all(|needle| body.contains(needle)));
+                    if !ready {
+                        return Ok(Progress::Running);
+                    }
+                }
+                Step::DumpSession { evidence: name } => {
+                    let body = edn::encode(&host.session_record()).map_err(|e| e.to_string())?;
+                    self.write_evidence(evidence, &name, &body)?;
+                }
+                Step::DumpProject {
+                    evidence: name,
+                    project: rel,
+                } => {
+                    let path = project.join(&rel);
+                    let Ok(body) = std::fs::read_to_string(&path) else {
+                        return Ok(Progress::Running);
+                    };
+                    self.write_evidence(evidence, &name, &body)?;
+                }
+                Step::StartTimer { name } => {
+                    self.timers.insert(name, std::time::Instant::now());
+                }
+                Step::WaitTimer { name, ms } => {
+                    let Some(started) = self.timers.get(&name) else {
+                        return Err(format!("wait-timer :{name} has no start-timer"));
+                    };
+                    if started.elapsed().as_secs_f64() * 1000.0 < ms {
+                        return Ok(Progress::Running);
+                    }
+                }
                 Step::ReadEvidence {
                     evidence: name,
                     name: slot,
@@ -1037,6 +1171,8 @@ impl Runner {
                     contains,
                     contains_any,
                     differs_from,
+                    same_as,
+                    except,
                     message,
                 } => {
                     let path = if in_project {
@@ -1065,6 +1201,45 @@ impl Runner {
                         };
                         if other_body == body {
                             return Err(message);
+                        }
+                    }
+                    if let Some(other) = same_as {
+                        let other_path = self
+                            .evidence_path(evidence, &other)
+                            .or_else(|_| Ok::<_, String>(project.join(&other)))?;
+                        let Ok(other_body) = std::fs::read_to_string(&other_path) else {
+                            return Ok(Progress::Running);
+                        };
+                        let strip = |text: &str| -> Option<Value> {
+                            let value = edn::parse(text).ok()?;
+                            let kept: Vec<(Value, Value)> = match value {
+                                Value::Map(entries) => entries
+                                    .into_iter()
+                                    .filter(|(k, _)| {
+                                        !except
+                                            .iter()
+                                            .any(|drop| Value::keyword(drop) == *k)
+                                    })
+                                    .collect(),
+                                other => return Some(other),
+                            };
+                            Some(Value::Map(kept))
+                        };
+                        // EDN equality, not bytes: the two writers order
+                        // maps independently and a validator may add derived
+                        // fields named in `:except`.
+                        match (strip(&body), strip(&other_body)) {
+                            (Some(mine), Some(theirs)) if mine == theirs => {}
+                            _ => {
+                                eprintln!(
+                                    "assert same-as: {} differs from {} ({:?} vs {:?})",
+                                    path.display(),
+                                    other_path.display(),
+                                    strip(&body),
+                                    strip(&other_body)
+                                );
+                                return Err(message);
+                            }
                         }
                     }
                 }
@@ -1125,7 +1300,19 @@ impl Runner {
                 Step::Write {
                     evidence: name,
                     text,
-                } => self.write_evidence(evidence, &name, &text)?,
+                    project: rel,
+                } => match rel {
+                    Some(rel) => {
+                        let path = project.join(&rel);
+                        if let Some(parent) = path.parent() {
+                            std::fs::create_dir_all(parent)
+                                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+                        }
+                        std::fs::write(&path, text)
+                            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+                    }
+                    None => self.write_evidence(evidence, &name, &text)?,
+                },
                 Step::DumpView { evidence: name } => {
                     let record = host.view_record(None);
                     let body = edn::encode(&record.to_edn()).map_err(|e| e.to_string())?;
@@ -1154,8 +1341,12 @@ impl Runner {
                         return Err(message);
                     }
                 }
-                Step::ClickClass { id, double } => {
-                    host.click_class(&id, double)?;
+                Step::ClickClass {
+                    id,
+                    double,
+                    secondary,
+                } => {
+                    host.click_class(&id, double, secondary)?;
                     return Ok(self.yield_after_input());
                 }
                 Step::ClickDeclutter => {
@@ -1208,6 +1399,33 @@ impl Runner {
                     eprintln!("assert-gui {at}: {seen}");
                     message.clone()
                 })?,
+                Step::WaitGui {
+                    path,
+                    check,
+                    message,
+                    seconds,
+                } => {
+                    if check_gui(&host.gui_record(), &path, &check).is_ok() {
+                        // Passed: continue with the next step this frame.
+                    } else {
+                        let key = format!("wait-gui:{}", self.cursor);
+                        let started = *self
+                            .timers
+                            .entry(key.clone())
+                            .or_insert_with(std::time::Instant::now);
+                        if started.elapsed().as_secs_f64() < seconds {
+                            return Ok(Progress::Running);
+                        }
+                        self.timers.remove(&key);
+                        let at =
+                            edn::encode(&Value::Vector(path.clone())).unwrap_or_default();
+                        let seen = check_gui(&host.gui_record(), &path, &check)
+                            .err()
+                            .unwrap_or_default();
+                        eprintln!("wait-gui {at}: {seen}");
+                        return Err(message);
+                    }
+                }
                 Step::OpenSource { lang, file, name } => {
                     host.open_source(&lang, &file, name.as_deref())?;
                     return Ok(self.yield_after_input());

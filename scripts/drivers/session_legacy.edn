@@ -1,0 +1,21 @@
+{:version 1
+ :doc "session 旧格式阶段（#142，原 test_love_dpi_window.lua 的 legacy 阶段）：一个没有窗口
+       字段的旧 session.edn 以兼容的默认值打开（1500x920、检查器 280），视图（zoom 1.25、
+       cam-x 7）照旧保留。fixture 在启动前写入 .uml-viewer/session.edn。"
+ :steps [{:op :wait-frames :n 4}
+         {:op :assert-gui :path [:window :w] :equals 1500
+          :message "a legacy session opens with the default width"}
+         {:op :assert-gui :path [:window :h] :equals 920
+          :message "a legacy session opens with the default height"}
+         {:op :assert-gui :path [:inspector :width] :equals 280
+          :message "a legacy session opens with the default inspector width"}
+         {:op :assert-gui :path [:session :zoom] :equals 1.25
+          :message "a legacy session keeps its saved zoom"}
+         {:op :assert-gui :path [:session :cam-x] :equals 7
+          :message "a legacy session keeps its saved camera"}
+         {:op :assert-gui :path [:session :mail-seen] :equals 4
+          :message "a legacy session keeps its mailbox cursor"}
+         {:op :assert-view :fitted false :message "a legacy view must not re-fit"}
+         {:op :write :evidence "session-legacy-pass.edn"
+          :text "{:phase :legacy :window [1500 920] :inspector 280}\n"}
+         {:op :quit :code 0}]}

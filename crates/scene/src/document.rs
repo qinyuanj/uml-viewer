@@ -74,6 +74,7 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
         if layer.is_some() && mode.as_ref().map(name).as_deref() == Some("classes") {
             mode = Some(Value::keyword("elements"));
         }
+        // Authored ids survive: the viewer selects, clicks and menus by them.
         return compose::compile_diagram(&H::apply_declutter(&view, mode.as_ref()));
     }
     compose::compile_document(&doc)

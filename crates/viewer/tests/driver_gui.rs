@@ -38,7 +38,7 @@ impl Host for GuiHost {
     fn is_blank(&self, _: f64, _: f64) -> bool {
         true
     }
-    fn click_class(&mut self, _: &str, _: bool) -> Result<(), String> {
+    fn click_class(&mut self, _: &str, _: bool, _: bool) -> Result<(), String> {
         Ok(())
     }
     fn click_declutter(&mut self) {}

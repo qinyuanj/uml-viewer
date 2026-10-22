@@ -1,0 +1,9 @@
+{
+  "driver": "review_fixes",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 0vannmq8",
+  "evidence": "acceptance-evidence/142-mail-session-restart/review-fixes",
+  "ok": false,
+  "failure": "clipboard: driver did not publish clipboard-pass.txt",
+  "project_retained": "/tmp/uml love 项目 0vannmq8"
+}

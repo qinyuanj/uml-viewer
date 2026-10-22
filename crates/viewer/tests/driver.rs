@@ -55,7 +55,7 @@ impl viewer::driver::Host for FakeHost {
     fn is_blank(&self, _x: f64, _y: f64) -> bool {
         self.blank
     }
-    fn click_class(&mut self, id: &str, double: bool) -> Result<(), String> {
+    fn click_class(&mut self, id: &str, double: bool, _: bool) -> Result<(), String> {
         if id == "missing" {
             return Err(format!("no class {id} on the scene"));
         }

@@ -1,0 +1,1 @@
+PASS two independent source selections; focused copy SECOND; other widget copy did not overwrite

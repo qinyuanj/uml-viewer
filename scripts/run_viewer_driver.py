@@ -71,7 +71,49 @@ def prepare_search(project):
 
 
 def prepare_review_fixes(project):
+    # Two independent source windows whose selections must not leak into each
+    # other, and a text field elsewhere in the UI that must keep its own copy.
     (project / 'diagram.edn').write_text('{:packages [{:id :p :classes [{:id :a}]}]}')
+    (project / 'first.lua').write_text('local FIRST = 1\nreturn FIRST\n')
+    (project / 'second.lua').write_text('local SECOND = 2\nreturn SECOND\n')
+
+
+SESSION_FIXTURE = (
+    '{:title "Session" :packages [{:id :p :label "P" :classes [{:id :a :name "A"'
+    ' :ns "demo.a" :ops [{:name "work" :text "work()"}]}]}]}')
+
+
+def prepare_session(project):
+    (project / 'diagram.edn').write_text(SESSION_FIXTURE)
+
+
+def prepare_legacy_session(project, evidence):
+    # An older session.edn predating the window fields: the view is restored
+    # and the chrome falls back to its defaults.
+    (project / '.uml-viewer/session.edn').write_text(
+        '{{:path "{}" :mail-seen 4 :focus [] :cam-x 7 :cam-y 0 :zoom 1.25}}'
+        .format(project / 'diagram.edn'))
+
+
+def prepare_love_session(project, evidence):
+    # The exact bytes a real LOVE 11.5 viewer wrote on :quit-for-restart
+    # (acceptance-evidence/142-mail-session-restart/love-session/), with only
+    # the absolute :path substituted for this isolated project.
+    source = REPO / 'acceptance-evidence/142-mail-session-restart/love-session'
+    session = (source / 'session.edn').read_text()
+    diagram = project / 'diagram.edn'
+    session = session.replace('/tmp/uml142 love 项目/diagram.edn', str(diagram))
+    (project / '.uml-viewer/session.edn').write_text(session)
+    shutil.copy2(source / 'diagram.edn', diagram)
+    shutil.copy2(source / 'session.edn', evidence / 'love-session-input.edn')
+
+
+def prepare_companion_worker(project):
+    # A real isolated Herdr companion whose agent process is a harmless
+    # placeholder (the same fixture the POSIX e2e tests use).
+    placeholder = project / 'companion-placeholder'
+    placeholder.write_text('#!/bin/sh\nsleep 300\n')
+    placeholder.chmod(0o755)
 
 
 def prepare_source_jump(project):
@@ -157,6 +199,8 @@ FIXTURES = {
     'font_parity': prepare_font_parity,
     'dpi_window': prepare_dpi_window,
     'mail': prepare_mail,
+    'companion_worker': prepare_companion_worker,
+    'session': prepare_session,
 }
 
 
@@ -219,6 +263,12 @@ def env_review_fixes(project, evidence):
     return {'UML78_EVIDENCE': str(evidence), 'UML78_THROW': '0'}
 
 
+def env_companion_worker(project, evidence):
+    # The companion runs a placeholder agent, never a real Claude session.
+    return {'CLAUDE_BIN': str(project / 'companion-placeholder'),
+            'UML_COMPANION_NO_ATTACH': '1'}
+
+
 def env_dpi(project, evidence, phase='first', tag='run', scale='1'):
     provision_sarasa(project)
     return {'UML_CJK_FONT': '', 'UML_VIEWER_TEST_DPI_SCALE': scale,
@@ -254,6 +304,29 @@ def scenarios_review_fixes(project, evidence):
     return [{'tag': 'clipboard', 'env': env_review_fixes, 'markers': ['clipboard-pass.txt']}]
 
 
+def scenarios_session(project, evidence):
+    # One project, four launches: the Rust viewer saves its session, restores
+    # it, then restores a legacy one and the one a real LOVE viewer wrote.
+    return [
+        {'tag': 'save', 'script': 'session',
+         'markers': ['saved-session.edn', 'session-save-pass.edn']},
+        {'tag': 'restart', 'script': 'session_restore', 'args': ['--restart'],
+         'markers': ['restored-session.edn', 'session-restart-pass.edn']},
+        {'tag': 'legacy', 'script': 'session_legacy', 'args': ['--restart'],
+         'setup': prepare_legacy_session, 'markers': ['session-legacy-pass.edn']},
+        {'tag': 'love', 'script': 'session_love', 'args': ['--restart'],
+         'setup': prepare_love_session,
+         'markers': ['session-love-pass.edn', 'love-session-restored.png']},
+    ]
+
+
+def scenarios_companion_worker(project, evidence):
+    # `--backend herdr`: the viewer starts the isolated companion itself.
+    return [{'tag': 'worker', 'env': env_companion_worker,
+             'args': ['--backend', 'herdr'],
+             'markers': ['worker-ui-pass.txt', 'waiting.png']}]
+
+
 def scenarios_dpi_window(project, evidence):
     # Scale 1 is the deterministic case; other scales need a real display.
     return [{'tag': 'first-1', 'needs_sarasa': True,
@@ -272,6 +345,8 @@ DRIVER_ENV = {
 
 
 SCENARIOS = {
+    'companion_worker': scenarios_companion_worker,
+    'session': scenarios_session,
     'fonts': scenarios_fonts,
     'font_parity': scenarios_font_parity,
     'review_fixes': scenarios_review_fixes,
@@ -300,7 +375,10 @@ DRIVERS = {
     'fonts': {'seconds': 30, 'evidence': []},
     'font_parity': {'seconds': 30, 'evidence': []},
     'dpi_window': {'seconds': 30, 'evidence': []},
-    'companion_worker': {'seconds': 90, 'evidence': ['worker-ui-pass.txt']},
+    'companion_worker': {'seconds': 120, 'evidence': ['worker-ui-pass.txt', 'waiting.png']},
+    'session': {'seconds': 60, 'evidence': ['saved-session.edn', 'session-save-pass.edn',
+                                            'restored-session.edn', 'session-restart-pass.edn',
+                                            'session-legacy-pass.edn', 'session-love-pass.edn']},
 }
 
 
@@ -334,7 +412,8 @@ def rust_executable():
                      '(or set UML_VIEWER_RUST_EXECUTABLE)')
 
 
-def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run', runtime='love'):
+def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run', runtime='love',
+               viewer_args=()):
     """Launch the real viewer once and require success plus its pass marker."""
     xdg = Path(tempfile.mkdtemp(prefix='uml-viewer-xdg-'))
     env = dict(os.environ,
@@ -346,12 +425,12 @@ def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run'
                UML_MAIL_TEST_ROOT=str(project), UML_COMPANION_NO_ATTACH='1')
     env.pop('UML_CIMGUI_DIRECTORY', None)
     if runtime == 'rust':
-        argv = [rust_executable(), 'viewer', *diagram]
+        argv = [rust_executable(), 'viewer', *viewer_args, *diagram]
         # WSLg: without these the viewer falls back to llvmpipe (ADR 0008).
         env.setdefault('GALLIUM_DRIVER', 'd3d12')
         env.setdefault('WGPU_BACKEND', 'gl')
     else:
-        argv = [love_executable(), str(REPO / 'love'), 'viewer', *diagram]
+        argv = [love_executable(), str(REPO / 'love'), 'viewer', *viewer_args, *diagram]
     env.update(extra_env)
     try:
         process = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True,
@@ -361,6 +440,18 @@ def run_viewer(project, evidence, seconds, driver, diagram, extra_env, tag='run'
     (evidence / f'{tag}-stdout.txt').write_text(process.stdout or '')
     (evidence / f'{tag}-stderr.txt').write_text(process.stderr or '')
     return process
+
+
+def release_companion(project, timeout=90):
+    """Wait until the viewer released the companion ownership it created."""
+    record = project / '.uml-viewer/companion.edn'
+    if not record.exists():
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if record.read_text().strip() in ('', '{}'):
+            return
+        time.sleep(0.1)
 
 
 def main():
@@ -417,6 +508,8 @@ def main():
             shutil.rmtree(project / '.uml-viewer/fonts', ignore_errors=True)
             if fixture:
                 fixture(project)
+            if scenario.get('setup'):
+                scenario['setup'](project, evidence)
             if arguments.diagram:
                 diagram = [arguments.diagram]
             elif scenario.get('diagram'):
@@ -435,7 +528,7 @@ def main():
                 scenario_driver = edn_script(scenario['script'])
                 assert scenario_driver, f"{tag}: no EDN script {scenario['script']}"
             process = run_viewer(project, evidence, seconds, scenario_driver, diagram, extra,
-                                 tag=tag, runtime=runtime)
+                                 tag=tag, runtime=runtime, viewer_args=scenario.get('args', []))
             expected = scenario.get('markers', markers)
             for marker in expected:
                 assert (evidence / marker).exists() or (project / marker).exists(), \
@@ -449,6 +542,9 @@ def main():
         result['ok'] = False
         result['failure'] = str(error)
     finally:
+        # A companion stops with the viewer; removing the isolated XDG root
+        # before its session is gone would strand a Herdr server.
+        release_companion(project)
         if (result.get('ok') or result.get('skipped')) and temporary_project:
             shutil.rmtree(project, ignore_errors=True)
         elif not result.get('ok'):

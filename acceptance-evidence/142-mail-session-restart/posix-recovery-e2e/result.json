@@ -1,0 +1,16 @@
+{
+  "evidence": "/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-a975efb87f20d7539/acceptance-evidence/142-mail-session-restart/posix-recovery-e2e",
+  "runtime": "/tmp/uml-rec-xdg-pjhybs8t",
+  "projects": {
+    "neighbour": "/tmp/uml recovery neighbour 项目 i0kq4dvi",
+    "cancel": "/tmp/uml recovery cancel 项目 dnczxbx1"
+  },
+  "ok": false,
+  "failure": "mail after recovery was rejected: ['libEGL warning: failed to get driver name for fd -1', 'libEGL warning: MESA-LOADER: failed to retrieve device information', 'libEGL warning: failed to get driver name for fd -1']",
+  "runtime_retained": "/tmp/uml-rec-xdg-pjhybs8t",
+  "checks": [
+    "neighbour: companion ready: uml-viewer-uml-recovery--ac6e4cfc-17f84e23",
+    "cancel: companion ready: uml-viewer-uml-recovery--760f593d-6a06f7b3",
+    "cancel: recovery 1: scheduled 1.00s after exit (budget 1s), child started 1.73s after, attempts 1, generation 1"
+  ]
+}

@@ -1,0 +1,40 @@
+{:version 1
+ :doc "session driver 第二阶段（#142）：以 --restart 启动同一项目，session.edn（由上一阶段
+       的 Rust viewer 写出）必须恢复窗口尺寸、检查器宽度、视图（缩放/相机，不重新 fit）、
+       选中项、类卡片、讨论上下文与 mailbox 游标；退出前再 dump 一次快照，与上一阶段的
+       saved-session.edn 逐字相同。"
+ :steps [{:op :wait-frames :n 4}
+         {:op :assert-gui :path [:window :w] :equals 1100
+          :message "the saved window width must be restored"}
+         {:op :assert-gui :path [:window :h] :equals 700
+          :message "the saved window height must be restored"}
+         {:op :assert-gui :path [:inspector :width] :equals 340
+          :message "the saved inspector width must be restored"}
+         {:op :assert-gui :path [:session :zoom] :equals 1.7
+          :message "the saved zoom must be restored"}
+         {:op :assert-gui :path [:session :detail-id] :equals :d0-a
+          :message "the saved class card must be restored"}
+         {:op :assert-gui :path [:session :mail-seen] :equals 1
+          :message "the mailbox cursor must be restored"}
+         {:op :assert-view :fitted false :message "a restored view must not re-fit"}
+
+         {:op :dump-session :evidence "restored-session.edn"}
+         {:op :assert :evidence "restored-session.edn" :same-as "saved-session.edn"
+          ;; `:proposal` is a validator-derived field and `:mail-seen` advanced
+          ;; past the restart request itself (asserted explicitly above).
+          :except [:proposal :mail-seen]
+          :message "restart must restore exactly the saved snapshot"}
+
+         {:op :write-project :project ".uml-viewer/to-viewer.edn"
+          :text "{:next-id 3 :queue [{:id 2 :op :context :context :real}]}"}
+         {:op :start-timer :as :mail}
+         {:op :wait-timer :as :mail :ms 900}
+         {:op :wait-frames :n 2}
+         {:op :assert-gui :path [:mail :context] :equals :real
+          :message "mail above the restored cursor must still be consumed"}
+         {:op :assert-gui :path [:mail :seen] :equals 2
+          :message "the cursor must advance past the restored one"}
+         {:op :dump-session :evidence "restored-session-after-mail.edn"}
+         {:op :write :evidence "session-restart-pass.edn"
+          :text "{:phase :restart :restored true}\n"}
+         {:op :quit :code 0}]}

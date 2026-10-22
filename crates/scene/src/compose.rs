@@ -247,8 +247,42 @@ pub fn compile_diagram(diagram: &Value) -> Value {
     scene
 }
 
-/// A multi-diagram document: sections stacked vertically with `d<i>-` id
-/// prefixes, then one merged prepared scene.
+/// Rename a scene's ids with a diagram prefix, so several diagrams can share
+/// one merged scene without id collisions.
+fn prefix_ids(scene: &mut Value, prefix: &str) {
+    let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, geom::name(id)));
+    for key in ["packages", "classes"] {
+        if let Some(Value::Vector(items)) = get(scene, key).cloned() {
+            let mut renamed = Vec::with_capacity(items.len());
+            for mut c in items.into_iter() {
+                if let Some(id) = get(&c, "id").cloned() {
+                    put(&mut c, "id", q(&id));
+                }
+                if let Some(pkg) = get(&c, "package").cloned() {
+                    put(&mut c, "package", q(&pkg));
+                }
+                renamed.push(c);
+            }
+            put(scene, key, Value::Vector(renamed));
+        }
+    }
+    if let Some(Value::Vector(items)) = get(scene, "edges").cloned() {
+        let mut renamed = Vec::with_capacity(items.len());
+        for mut e in items.into_iter() {
+            if let Some(from) = get(&e, "from").cloned() {
+                put(&mut e, "from", q(&from));
+            }
+            if let Some(to) = get(&e, "to").cloned() {
+                put(&mut e, "to", q(&to));
+            }
+            renamed.push(e);
+        }
+        put(scene, "edges", Value::Vector(renamed));
+    }
+}
+
+/// A document compiled as one or more sections, stacked vertically with
+/// `d<i>-` id prefixes so the sections cannot collide.
 pub fn compile_document(doc: &Value) -> Value {
     let (mut sections, mut classes, mut packages, mut edges) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -266,35 +300,7 @@ pub fn compile_document(doc: &Value) -> Value {
             .and_then(geom::num)
             .unwrap();
         let prefix = format!("d{}-", i);
-        let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, geom::name(id)));
-        for key in ["packages", "classes"] {
-            if let Some(Value::Vector(items)) = get(&scene, key).cloned() {
-                let mut renamed = Vec::with_capacity(items.len());
-                for mut c in items.into_iter() {
-                    if let Some(id) = get(&c, "id").cloned() {
-                        put(&mut c, "id", q(&id));
-                    }
-                    if let Some(pkg) = get(&c, "package").cloned() {
-                        put(&mut c, "package", q(&pkg));
-                    }
-                    renamed.push(c);
-                }
-                put(&mut scene, key, Value::Vector(renamed));
-            }
-        }
-        if let Some(Value::Vector(items)) = get(&scene, "edges").cloned() {
-            let mut renamed = Vec::with_capacity(items.len());
-            for mut e in items.into_iter() {
-                if let Some(from) = get(&e, "from").cloned() {
-                    put(&mut e, "from", q(&from));
-                }
-                if let Some(to) = get(&e, "to").cloned() {
-                    put(&mut e, "to", q(&to));
-                }
-                renamed.push(e);
-            }
-            put(&mut scene, "edges", Value::Vector(renamed));
-        }
+        prefix_ids(&mut scene, &prefix);
         translate(&mut scene, 40.0, y + 40.0);
         put(
             &mut scene,

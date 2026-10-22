@@ -1,0 +1,9 @@
+{
+  "driver": "companion_worker",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 rodu_3_q",
+  "evidence": "acceptance-evidence/142-mail-session-restart/companion-worker",
+  "ok": false,
+  "failure": "worker: driver did not publish worker-ui-pass.txt",
+  "project_retained": "/tmp/uml love 项目 rodu_3_q"
+}

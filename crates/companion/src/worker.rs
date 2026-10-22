@@ -109,6 +109,22 @@ pub fn command(worker: &mut Worker, operation: &str, keep: bool) -> Result<()> {
     })
 }
 
+/// Ask the helper to wake its pane for one mail delivery. The id is the
+/// delivery token the wake contract acknowledges (contract §5); it must not
+/// be the `:keep` shape of `stop`.
+pub fn wake(worker: &mut Worker, id: i64) -> Result<()> {
+    worker.sequence += 1;
+    let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
+    write(
+        Path::new(&path),
+        &record::map(vec![
+            ("token", Value::String(worker.token.clone())),
+            ("operation", Value::keyword("wake")),
+            ("extra", record::map(vec![("id", Value::Integer(id))])),
+        ]),
+    )
+}
+
 /// The same command, through an injected writer (the poll path uses the
 /// host so tests and the viewer share one boundary).
 fn command_with(

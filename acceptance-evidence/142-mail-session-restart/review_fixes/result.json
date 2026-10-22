@@ -1,0 +1,7 @@
+{
+  "driver": "review_fixes",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 kzrtj5_6",
+  "evidence": "/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-a975efb87f20d7539/acceptance-evidence/142-mail-session-restart/review_fixes",
+  "ok": true
+}

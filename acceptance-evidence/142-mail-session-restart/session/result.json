@@ -1,0 +1,7 @@
+{
+  "driver": "session",
+  "runtime": "rust",
+  "project": "/tmp/uml love 项目 1zejugt0",
+  "evidence": "/home/lzx/dev/github/uml-viewer/.claude/worktrees/agent-a975efb87f20d7539/acceptance-evidence/142-mail-session-restart/session",
+  "ok": true
+}

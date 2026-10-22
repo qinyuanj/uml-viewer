@@ -1,0 +1,1 @@
+{:title "LOVE 会话" :hierarchical true :prefix "demo" :classes [{:id :a :name "中文类" :ns "demo.a" :ops [{:name "work" :text "work()"}]} {:id :b :name "Beta" :ns "demo.b" :fields ["count"]}] :edges [{:from :a :to :b :kind :dependency}] :proposals [{:id :plan :name "中文方案" :layers []}]}
