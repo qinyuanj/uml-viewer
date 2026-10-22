@@ -12,7 +12,7 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 | 缺依赖时给出明确提示 | 通过 | `scripts/test_posix_entries.py`：缺 cargo（提示 rustup / `UML_CARGO_EXECUTABLE`，且不创建 `.uml-viewer/`）、缺 git、cargo 版本与 `rust-toolchain.toml` 不符（同时列出要求版本与实际版本）、构建未产出二进制；缺 libxkbcommon-x11 只警告不拒绝（#139 选定 Wayland 无装饰） |
 | 重复安装幂等 | 通过 | `test_reinstall_is_idempotent_and_provisions_all_three_tools`：两次安装都成功；policy（含 `:proposals`）字节不变；每次都在 `.uml-viewer/uml-viewer` 中执行 `build --release --locked`；`install.json` 的 `rust` 指向 `target/release/uml-viewer`。已有 ownership/recovery 记录时拒绝（`test_install_refuses_existing_ownership`），脏工具副本仍被保留（`test_installer_preserves_dirty_tool_checkout`） |
 | 2000 类平移/缩放 p95 ≤ 33.3 ms | 通过（修复后） | `rust-2000-d3d12/summary.txt`：p95 为 17.59 / 17.91 / 17.59 / 29.85 ms，`verdict=PASS`，`run_rust.sh` 退出 0 |
-| 500 类稳定 60 fps | **未通过（差边缘）** | `rust-500-d3d12/summary.txt`：fps 为 59.12 / 57.86 / 59.32 / 57.05；pan-detail、pan-fit 通过，zoom-detail（57.86 fps，p95 18.10 ms）和 zoom-fit（57.05 fps，p95 19.05 ms）略低于 58 fps / 18.3 ms 门槛 |
+| 500 类稳定 60 fps | **接受（实测 52.98–59.05 fps，见「验收决定」）** | `bench/run_rust.sh` 的 58 fps 判据仍退出 1；维护者 2026-10-22 判定达标 |
 | 空闲 CPU 近零（≤ 2%） | 通过（修复后） | 500：0.40%；2000：0.40% |
 | 大图首帧不崩溃 | 通过 | 2000 类完整跑完 warmup 与五个相位，stderr 中没有 panic；`rust-2000-d3d12/render.png` 是第 4 帧截图 |
 | 测量结果与结论写入验收证据 | 通过 | 本文件与两个结果目录 |
@@ -104,8 +104,21 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 2000 pan-detail 58.09 / zoom-detail 55.95 / pan-fit 58.96 / zoom-fit 46.74 fps。
 即侧栏修复进入 integration 后，渲染路径回到门槛附近；#141 必须先合并。
 
-仍未通过：500 类的 zoom-detail 和 zoom-fit 略低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
+500 类的 zoom-detail 和 zoom-fit 实测低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
 Full 档 feather 细分）。2000 类全部通过。
+
+## 验收决定（2026-10-22）
+
+维护者决定接受当前结果，判定 #143 性能门槛达标。依据是最终树上实测（开测负载 2.61）：
+
+- 500 类 fps 57.87 / 52.98 / 59.05 / 55.73，中档 zoom p95 27–29 ms，中位数 16.8 ms；
+- 2000 类 p95 17.59 / 17.91 / 17.59 / 29.85 ms（`verdict=PASS`）；
+- 两档空闲 CPU 0.40%。
+
+说明：这个判定是**明确的产品决定**，不是把测量值改写成达标。`run_rust.sh` 内嵌的
+58 fps / 18.3 ms 判据没有改，500 类场景运行时它仍退出 1；未被负载污染的 2000 类结果仍为
+`verdict=PASS`。剩余差距集中在 mid-LOD zoom 的尖峰（每步重抽稀边、首次文字排版），
+若要消除应单独立项。
 
 ## 复现
 
