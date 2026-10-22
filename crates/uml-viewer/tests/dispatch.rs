@@ -19,7 +19,6 @@ fn stderr(output: &Output) -> String {
 fn every_role_from_the_spec_is_a_subcommand() {
     for role in [
         "viewer",
-        "ir",
         "companion-worker",
         "companion-runner",
         "companion-controller",
@@ -38,6 +37,17 @@ fn every_role_from_the_spec_is_a_subcommand() {
             stderr(&output)
         );
     }
+}
+
+#[test]
+fn ir_is_ported_and_reports_bad_arguments_on_stderr() {
+    // #136: the ir role runs headless; an unknown option is a usage failure
+    // (exit 1) naming the option, not EX_UNAVAILABLE.
+    let output = run(&["ir", "--bogus"]);
+    assert_eq!(Some(1), output.status.code());
+    let err = stderr(&output);
+    assert!(err.contains("IR generation failed"), "{err}");
+    assert!(err.contains("--bogus"), "{err}");
 }
 
 #[test]

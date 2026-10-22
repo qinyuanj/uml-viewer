@@ -17,7 +17,7 @@ const ROLES: &[(&str, &str, Entry)] = &[
     (
         "ir",
         "generate IR from a policy and source tree, headless",
-        unported,
+        |_, args| ir::run(args),
     ),
     (
         "scene",

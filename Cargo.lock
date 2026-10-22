@@ -7,6 +7,13 @@ name = "edn"
 version = "0.1.0"
 
 [[package]]
+name = "ir"
+version = "0.1.0"
+dependencies = [
+ "edn",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -25,5 +32,6 @@ name = "uml-viewer"
 version = "0.1.0"
 dependencies = [
  "edn",
+ "ir",
  "scene",
 ]
