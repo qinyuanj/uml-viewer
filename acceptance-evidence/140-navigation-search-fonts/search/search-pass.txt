@@ -1,0 +1,1 @@
+PASS Ctrl+F, Chinese text and paste, same-name results, input capture, explicit Down selection, Enter cross-layer locate

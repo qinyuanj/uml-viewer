@@ -832,6 +832,32 @@ pub fn paint(
                     );
                 }
             }
+            Command::Declutter { rect, text: label } => {
+                let r = ERect::from_min_size(
+                    Pos2::new(screen.min.x + rect.x as f32, screen.min.y + rect.y as f32),
+                    egui::vec2(rect.w as f32, rect.h as f32),
+                );
+                painter.rect_filled(r, 4.0, theme::PANEL.color32());
+                painter.rect_stroke(
+                    r,
+                    4.0,
+                    stroke_of(theme::LINE.color32(), 1.0),
+                    StrokeKind::Inside,
+                );
+                draw_text(
+                    ctx,
+                    painter,
+                    r.center().x,
+                    r.min.y + 5.0,
+                    &label,
+                    16.0,
+                    theme::INK.color32(),
+                    false,
+                    false,
+                    true,
+                    Some(r.width() - 8.0),
+                );
+            }
             _ => {}
         }
     }

@@ -237,7 +237,8 @@ def scenarios_fonts(project, evidence):
 def scenarios_font_parity(project, evidence):
     return [
         {'tag': 'baseline', 'needs_sarasa': True, 'env': env_font_parity_baseline,
-         'diagram': str(REPO / 'examples/uml-viewer.edn')},
+         'diagram': str(REPO / 'examples/uml-viewer.edn'),
+         'script': 'font_parity_baseline'},
         {'tag': 'chinese', 'needs_sarasa': True, 'env': env_font_parity},
     ]
 
@@ -420,7 +421,13 @@ def main():
                     else DRIVER_ENV.get(arguments.driver, lambda p, e: {})(project, evidence)
             except AssertionError as error:
                 raise DriverSkipped(str(error))
-            process = run_viewer(project, evidence, seconds, driver, diagram, extra,
+            # The LOVE driver branches on its environment; an EDN script stays
+            # declarative, so a scenario may name its own script instead.
+            scenario_driver = driver
+            if runtime == 'rust' and scenario.get('script'):
+                scenario_driver = edn_script(scenario['script'])
+                assert scenario_driver, f"{tag}: no EDN script {scenario['script']}"
+            process = run_viewer(project, evidence, seconds, scenario_driver, diagram, extra,
                                  tag=tag, runtime=runtime)
             expected = scenario.get('markers', markers)
             for marker in expected:

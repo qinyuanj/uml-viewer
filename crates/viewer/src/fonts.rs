@@ -47,9 +47,12 @@ pub fn resolve(root: &Path) -> Option<(PathBuf, &'static str)> {
 }
 
 /// Install the resolved font into egui as a fallback for proportional and
-/// monospace text. Returns the chosen path so the viewer can report it.
-pub fn install(ctx: &egui::Context, root: &Path) -> Option<PathBuf> {
-    let (path, _source) = resolve(root)?;
+/// monospace text. Glyphs rasterise into the atlas on demand, at the size
+/// and pixels-per-point they are drawn with, so CJK text needs no prebuilt
+/// atlas. Returns the chosen path and its source (`env`, `sarasa`,
+/// `system`) so the viewer can report it.
+pub fn install(ctx: &egui::Context, root: &Path) -> Option<(PathBuf, &'static str)> {
+    let (path, source) = resolve(root)?;
     let bytes = std::fs::read(&path).ok()?;
     let mut font = egui::FontData::from_owned(bytes);
     // .ttc collections: face 2 is Simplified Chinese in the Ubuntu Noto
@@ -69,5 +72,5 @@ pub fn install(ctx: &egui::Context, root: &Path) -> Option<PathBuf> {
             .push("uml_cjk".into());
     }
     ctx.set_fonts(fonts);
-    Some(path)
+    Some((path, source))
 }

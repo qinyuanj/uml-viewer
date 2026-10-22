@@ -1,0 +1,1 @@
+Detail missing=true band=red continuousGrade=1 stroke=222,136,77

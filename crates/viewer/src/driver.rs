@@ -1,6 +1,6 @@
-//! Declarative EDN driver scripts (Seam B, #139): the viewer replays input
-//! events and file/evidence assertions from a step list so the behavioural
-//! drivers stay declarative and runtime-independent.
+//! Declarative EDN driver scripts (Seam B, #139/#140): the viewer replays
+//! input events and file/evidence assertions from a step list so the
+//! behavioural drivers stay declarative and runtime-independent.
 //!
 //! ```text
 //! {:version 1
@@ -16,9 +16,19 @@
 //!          {:op :quit :code 0}]}
 //! ```
 //!
-//! The runner is window-free: a `Host` supplies the event injection, the
-//! glyph probe and the quit; file checks run here. The app calls [`Runner::run`]
-//! once per frame.
+//! Pacing: `:wait-frames` counts from the frame the step is reached, and the
+//! runner yields after every input step, so the next step observes the state
+//! the viewer produced from that input (the Lua drivers' one-action-per-frame
+//! rhythm).
+//!
+//! Navigation assertions (#140) are relational, as in the Lua drivers:
+//! `:record-view` stores a [`ViewRecord`] under a name and `:assert-view`
+//! compares the current record against it (zoom step, pan by a screen delta
+//! at the recorded zoom, cursor anchor fixed, unchanged fields).
+//!
+//! The runner is window-free: a `Host` supplies the view records, event
+//! injection, glyph/text probes and the quit; file checks run here. The app
+//! calls [`Runner::run`] once per frame.
 
 use edn::Value;
 use std::collections::HashMap;
@@ -37,6 +47,10 @@ pub enum Input {
         x: f64,
         y: f64,
     },
+    MouseMove {
+        x: f64,
+        y: f64,
+    },
     Drag {
         from: [f64; 2],
         to: [f64; 2],
@@ -44,13 +58,223 @@ pub enum Input {
     Wheel {
         dx: f64,
         dy: f64,
+        ctrl: bool,
+        shift: bool,
     },
     Key {
         key: String,
         ctrl: bool,
         shift: bool,
     },
+    /// Committed text (the textinput / IME-commit path).
     Text(String),
+    /// Clipboard paste into the focused text field.
+    Paste(String),
+}
+
+/// The search box as the driver observes it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SearchRecord {
+    pub active: bool,
+    pub query: String,
+    /// Result ids (keyword names), in display order.
+    pub results: Vec<String>,
+    pub selection: Option<String>,
+}
+
+/// A snapshot of the navigation state. Ids are keyword names.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewRecord {
+    pub focus: Vec<String>,
+    pub zoom: f64,
+    pub cam_x: f64,
+    pub cam_y: f64,
+    pub selected: Option<String>,
+    pub detail: Option<String>,
+    pub declutter: String,
+    pub dragging: bool,
+    /// World point under the requested screen anchor, when one was given.
+    pub anchor: Option<(f64, f64)>,
+    pub search: SearchRecord,
+}
+
+impl Default for ViewRecord {
+    fn default() -> ViewRecord {
+        ViewRecord {
+            focus: Vec::new(),
+            zoom: 1.0,
+            cam_x: 0.0,
+            cam_y: 0.0,
+            selected: None,
+            detail: None,
+            declutter: "full".into(),
+            dragging: false,
+            anchor: None,
+            search: SearchRecord::default(),
+        }
+    }
+}
+
+fn keyword_or_nil(id: &Option<String>) -> Value {
+    id.as_deref().map_or(Value::Nil, Value::keyword)
+}
+
+impl ViewRecord {
+    /// The `navigation-*.edn` evidence shape: `{:focus :zoom :cam-x :cam-y
+    /// :selected ...}` plus the declutter mode and the search box.
+    pub fn to_edn(&self) -> Value {
+        let keywords =
+            |items: &[String]| Value::Vector(items.iter().map(|s| Value::keyword(s)).collect());
+        Value::Map(vec![
+            (Value::keyword("focus"), keywords(&self.focus)),
+            (Value::keyword("zoom"), Value::Float(self.zoom)),
+            (Value::keyword("cam-x"), Value::Float(self.cam_x)),
+            (Value::keyword("cam-y"), Value::Float(self.cam_y)),
+            (Value::keyword("selected"), keyword_or_nil(&self.selected)),
+            (Value::keyword("detail"), keyword_or_nil(&self.detail)),
+            (Value::keyword("declutter"), Value::keyword(&self.declutter)),
+            (Value::keyword("dragging"), Value::Bool(self.dragging)),
+            (
+                Value::keyword("search"),
+                Value::Map(vec![
+                    (Value::keyword("active"), Value::Bool(self.search.active)),
+                    (
+                        Value::keyword("query"),
+                        Value::String(self.search.query.clone()),
+                    ),
+                    (Value::keyword("results"), keywords(&self.search.results)),
+                    (
+                        Value::keyword("selection"),
+                        keyword_or_nil(&self.search.selection),
+                    ),
+                ]),
+            ),
+        ])
+    }
+}
+
+/// Checks of one `:assert-view` step; every present check must hold.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ViewChecks {
+    pub focus: Option<Vec<String>>,
+    pub selected: Option<String>,
+    pub detail: Option<String>,
+    pub declutter: Option<String>,
+    pub dragging: Option<bool>,
+    /// The view equals a fresh fit of the usable canvas (host-side).
+    pub fitted: Option<bool>,
+    /// `[:name factor]`: zoom == clamp(recorded zoom × factor, 0.1, 10).
+    pub zoom_times: Option<(String, f64)>,
+    pub zoom_unchanged: Option<String>,
+    pub cam_unchanged: Option<String>,
+    pub focus_unchanged: Option<String>,
+    pub selected_unchanged: Option<String>,
+    /// `[[dx dy] :name]`: cam == recorded cam + (dx, dy) / recorded zoom.
+    pub cam_shift: Option<([f64; 2], String)>,
+    pub cam_y_not_below: Option<String>,
+    /// Screen point whose world position `:anchor-fixed` compares.
+    pub anchor: Option<[f64; 2]>,
+    pub anchor_fixed: Option<String>,
+}
+
+const EPSILON: f64 = 1e-6;
+
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < EPSILON
+}
+
+fn zoom_of(z: f64) -> f64 {
+    if z == 0.0 { 1.0 } else { z }
+}
+
+/// Compare the current record with the checks and the named records.
+pub fn check_view(
+    current: &ViewRecord,
+    records: &HashMap<String, ViewRecord>,
+    checks: &ViewChecks,
+) -> Result<(), String> {
+    let named = |name: &str| {
+        records
+            .get(name)
+            .ok_or_else(|| format!("no recorded view named :{name}"))
+    };
+    let fail = |what: &str| Err(what.to_string());
+    if let Some(focus) = &checks.focus
+        && &current.focus != focus
+    {
+        return fail("focus");
+    }
+    if let Some(id) = &checks.selected
+        && current.selected.as_deref() != Some(id.as_str())
+    {
+        return fail("selected");
+    }
+    if let Some(id) = &checks.detail
+        && current.detail.as_deref() != Some(id.as_str())
+    {
+        return fail("detail");
+    }
+    if let Some(mode) = &checks.declutter
+        && &current.declutter != mode
+    {
+        return fail("declutter");
+    }
+    if let Some(dragging) = checks.dragging
+        && current.dragging != dragging
+    {
+        return fail("dragging");
+    }
+    if let Some((name, factor)) = &checks.zoom_times {
+        let before = named(name)?;
+        let expected = (zoom_of(before.zoom) * factor).clamp(0.1, 10.0);
+        if !near(current.zoom, expected) {
+            return fail("zoom-times");
+        }
+    }
+    if let Some(name) = &checks.zoom_unchanged
+        && current.zoom != named(name)?.zoom
+    {
+        return fail("zoom-unchanged");
+    }
+    if let Some(name) = &checks.cam_unchanged {
+        let before = named(name)?;
+        if current.cam_x != before.cam_x || current.cam_y != before.cam_y {
+            return fail("cam-unchanged");
+        }
+    }
+    if let Some(name) = &checks.focus_unchanged
+        && current.focus != named(name)?.focus
+    {
+        return fail("focus-unchanged");
+    }
+    if let Some(name) = &checks.selected_unchanged
+        && current.selected != named(name)?.selected
+    {
+        return fail("selected-unchanged");
+    }
+    if let Some(([dx, dy], name)) = &checks.cam_shift {
+        let before = named(name)?;
+        let z = zoom_of(before.zoom);
+        if !near(current.cam_x, before.cam_x + dx / z)
+            || !near(current.cam_y, before.cam_y + dy / z)
+        {
+            return fail("cam-shift");
+        }
+    }
+    if let Some(name) = &checks.cam_y_not_below
+        && current.cam_y < named(name)?.cam_y - 1e-9
+    {
+        return fail("cam-y-not-below");
+    }
+    if let Some(name) = &checks.anchor_fixed {
+        let before = named(name)?;
+        match (before.anchor, current.anchor) {
+            (Some((bx, by)), Some((ax, ay))) if near(ax, bx) && near(ay, by) => {}
+            (Some(_), Some(_)) => return fail("anchor-fixed"),
+            _ => return fail("anchor-fixed needs :anchor on both records"),
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,6 +327,42 @@ pub enum Step {
         evidence: String,
         text: String,
     },
+    DumpView {
+        evidence: String,
+    },
+    RecordView {
+        name: String,
+        anchor: Option<[f64; 2]>,
+    },
+    AssertView {
+        checks: Box<ViewChecks>,
+        message: String,
+    },
+    AssertBlank {
+        at: [f64; 2],
+        message: String,
+    },
+    ClickClass {
+        id: String,
+        double: bool,
+    },
+    ClickDeclutter,
+    AssertFonts {
+        message: String,
+    },
+    AssertTextFits {
+        message: String,
+    },
+    DumpDisplay {
+        evidence: String,
+    },
+    DumpQuality {
+        evidence: String,
+        id: String,
+    },
+    ResizeWindow {
+        size: [f64; 2],
+    },
     Quit(u8),
 }
 
@@ -135,6 +395,13 @@ fn number(v: Option<&Value>) -> Option<f64> {
 
 fn flag(v: Option<&Value>) -> bool {
     matches!(v, Some(Value::Bool(true)))
+}
+
+fn boolean(v: Option<&Value>) -> Option<bool> {
+    match v? {
+        Value::Bool(b) => Some(*b),
+        _ => None,
+    }
 }
 
 fn strings(v: Option<&Value>) -> Vec<String> {
@@ -188,6 +455,10 @@ fn evidence_name(step: &Value) -> Result<String, String> {
     text(get(step, "evidence")).ok_or_else(|| "driver step needs :evidence".into())
 }
 
+fn message(step: &Value, default: &str) -> String {
+    text(get(step, "message")).unwrap_or_else(|| default.into())
+}
+
 fn input_of(step: &Value, op: &str) -> Result<Input, String> {
     let at = pair(get(step, "at"));
     let union = |name: &str| -> Result<[f64; 2], String> {
@@ -202,6 +473,10 @@ fn input_of(step: &Value, op: &str) -> Result<Input, String> {
             let p = at.ok_or("double-click needs :at [x y]")?;
             Input::DoubleClick { x: p[0], y: p[1] }
         }
+        "mouse-move" => {
+            let p = at.ok_or("mouse-move needs :at [x y]")?;
+            Input::MouseMove { x: p[0], y: p[1] }
+        }
         "drag" => Input::Drag {
             from: union("from")?,
             to: union("to")?,
@@ -209,6 +484,8 @@ fn input_of(step: &Value, op: &str) -> Result<Input, String> {
         "wheel" => Input::Wheel {
             dx: number(get(step, "dx")).unwrap_or(0.0),
             dy: number(get(step, "dy")).unwrap_or(0.0),
+            ctrl: flag(get(step, "ctrl")),
+            shift: flag(get(step, "shift")),
         },
         "key" => Input::Key {
             key: text(get(step, "key")).ok_or("key needs :key")?,
@@ -216,14 +493,59 @@ fn input_of(step: &Value, op: &str) -> Result<Input, String> {
             shift: flag(get(step, "shift")),
         },
         "text" => Input::Text(text(get(step, "text")).ok_or("text needs :text")?),
+        "paste" => Input::Paste(text(get(step, "text")).ok_or("paste needs :text")?),
         other => return Err(format!("unknown driver op :{other}")),
+    })
+}
+
+/// `[:name factor]`
+fn named_factor(v: Option<&Value>) -> Result<Option<(String, f64)>, String> {
+    match v {
+        None => Ok(None),
+        Some(Value::Vector(items)) if items.len() == 2 => Ok(Some((
+            text(items.first()).ok_or(":zoom-times needs [:name factor]")?,
+            number(items.get(1)).ok_or(":zoom-times needs [:name factor]")?,
+        ))),
+        Some(_) => Err(":zoom-times needs [:name factor]".into()),
+    }
+}
+
+/// `[[dx dy] :name]`
+fn named_shift(v: Option<&Value>) -> Result<Option<([f64; 2], String)>, String> {
+    match v {
+        None => Ok(None),
+        Some(Value::Vector(items)) if items.len() == 2 => Ok(Some((
+            pair(items.first()).ok_or(":cam-shift needs [[dx dy] :name]")?,
+            text(items.get(1)).ok_or(":cam-shift needs [[dx dy] :name]")?,
+        ))),
+        Some(_) => Err(":cam-shift needs [[dx dy] :name]".into()),
+    }
+}
+
+fn view_checks(step: &Value) -> Result<ViewChecks, String> {
+    Ok(ViewChecks {
+        focus: get(step, "focus").map(|f| strings(Some(f))),
+        selected: text(get(step, "selected")),
+        detail: text(get(step, "detail")),
+        declutter: text(get(step, "declutter")),
+        dragging: boolean(get(step, "dragging")),
+        fitted: boolean(get(step, "fitted")),
+        zoom_times: named_factor(get(step, "zoom-times"))?,
+        zoom_unchanged: text(get(step, "zoom-unchanged")),
+        cam_unchanged: text(get(step, "cam-unchanged")),
+        focus_unchanged: text(get(step, "focus-unchanged")),
+        selected_unchanged: text(get(step, "selected-unchanged")),
+        cam_shift: named_shift(get(step, "cam-shift"))?,
+        cam_y_not_below: text(get(step, "cam-y-not-below")),
+        anchor: pair(get(step, "anchor")),
+        anchor_fixed: text(get(step, "anchor-fixed")),
     })
 }
 
 fn parse_step(step: &Value) -> Result<Step, String> {
     let op = text(get(step, "op")).ok_or("driver step needs :op")?;
     Ok(match op.as_str() {
-        "click" | "double-click" | "drag" | "wheel" | "key" | "text" => {
+        "click" | "double-click" | "mouse-move" | "drag" | "wheel" | "key" | "text" | "paste" => {
             Step::Input(input_of(step, &op)?)
         }
         "wait-frames" => Step::WaitFrames(
@@ -243,7 +565,7 @@ fn parse_step(step: &Value) -> Result<Step, String> {
             contains: strings(get(step, "contains")),
             contains_any: strings(get(step, "contains-any")),
             differs_from: text(get(step, "differs-from")),
-            message: text(get(step, "message")).unwrap_or_else(|| "driver assertion failed".into()),
+            message: message(step, "driver assertion failed"),
         },
         "edit" => Step::Edit {
             project: text(Some(required(step, "project")?)).ok_or("edit needs :project")?,
@@ -258,12 +580,10 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         "assert-mtime" => Step::AssertMtime {
             project: text(Some(required(step, "project")?)).ok_or("assert-mtime needs :project")?,
             name: text(Some(required(step, "same-as")?)).ok_or("assert-mtime needs :same-as")?,
-            message: text(get(step, "message"))
-                .unwrap_or_else(|| "file mtime changed unexpectedly".into()),
+            message: message(step, "file mtime changed unexpectedly"),
         },
         "assert-italic-glyphs" => Step::AssertItalicGlyphs {
-            message: text(get(step, "message"))
-                .unwrap_or_else(|| "italic names must slant real glyphs".into()),
+            message: message(step, "italic names must slant real glyphs"),
         },
         "view" => Step::View {
             zoom: number(get(step, "zoom")),
@@ -275,6 +595,42 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         "write" => Step::Write {
             evidence: evidence_name(step)?,
             text: text(get(step, "text")).ok_or("write needs :text")?,
+        },
+        "dump-view" => Step::DumpView {
+            evidence: evidence_name(step)?,
+        },
+        "record-view" => Step::RecordView {
+            name: text(Some(required(step, "as")?)).ok_or("record-view needs :as")?,
+            anchor: pair(get(step, "anchor")),
+        },
+        "assert-view" => Step::AssertView {
+            checks: Box::new(view_checks(step)?),
+            message: message(step, "view assertion failed"),
+        },
+        "assert-blank" => Step::AssertBlank {
+            at: pair(get(step, "at")).ok_or("assert-blank needs :at [x y]")?,
+            message: message(step, "the point is not blank canvas"),
+        },
+        "click-class" | "double-click-class" => Step::ClickClass {
+            id: text(Some(required(step, "id")?)).ok_or("click-class needs :id")?,
+            double: op == "double-click-class",
+        },
+        "click-declutter" => Step::ClickDeclutter,
+        "assert-fonts" => Step::AssertFonts {
+            message: message(step, "font lookup or glyph coverage failed"),
+        },
+        "assert-text-fits" => Step::AssertTextFits {
+            message: message(step, "canvas text exceeds its slot"),
+        },
+        "dump-display" => Step::DumpDisplay {
+            evidence: evidence_name(step)?,
+        },
+        "dump-quality" => Step::DumpQuality {
+            evidence: evidence_name(step)?,
+            id: text(Some(required(step, "id")?)).ok_or("dump-quality needs :id")?,
+        },
+        "resize-window" => Step::ResizeWindow {
+            size: pair(get(step, "size")).ok_or("resize-window needs :size [w h]")?,
         },
         "quit" => Step::Quit(number(get(step, "code")).unwrap_or(0.0).max(0.0) as u8),
         other => return Err(format!("unknown driver op :{other}")),
@@ -290,15 +646,36 @@ pub trait Host {
     fn screenshot(&mut self, evidence: &str) -> bool;
     fn set_view(&mut self, zoom: Option<f64>, center: Option<[f64; 2]>);
     fn quit(&mut self, code: u8);
+    /// The current navigation/search state; `anchor` is a screen point whose
+    /// world position the record carries.
+    fn view_record(&mut self, anchor: Option<[f64; 2]>) -> ViewRecord;
+    /// Does the view equal a fresh fit of the usable canvas?
+    fn is_fitted(&self) -> bool;
+    /// No scene element under this screen point.
+    fn is_blank(&self, x: f64, y: f64) -> bool;
+    /// Click (or double-click) a few points inside a rendered class box.
+    fn click_class(&mut self, id: &str, double: bool) -> Result<(), String>;
+    /// Click the centre of the declutter control through the input path.
+    fn click_declutter(&mut self);
+    /// Font source, role sizes and glyph coverage (env-driven expectations).
+    fn assert_fonts(&mut self) -> Result<(), String>;
+    /// Every canvas text command fits its vertical and horizontal slot.
+    fn assert_text_fits(&mut self) -> Result<(), String>;
+    /// `{:ui scale :window {:w :h} :fonts {...}}`
+    fn display_record(&self) -> Value;
+    /// One diagnosis line for the class's quality rendering.
+    fn quality_line(&self, id: &str) -> Option<String>;
+    fn resize_window(&mut self, w: f64, h: f64);
 }
 
 #[derive(Debug, Default)]
 pub struct Runner {
     script: Script,
     cursor: usize,
-    base_frame: u64,
+    /// (step index, frame) where the current `:wait-frames` began.
+    waiting_since: Option<(usize, u64)>,
     values: HashMap<String, String>,
-    started: bool,
+    records: HashMap<String, ViewRecord>,
 }
 
 /// Outcome of one frame's worth of driver work.
@@ -312,10 +689,7 @@ impl Runner {
     pub fn new(script: Script) -> Runner {
         Runner {
             script,
-            cursor: 0,
-            base_frame: 0,
-            values: HashMap::new(),
-            started: false,
+            ..Runner::default()
         }
     }
 
@@ -336,14 +710,17 @@ impl Runner {
         project: &Path,
         host: &mut dyn Host,
     ) -> Result<Progress, String> {
-        if !self.started {
-            self.started = true;
-            self.base_frame = frame;
-        }
         while let Some(step) = self.script.steps.get(self.cursor).cloned() {
             match step {
                 Step::WaitFrames(n) => {
-                    if frame.saturating_sub(self.base_frame) < n {
+                    let since = match self.waiting_since {
+                        Some((index, since)) if index == self.cursor => since,
+                        _ => {
+                            self.waiting_since = Some((self.cursor, frame));
+                            frame
+                        }
+                    };
+                    if frame.saturating_sub(since) < n {
                         return Ok(Progress::Running);
                     }
                 }
@@ -431,31 +808,77 @@ impl Runner {
                         return Err(message);
                     }
                 }
-                Step::Input(input) => host.inject(input),
+                Step::Input(input) => {
+                    host.inject(input);
+                    return Ok(self.yield_after_input());
+                }
                 Step::AssertItalicGlyphs { message } => host
                     .assert_italic_glyphs()
                     .map_err(|reason| format!("{message}: {reason}"))?,
                 Step::View { zoom, center } => host.set_view(zoom, center),
                 Step::Screenshot { evidence: name } => {
                     let target = self.evidence_path(evidence, &name)?;
-                    if target.exists() || host.screenshot(&name) {
-                        // fall through; the file is on disk
-                    } else {
+                    if !(target.exists() || host.screenshot(&name)) {
                         return Ok(Progress::Running);
                     }
                 }
                 Step::Write {
                     evidence: name,
                     text,
-                } => {
-                    let target = self.evidence_path(evidence, &name)?;
-                    if let Some(parent) = target.parent() {
-                        std::fs::create_dir_all(parent)
-                            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-                    }
-                    std::fs::write(&target, text)
-                        .map_err(|e| format!("cannot write {}: {e}", target.display()))?;
+                } => self.write_evidence(evidence, &name, &text)?,
+                Step::DumpView { evidence: name } => {
+                    let record = host.view_record(None);
+                    let body = edn::encode(&record.to_edn()).map_err(|e| e.to_string())?;
+                    self.write_evidence(evidence, &name, &body)?;
                 }
+                Step::RecordView { name, anchor } => {
+                    let record = host.view_record(anchor);
+                    self.records.insert(name, record);
+                }
+                Step::AssertView { checks, message } => {
+                    let current = host.view_record(checks.anchor);
+                    // The step message is the failure, as with the Lua check();
+                    // stderr names the failing check.
+                    check_view(&current, &self.records, &checks).map_err(|what| {
+                        eprintln!("assert-view: {what} does not hold");
+                        message.clone()
+                    })?;
+                    if let Some(fitted) = checks.fitted
+                        && host.is_fitted() != fitted
+                    {
+                        return Err(message);
+                    }
+                }
+                Step::AssertBlank { at, message } => {
+                    if !host.is_blank(at[0], at[1]) {
+                        return Err(message);
+                    }
+                }
+                Step::ClickClass { id, double } => {
+                    host.click_class(&id, double)?;
+                    return Ok(self.yield_after_input());
+                }
+                Step::ClickDeclutter => {
+                    host.click_declutter();
+                    return Ok(self.yield_after_input());
+                }
+                Step::AssertFonts { message } => host
+                    .assert_fonts()
+                    .map_err(|reason| format!("{message}: {reason}"))?,
+                Step::AssertTextFits { message } => host
+                    .assert_text_fits()
+                    .map_err(|reason| format!("{message}: {reason}"))?,
+                Step::DumpDisplay { evidence: name } => {
+                    let body = edn::encode(&host.display_record()).map_err(|e| e.to_string())?;
+                    self.write_evidence(evidence, &name, &body)?;
+                }
+                Step::DumpQuality { evidence: name, id } => {
+                    let line = host
+                        .quality_line(&id)
+                        .ok_or_else(|| format!("no class {id} on the scene"))?;
+                    self.write_evidence(evidence, &name, &format!("{line}\n"))?;
+                }
+                Step::ResizeWindow { size } => host.resize_window(size[0], size[1]),
                 Step::Quit(code) => {
                     host.quit(code);
                     self.cursor = self.script.steps.len();
@@ -465,6 +888,30 @@ impl Runner {
             self.cursor += 1;
         }
         Ok(Progress::Done)
+    }
+
+    /// Inputs end the frame's work so the next step observes their effect.
+    fn yield_after_input(&mut self) -> Progress {
+        self.cursor += 1;
+        if self.is_done() {
+            Progress::Done
+        } else {
+            Progress::Running
+        }
+    }
+
+    fn write_evidence(
+        &self,
+        evidence: Option<&Path>,
+        name: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        let target = self.evidence_path(evidence, name)?;
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(&target, text).map_err(|e| format!("cannot write {}: {e}", target.display()))
     }
 
     fn evidence_path(&self, evidence: Option<&Path>, name: &str) -> Result<PathBuf, String> {

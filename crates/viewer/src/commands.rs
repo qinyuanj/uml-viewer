@@ -193,6 +193,9 @@ pub enum Command {
     },
     /// Empty-canvas / missing-file hint, centered on the canvas.
     Hint { text: String },
+    /// The Declutter control (screen rect, current-mode label). #141 moves it
+    /// into the inspector; until then it is canvas chrome.
+    Declutter { rect: Rect, text: String },
     DependencyPopup {
         x: f64,
         y: f64,
@@ -222,6 +225,7 @@ impl Command {
             Command::Back { .. } => "back",
             Command::Status { .. } => "status",
             Command::Hint { .. } => "hint",
+            Command::Declutter { .. } => "declutter",
             Command::DependencyPopup { .. } => "dependency-popup",
         }
     }
@@ -860,12 +864,26 @@ pub fn fit(
     bold: bool,
     italic: bool,
 ) -> f64 {
-    let extra = if bold { size * 0.05 } else { 0.0 } + if italic { size * 0.2 } else { 0.0 };
-    let natural = measure(size, text) + extra;
-    if natural > max_w && natural > 0.0 {
-        return size * max_w.max(0.0) / natural;
+    let width = |s: f64| {
+        measure(s, text) + if bold { s * 0.05 } else { 0.0 } + if italic { s * 0.2 } else { 0.0 }
+    };
+    let natural = width(size);
+    if natural <= max_w || natural <= 0.0 {
+        return size;
     }
-    size
+    let budget = max_w.max(0.0);
+    let mut fitted = size * budget / natural;
+    // Real glyph advances snap to the pixel grid, so width is not linear in
+    // size: shrink until the measured text is inside the budget (egui would
+    // otherwise wrap the label).
+    for _ in 0..8 {
+        let w = width(fitted);
+        if w <= budget || w <= 0.0 {
+            break;
+        }
+        fitted *= budget / w * 0.999;
+    }
+    fitted
 }
 
 /// Text ink by role: crap lines gold, stereotypes muted, everything else ink.
@@ -882,13 +900,29 @@ pub fn hint(text: &str) -> Command {
     Command::Hint { text: text.into() }
 }
 
+/// The Declutter control: top-right of the canvas, in view units.
+pub fn declutter_rect(width: f64) -> Rect {
+    let (w, h) = (172.0, 28.0);
+    Rect::new(width - w - 12.0, 8.0, w, h)
+}
+
 /// Screen-space canvas chrome (port of `class_boxes.chrome`): the waiting
-/// hint, the diagram banner, return scope and the leaf-dependency popup.
+/// hint, the diagram banner, return scope, the Declutter control and the
+/// leaf-dependency popup.
 pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
     let mut out = Vec::new();
     if state.waiting {
         out.push(hint(strings::WAITING_DISPLAY));
         return out;
+    }
+    if state.document.is_some() {
+        let mode = get(&state.extra, "declutter")
+            .map(name)
+            .unwrap_or_else(|| "full".into());
+        out.push(Command::Declutter {
+            rect: declutter_rect(width),
+            text: strings::declutter_label(&mode).into(),
+        });
     }
     let diagram = get(&state.scene, "diagram")
         .cloned()

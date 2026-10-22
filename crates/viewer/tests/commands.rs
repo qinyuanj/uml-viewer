@@ -348,3 +348,78 @@ fn the_fit_rule_never_grows_past_the_nominal_size() {
     let natural = measure(shrunk, "AVeryLongClassNameThatFillsTheBox") + shrunk * 0.05;
     assert!(natural <= 100.0 + 1e-9);
 }
+
+#[test]
+fn the_fit_rule_holds_for_a_measure_that_snaps_to_the_pixel_grid() {
+    // Real fonts round advances, so width is not linear in size; the fitted
+    // size must still measure within the budget (else egui wraps the label).
+    let measure = |size: f64, text: &str| (text.chars().count() as f64 * size * 0.61).ceil();
+    let text = "Detail_view";
+    let fitted = commands::fit(measure, 18.0, text, 76.0, false, true);
+    assert!(fitted < 18.0);
+    assert!(
+        measure(fitted, text) + fitted * 0.2 <= 76.0 + 1e-9,
+        "fitted {fitted} still measures {}",
+        measure(fitted, text) + fitted * 0.2
+    );
+}
+
+#[test]
+fn the_declutter_control_names_the_current_mode_and_sits_top_right() {
+    // Labels are those of `love/uml/application/strings.lua` declutter_modes.
+    let doc =
+        scene::ir::read_document("{:hierarchical true :classes [{:id :a.b} {:id :a.c}] :edges []}")
+            .unwrap();
+    let mut state = scene::document::new_state(doc, None, None, None, &[], None);
+    let label = |state: &scene::document::ViewState| {
+        commands::chrome(state, 1500.0, 920.0)
+            .into_iter()
+            .find_map(|c| match c {
+                Command::Declutter { text, rect } => Some((text, rect)),
+                _ => None,
+            })
+            .expect("declutter control in the chrome")
+    };
+    let (text, rect) = label(&state);
+    assert_eq!("精简：无", text);
+    assert_eq!(rect, commands::declutter_rect(1500.0));
+    assert!(rect.right() <= 1500.0 && rect.x > 1000.0 && rect.y < 44.0);
+    let mut seen = vec![text];
+    for _ in 0..5 {
+        state = scene::events::cycle_declutter(&state);
+        seen.push(label(&state).0);
+    }
+    assert_eq!(
+        vec![
+            "精简：无",
+            "精简：箭头",
+            "移除箭头",
+            "精简：元素",
+            "精简：类",
+            "精简：无"
+        ],
+        seen
+    );
+    // A waiting canvas has no diagram to declutter.
+    let waiting = scene::document::waiting_state(None, 0);
+    assert!(
+        !commands::chrome(&waiting, 1500.0, 920.0)
+            .iter()
+            .any(|c| c.kind() == "declutter")
+    );
+}
+
+#[test]
+fn the_glyph_probe_covers_the_whole_ui_string_table() {
+    let probe = viewer::strings::glyph_text();
+    for text in [
+        "搜索类名或命名空间",
+        "没有匹配的类",
+        "精简：箭头",
+        "源码图",
+        "«»αμσ←→—…",
+        "重新生成 IR",
+    ] {
+        assert!(probe.contains(text), "glyph probe lacks {text}");
+    }
+}
