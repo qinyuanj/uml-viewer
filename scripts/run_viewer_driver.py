@@ -94,7 +94,14 @@ def prepare_inspector(project):
     (project / 'diagram.edn').write_text(
         '{:title "中文 Inspector" :hierarchical true :prefix "demo" :classes'
         ' [{:id :a :name "中文类" :ns "demo.a" :ops [{:name "work" :text "work()"}]}]'
-        ' :proposals [{:id :plan :name "中文方案" :layers []}]}')
+        ' :proposals [{:id :plan :name "中文方案" :layers []}'
+        ' {:id :keep :name "保留方案" :layers []}]}')
+    # Proposal write-back (#141) must keep the other proposal and every other
+    # policy key, so the IR has a sibling policy carrying both.
+    (project / 'diagram.policy.edn').write_text(
+        '{:lang :lua :src "love" :prefix "demo" :omit [:zzz]'
+        ' :proposals [{:id :plan :name "中文方案" :layers []}'
+        ' {:id :keep :name "保留方案" :layers []}]}')
 
 
 def prepare_detail_scroll(project):

@@ -193,9 +193,6 @@ pub enum Command {
     },
     /// Empty-canvas / missing-file hint, centered on the canvas.
     Hint { text: String },
-    /// The Declutter control (screen rect, current-mode label). #141 moves it
-    /// into the inspector; until then it is canvas chrome.
-    Declutter { rect: Rect, text: String },
     DependencyPopup {
         x: f64,
         y: f64,
@@ -225,7 +222,6 @@ impl Command {
             Command::Back { .. } => "back",
             Command::Status { .. } => "status",
             Command::Hint { .. } => "hint",
-            Command::Declutter { .. } => "declutter",
             Command::DependencyPopup { .. } => "dependency-popup",
         }
     }
@@ -900,29 +896,14 @@ pub fn hint(text: &str) -> Command {
     Command::Hint { text: text.into() }
 }
 
-/// The Declutter control: top-right of the canvas, in view units.
-pub fn declutter_rect(width: f64) -> Rect {
-    let (w, h) = (172.0, 28.0);
-    Rect::new(width - w - 12.0, 8.0, w, h)
-}
-
 /// Screen-space canvas chrome (port of `class_boxes.chrome`): the waiting
-/// hint, the diagram banner, return scope, the Declutter control and the
-/// leaf-dependency popup.
+/// hint, the diagram banner, return scope and the leaf-dependency popup
+/// (Declutter lives in the inspector, #141).
 pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
     let mut out = Vec::new();
     if state.waiting {
         out.push(hint(strings::WAITING_DISPLAY));
         return out;
-    }
-    if state.document.is_some() {
-        let mode = get(&state.extra, "declutter")
-            .map(name)
-            .unwrap_or_else(|| "full".into());
-        out.push(Command::Declutter {
-            rect: declutter_rect(width),
-            text: strings::declutter_label(&mode).into(),
-        });
     }
     let diagram = get(&state.scene, "diagram")
         .cloned()

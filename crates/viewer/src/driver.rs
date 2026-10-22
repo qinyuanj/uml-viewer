@@ -289,6 +289,8 @@ pub enum Step {
     },
     Assert {
         evidence: String,
+        /// Read the file from the project instead of the evidence directory.
+        project: bool,
         contains: Vec<String>,
         contains_any: Vec<String>,
         differs_from: Option<String>,
@@ -349,6 +351,8 @@ pub enum Step {
     ClickDeclutter,
     AssertFonts {
         message: String,
+        /// Extra probe text whose glyphs every role must resolve.
+        extra: Option<String>,
     },
     AssertTextFits {
         message: String,
@@ -363,7 +367,128 @@ pub enum Step {
     ResizeWindow {
         size: [f64; 2],
     },
+    /// Move the egui pointer to a recorded widget (`:at` bounds key, centre
+    /// plus `:offset`; `:prefix` adds the code-font width of that text from
+    /// the left edge) or to `:xy`.
+    GuiPoint(GuiTarget),
+    /// Press or release an egui pointer button where the pointer is.
+    GuiButton {
+        secondary: bool,
+        pressed: bool,
+    },
+    /// Point, press and release over three frames (a real egui click).
+    GuiClick {
+        target: GuiTarget,
+        secondary: bool,
+    },
+    /// An egui key press and release (Ctrl+C also sends the copy event).
+    GuiKey {
+        key: String,
+        ctrl: bool,
+        shift: bool,
+    },
+    DumpGui {
+        evidence: String,
+    },
+    AssertGui {
+        path: Vec<Value>,
+        check: GuiCheck,
+        message: String,
+    },
+    OpenSource {
+        lang: String,
+        file: String,
+        name: Option<String>,
+    },
+    ResizeCard {
+        size: [f64; 2],
+    },
+    /// Sample a screenshot inside a widget: the fill at its left inset and
+    /// some pixel close to the ink color.
+    AssertPixels {
+        evidence: String,
+        at: String,
+        fill: Option<[u8; 3]>,
+        ink: Option<[u8; 3]>,
+        tolerance: u8,
+        message: String,
+    },
     Quit(u8),
+}
+
+/// Where a GUI pointer step goes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GuiTarget {
+    pub at: Option<String>,
+    pub xy: Option<[f64; 2]>,
+    pub offset: [f64; 2],
+    pub prefix: Option<String>,
+}
+
+/// One `:assert-gui` comparison against the value at `:path`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GuiCheck {
+    Equals(Value),
+    Gt(f64),
+    Ge(f64),
+    Lt(f64),
+    Le(f64),
+    Present(bool),
+    Contains(String),
+    Count(usize),
+}
+
+/// Navigate a GUI record by keyword/string keys and vector indices.
+pub fn at_path<'a>(record: &'a Value, path: &[Value]) -> Option<&'a Value> {
+    let mut v = record;
+    for key in path {
+        v = match (v, key) {
+            (Value::Vector(items), Value::Integer(i)) => items.get(*i as usize)?,
+            (Value::Map(_), Value::Integer(_)) => return None,
+            (Value::Map(_), k) => v.get(k)?,
+            _ => return None,
+        };
+    }
+    Some(v)
+}
+
+fn value_number(v: &Value) -> Option<f64> {
+    match v {
+        Value::Integer(n) => Some(*n as f64),
+        Value::Float(x) => Some(*x),
+        _ => None,
+    }
+}
+
+/// Evaluate a check; Err names the observed value.
+pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(), String> {
+    let found = at_path(record, path).filter(|v| **v != Value::Nil);
+    let shown = || found.map_or("nil".into(), |v| edn::encode(v).unwrap_or_default());
+    let number = || found.and_then(value_number);
+    let ok = match check {
+        GuiCheck::Present(want) => found.is_some() == *want,
+        GuiCheck::Equals(want) => match (found.and_then(value_number), value_number(want)) {
+            (Some(a), Some(b)) => (a - b).abs() < EPSILON,
+            _ => found.unwrap_or(&Value::Nil) == want,
+        },
+        GuiCheck::Gt(n) => number().is_some_and(|x| x > *n),
+        GuiCheck::Ge(n) => number().is_some_and(|x| x >= *n - EPSILON),
+        GuiCheck::Lt(n) => number().is_some_and(|x| x < *n),
+        GuiCheck::Le(n) => number().is_some_and(|x| x <= *n + EPSILON),
+        GuiCheck::Contains(text) => match found {
+            Some(Value::String(s)) => s.contains(text.as_str()),
+            Some(other) => edn::encode(other)
+                .unwrap_or_default()
+                .contains(text.as_str()),
+            None => false,
+        },
+        GuiCheck::Count(n) => matches!(found, Some(Value::Vector(items)) if items.len() == *n),
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("observed {}", shown()))
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -542,6 +667,63 @@ fn view_checks(step: &Value) -> Result<ViewChecks, String> {
     })
 }
 
+fn rgb(v: Option<&Value>) -> Option<[u8; 3]> {
+    match v {
+        Some(Value::Vector(items)) if items.len() == 3 => Some([
+            number(items.first())? as u8,
+            number(items.get(1))? as u8,
+            number(items.get(2))? as u8,
+        ]),
+        _ => None,
+    }
+}
+
+fn gui_target(step: &Value) -> Result<GuiTarget, String> {
+    let at = get(step, "at");
+    let target = GuiTarget {
+        at: if matches!(at, Some(Value::Vector(_))) {
+            None
+        } else {
+            text(at)
+        },
+        xy: pair(get(step, "xy")).or_else(|| pair(at)),
+        offset: pair(get(step, "offset")).unwrap_or([0.0, 0.0]),
+        prefix: text(get(step, "prefix")),
+    };
+    if target.at.is_none() && target.xy.is_none() {
+        return Err("a GUI pointer step needs :at \"bounds-key\" or :xy [x y]".into());
+    }
+    Ok(target)
+}
+
+fn gui_check(step: &Value) -> Result<GuiCheck, String> {
+    if let Some(v) = get(step, "equals") {
+        return Ok(GuiCheck::Equals(v.clone()));
+    }
+    type NumericCheck = (&'static str, fn(f64) -> GuiCheck);
+    let numeric: [NumericCheck; 4] = [
+        ("gt", GuiCheck::Gt),
+        ("ge", GuiCheck::Ge),
+        ("lt", GuiCheck::Lt),
+        ("le", GuiCheck::Le),
+    ];
+    for (key, make) in numeric {
+        if let Some(n) = number(get(step, key)) {
+            return Ok(make(n));
+        }
+    }
+    if let Some(b) = boolean(get(step, "present")) {
+        return Ok(GuiCheck::Present(b));
+    }
+    if let Some(t) = text(get(step, "contains")) {
+        return Ok(GuiCheck::Contains(t));
+    }
+    if let Some(n) = number(get(step, "count")) {
+        return Ok(GuiCheck::Count(n as usize));
+    }
+    Err("assert-gui needs :equals, :gt, :ge, :lt, :le, :present, :contains or :count".into())
+}
+
 fn parse_step(step: &Value) -> Result<Step, String> {
     let op = text(get(step, "op")).ok_or("driver step needs :op")?;
     Ok(match op.as_str() {
@@ -561,7 +743,8 @@ fn parse_step(step: &Value) -> Result<Step, String> {
             name: text(Some(required(step, "as")?)).ok_or("read needs :as")?,
         },
         "assert" => Step::Assert {
-            evidence: evidence_name(step)?,
+            project: get(step, "project").is_some(),
+            evidence: text(get(step, "project")).map_or_else(|| evidence_name(step), Ok)?,
             contains: strings(get(step, "contains")),
             contains_any: strings(get(step, "contains-any")),
             differs_from: text(get(step, "differs-from")),
@@ -618,6 +801,7 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         "click-declutter" => Step::ClickDeclutter,
         "assert-fonts" => Step::AssertFonts {
             message: message(step, "font lookup or glyph coverage failed"),
+            extra: text(get(step, "extra")),
         },
         "assert-text-fits" => Step::AssertTextFits {
             message: message(step, "canvas text exceeds its slot"),
@@ -631,6 +815,47 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         },
         "resize-window" => Step::ResizeWindow {
             size: pair(get(step, "size")).ok_or("resize-window needs :size [w h]")?,
+        },
+        "gui-point" => Step::GuiPoint(gui_target(step)?),
+        "gui-press" | "gui-release" => Step::GuiButton {
+            secondary: text(get(step, "button")).as_deref() == Some("secondary"),
+            pressed: op == "gui-press",
+        },
+        "gui-click" => Step::GuiClick {
+            target: gui_target(step)?,
+            secondary: text(get(step, "button")).as_deref() == Some("secondary"),
+        },
+        "gui-key" => Step::GuiKey {
+            key: text(get(step, "key")).ok_or("gui-key needs :key")?,
+            ctrl: flag(get(step, "ctrl")),
+            shift: flag(get(step, "shift")),
+        },
+        "dump-gui" => Step::DumpGui {
+            evidence: evidence_name(step)?,
+        },
+        "assert-gui" => Step::AssertGui {
+            path: match get(step, "path") {
+                Some(Value::Vector(items)) => items.clone(),
+                _ => return Err("assert-gui needs :path [..]".into()),
+            },
+            check: gui_check(step)?,
+            message: message(step, "GUI assertion failed"),
+        },
+        "open-source" => Step::OpenSource {
+            lang: text(Some(required(step, "lang")?)).ok_or("open-source needs :lang")?,
+            file: text(Some(required(step, "file")?)).ok_or("open-source needs :file")?,
+            name: text(get(step, "name")),
+        },
+        "resize-card" => Step::ResizeCard {
+            size: pair(get(step, "size")).ok_or("resize-card needs :size [w h]")?,
+        },
+        "assert-pixels" => Step::AssertPixels {
+            evidence: evidence_name(step)?,
+            at: text(Some(required(step, "at")?)).ok_or("assert-pixels needs :at")?,
+            fill: rgb(get(step, "fill")),
+            ink: rgb(get(step, "ink")),
+            tolerance: number(get(step, "tolerance")).unwrap_or(2.0) as u8,
+            message: message(step, "widget colors differ"),
         },
         "quit" => Step::Quit(number(get(step, "code")).unwrap_or(0.0).max(0.0) as u8),
         other => return Err(format!("unknown driver op :{other}")),
@@ -666,6 +891,81 @@ pub trait Host {
     /// One diagnosis line for the class's quality rendering.
     fn quality_line(&self, id: &str) -> Option<String>;
     fn resize_window(&mut self, w: f64, h: f64);
+    /// Font check with an extra probe text (default: the plain check).
+    fn assert_fonts_with(&mut self, extra: Option<&str>) -> Result<(), String> {
+        let _ = extra;
+        self.assert_fonts()
+    }
+    /// Queued GUI events not yet delivered; the runner waits for them.
+    fn busy(&self) -> bool {
+        false
+    }
+    fn gui_point(&mut self, target: &GuiTarget) -> Result<(), String> {
+        let _ = target;
+        Err("this host has no GUI".into())
+    }
+    fn gui_button(&mut self, secondary: bool, pressed: bool) {
+        let _ = (secondary, pressed);
+    }
+    fn gui_click(&mut self, target: &GuiTarget, secondary: bool) -> Result<(), String> {
+        let _ = (target, secondary);
+        Err("this host has no GUI".into())
+    }
+    fn gui_key(&mut self, key: &str, ctrl: bool, shift: bool) {
+        let _ = (key, ctrl, shift);
+    }
+    /// The inspector / card / source window record (`:dump-gui`).
+    fn gui_record(&self) -> Value {
+        Value::Nil
+    }
+    fn open_source(&mut self, lang: &str, file: &str, name: Option<&str>) -> Result<(), String> {
+        let _ = (lang, file, name);
+        Err("this host has no source windows".into())
+    }
+    fn resize_card(&mut self, w: f64, h: f64) {
+        let _ = (w, h);
+    }
+    /// A widget's rect in screenshot pixels: [x0, y0, x1, y1].
+    fn widget_pixels(&self, key: &str) -> Option<[f64; 4]> {
+        let _ = key;
+        None
+    }
+}
+
+fn near_rgb(a: &[u8], b: [u8; 3], tolerance: u8) -> bool {
+    a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= tolerance)
+}
+
+/// The fill at the widget's left inset and any pixel near the ink color.
+fn check_pixels(
+    png: &Path,
+    rect: [f64; 4],
+    fill: Option<[u8; 3]>,
+    ink: Option<[u8; 3]>,
+    tolerance: u8,
+) -> Result<(), String> {
+    let image = image::open(png)
+        .map_err(|e| format!("cannot read {}: {e}", png.display()))?
+        .to_rgb8();
+    let [x0, y0, x1, y1] = rect.map(|v| v.round().max(0.0) as u32);
+    let (x1, y1) = (x1.min(image.width()), y1.min(image.height()));
+    if x0 + 4 >= x1 || y0 + 2 >= y1 {
+        return Err("widget outside the screenshot".into());
+    }
+    if let Some(fill) = fill {
+        let p = image.get_pixel(x0 + 3, (y0 + y1) / 2);
+        if !near_rgb(&p.0, fill, tolerance) {
+            return Err(format!("fill {:?} expected {fill:?}", p.0));
+        }
+    }
+    if let Some(ink) = ink {
+        let found =
+            (y0..y1).any(|y| (x0..x1).any(|x| near_rgb(&image.get_pixel(x, y).0, ink, tolerance)));
+        if !found {
+            return Err(format!("no pixel near ink {ink:?}"));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -711,6 +1011,9 @@ impl Runner {
         host: &mut dyn Host,
     ) -> Result<Progress, String> {
         while let Some(step) = self.script.steps.get(self.cursor).cloned() {
+            if host.busy() {
+                return Ok(Progress::Running);
+            }
             match step {
                 Step::WaitFrames(n) => {
                     let since = match self.waiting_since {
@@ -741,13 +1044,21 @@ impl Runner {
                 }
                 Step::Assert {
                     evidence: name,
+                    project: in_project,
                     contains,
                     contains_any,
                     differs_from,
                     message,
                 } => {
-                    let path = self.evidence_path(evidence, &name)?;
+                    let path = if in_project {
+                        project.join(&name)
+                    } else {
+                        self.evidence_path(evidence, &name)?
+                    };
                     let Ok(body) = std::fs::read_to_string(&path) else {
+                        if in_project {
+                            return Err(format!("{message}: cannot read {}", path.display()));
+                        }
                         return Ok(Progress::Running);
                     };
                     for needle in &contains {
@@ -862,8 +1173,8 @@ impl Runner {
                     host.click_declutter();
                     return Ok(self.yield_after_input());
                 }
-                Step::AssertFonts { message } => host
-                    .assert_fonts()
+                Step::AssertFonts { message, extra } => host
+                    .assert_fonts_with(extra.as_deref())
                     .map_err(|reason| format!("{message}: {reason}"))?,
                 Step::AssertTextFits { message } => host
                     .assert_text_fits()
@@ -879,6 +1190,61 @@ impl Runner {
                     self.write_evidence(evidence, &name, &format!("{line}\n"))?;
                 }
                 Step::ResizeWindow { size } => host.resize_window(size[0], size[1]),
+                Step::GuiPoint(target) => {
+                    host.gui_point(&target)?;
+                    return Ok(self.yield_after_input());
+                }
+                Step::GuiButton { secondary, pressed } => {
+                    host.gui_button(secondary, pressed);
+                    return Ok(self.yield_after_input());
+                }
+                Step::GuiClick { target, secondary } => {
+                    host.gui_click(&target, secondary)?;
+                    return Ok(self.yield_after_input());
+                }
+                Step::GuiKey { key, ctrl, shift } => {
+                    host.gui_key(&key, ctrl, shift);
+                    return Ok(self.yield_after_input());
+                }
+                Step::DumpGui { evidence: name } => {
+                    let body = edn::encode(&host.gui_record()).map_err(|e| e.to_string())?;
+                    self.write_evidence(evidence, &name, &body)?;
+                }
+                Step::AssertGui {
+                    path,
+                    check,
+                    message,
+                } => check_gui(&host.gui_record(), &path, &check).map_err(|seen| {
+                    let at = edn::encode(&Value::Vector(path.clone())).unwrap_or_default();
+                    eprintln!("assert-gui {at}: {seen}");
+                    message.clone()
+                })?,
+                Step::OpenSource { lang, file, name } => {
+                    host.open_source(&lang, &file, name.as_deref())?;
+                    return Ok(self.yield_after_input());
+                }
+                Step::ResizeCard { size } => {
+                    host.resize_card(size[0], size[1]);
+                    return Ok(self.yield_after_input());
+                }
+                Step::AssertPixels {
+                    evidence: name,
+                    at,
+                    fill,
+                    ink,
+                    tolerance,
+                    message,
+                } => {
+                    let png = self.evidence_path(evidence, &name)?;
+                    if !png.exists() {
+                        return Ok(Progress::Running);
+                    }
+                    let rect = host
+                        .widget_pixels(&at)
+                        .ok_or_else(|| format!("{message}: no widget {at}"))?;
+                    check_pixels(&png, rect, fill, ink, tolerance)
+                        .map_err(|reason| format!("{message}: {reason}"))?;
+                }
                 Step::Quit(code) => {
                     host.quit(code);
                     self.cursor = self.script.steps.len();
