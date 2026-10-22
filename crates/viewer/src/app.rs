@@ -802,7 +802,7 @@ impl Viewer {
         if actions.is_empty() {
             return;
         }
-        let outbox = self.project_root.join(".uml-viewer/to-agent.edn");
+        let outbox = mailbox::Mailbox::outbox(&self.project_root);
         for action in actions {
             match action {
                 Action::Choose(id) => {
@@ -812,7 +812,7 @@ impl Viewer {
                         Value::Map(entries) => entries.clone(),
                         _ => Vec::new(),
                     };
-                    if let Err(error) = project_files::append(&outbox, "context", &extra) {
+                    if let Err(error) = outbox.append("context", &extra) {
                         eprintln!("uml viewer: could not send the context: {error}");
                     }
                     self.state.discussion_context = Some(choice.context);
@@ -827,7 +827,7 @@ impl Viewer {
                     // The durable queue is authoritative; the wake tells the
                     // agent there is something to consume. Without a helper
                     // the request still waits in the queue (#142).
-                    self.status = Some(match project_files::append(&outbox, "regen", &[]) {
+                    self.status = Some(match outbox.append("regen", &[]) {
                         Ok(cmd) => {
                             let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
                             let woken = self.companion.as_mut().is_some_and(|c| c.wake(id).is_ok());
@@ -864,7 +864,7 @@ impl Viewer {
                     // command and wakes the companion for that delivery.
                     let (op, extra) =
                         mailbox::menu_mail(&self.state, self.state.selected.as_ref(), &op);
-                    match project_files::append(&outbox, &op, &extra) {
+                    match outbox.append(&op, &extra) {
                         Ok(cmd) => {
                             let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
                             if let Some(companion) = &mut self.companion

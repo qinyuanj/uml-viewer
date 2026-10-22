@@ -7,7 +7,6 @@
 mod detection;
 mod files;
 mod graph;
-mod pair_order;
 mod policy;
 mod scan;
 mod text;

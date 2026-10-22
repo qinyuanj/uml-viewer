@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from uml_posix import RUNTIMES, atomic_write, runtime_argv
+from uml_posix import RUNTIME, atomic_write, runtime_argv
 
 LAUNCHER = 'viewer-process.json'
 IDENTITY = 'viewer-process-identity.json'
@@ -68,7 +68,7 @@ def verify_previous(state, root, restart):
         started = record.get('started')
         if type(pid) is not int or pid < 1 or not isinstance(started, str) or not started.isdigit():
             raise ValueError(f'{label} 进程身份记录无效；拒绝 restart。')
-        if record.get('runtime') not in RUNTIMES:
+        if record.get('runtime') != RUNTIME:
             raise ValueError(f"{label} 记录的运行时 {record.get('runtime')!r} 已移除；请 fresh 启动 viewer。")
         observed = proc_identity(pid)
         if observed is not None and observed['start'] != started:
@@ -112,13 +112,13 @@ def forward_args(viewer_args):
     return forwarded
 
 
-def launch(root, tool_root, viewer_args, restart=False, runtime='rust'):
+def launch(root, tool_root, viewer_args, restart=False):
     state = root / '.uml-viewer'
     state.mkdir(exist_ok=True)
     # Refuse an unusable identity before spending seconds on a preflight that
     # would otherwise run first.
     launcher, viewer = verify_previous(state, root, restart)
-    prefix = runtime_argv(runtime, tool_root)
+    prefix = runtime_argv(tool_root)
     preflight(prefix, root, viewer_args)
     forwarded = forward_args(viewer_args)
     if restart:
@@ -144,7 +144,7 @@ def launch(root, tool_root, viewer_args, restart=False, runtime='rust'):
     if observed is None:
         raise ValueError('viewer 在写入身份前已退出；请查看 .uml-viewer/viewer.log。')
     write_record(state / LAUNCHER,
-                 {'pid': observed['pid'], 'started': observed['start'], 'runtime': runtime,
+                 {'pid': observed['pid'], 'started': observed['start'], 'runtime': RUNTIME,
                   'cwd': str(root), 'argv': ['viewer', *command]})
     print(f'UML Rust viewer starting (launcher pid {child.pid}). Log: {log_path}')
     return 0

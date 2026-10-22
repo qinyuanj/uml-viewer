@@ -122,8 +122,9 @@ def x11_warnings(present=None):
             '需要 X11 标题栏可安装 libxkbcommon-x11-0（sudo apt install libxkbcommon-x11-0）。']
 
 
-# Rust is the only implementation (#144); `love` is refused like the JVM.
-RUNTIMES = ('rust',)
+# Rust is the only implementation (#144). `love` and the older `jvm` value are
+# refused before any dispatch so an old invocation fails with a clear message.
+RUNTIME = 'rust'
 
 
 def take_runtime(args):
@@ -133,12 +134,12 @@ def take_runtime(args):
     value are refused before any dispatch, the way the JVM was.
     """
     if '--runtime' not in args:
-        return 'rust', args
+        return args
     index = args.index('--runtime')
     value = args[index + 1] if index + 1 < len(args) else None
-    if value not in RUNTIMES or args.count('--runtime') != 1:
+    if value != RUNTIME or args.count('--runtime') != 1:
         raise ValueError('--runtime 只接受 rust（默认）；love 与 JVM 已移除。')
-    return value, args[:index] + args[index + 2:]
+    return args[:index] + args[index + 2:]
 
 
 def rust_command(tool_root):
@@ -150,8 +151,8 @@ def rust_command(tool_root):
     return str(executable)
 
 
-def runtime_argv(runtime, tool_root):
-    """argv prefix that precedes a subcommand (`viewer`, `ir`, …)."""
+def runtime_argv(tool_root):
+    """argv prefix that precedes a role (`viewer`, `ir`, …)."""
     return [rust_command(tool_root)]
 
 
@@ -389,7 +390,7 @@ def command(root, args):
               '  rust 是唯一运行时；love 与 JVM 已移除。')
         return 0
     host()
-    runtime, args = take_runtime(args)
+    args = take_runtime(args)
     tool_root = Path(os.environ.get('UML_VIEWER_TOOL_ROOT', root / '.uml-viewer/uml-viewer')).resolve()
     if args and args[0] == 'ir':
         values = args[1:]
@@ -408,16 +409,16 @@ def command(root, args):
             if not policy.is_file():
                 raise ValueError('没有 policy；请创建 policy.edn 或 examples/*.policy.edn。')
             args = ['ir', str(policy.relative_to(root)), *args[1:]]
-        return subprocess.call([*runtime_argv(runtime, tool_root), *args], cwd=root)
+        return subprocess.call([*runtime_argv(tool_root), *args], cwd=root)
     if args and args[0] == 'scene':
-        return subprocess.call([*runtime_argv(runtime, tool_root), *args], cwd=root)
+        return subprocess.call([*runtime_argv(tool_root), *args], cwd=root)
     if args and args[0] in ('crap', 'mutate', 'dry'):
         # 质量分发实现与安装器共用入口，独立模块保留协议边界。
         from uml_quality import dispatch
         return dispatch(root, args[0], args[1:])
     # 其余路径都是 viewer 生命周期：默认 fresh、--restart 替换、--backend herdr。
     from uml_launch import launch
-    return launch(root, tool_root, args, restart='--restart' in args, runtime=runtime)
+    return launch(root, tool_root, args, restart='--restart' in args)
 
 
 def main():

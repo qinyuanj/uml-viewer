@@ -1,7 +1,14 @@
-//! Port of `love/uml/domain/pair_order.lua`: Clojure 1.12.0's map key
-//! enumeration order for keyword-pair keys, reproduced without a runtime
-//! dependency. `merge_edges` uses it once more than eight distinct directed
-//! pairs exist, so edge order in the IR follows Clojure's HAMT slot order.
+//! Clojure 1.12.0 `group-by` key enumeration order for keyword-pair keys
+//! (port of `love/uml/domain/pair_order.lua`): map iteration identity up to
+//! eight distinct keys, then HAMT slot order. Both the IR generator and the
+//! scene core merge parallel edges through this one implementation.
+//!
+//! Source: clojure/clojure tag clojure-1.12.0, `Murmur3.java`
+//! (`hashUnencodedChars`/`hashOrdered`), `Symbol.java`, `Keyword.java`,
+//! `Util.java` (`hashCombine`), `PersistentArrayMap.java` (8 entries) and
+//! `PersistentHashMap.java` (mask/`NodeSeq`/`ArrayNode.Seq`/
+//! `HashCollisionNode`). Only distinct directed keyword pairs are accepted,
+//! in first encounter order.
 
 /// 2^32 as an i64 modulus for the floored-remainder sums.
 const U: i64 = 4_294_967_296;
@@ -43,7 +50,7 @@ fn string_hash(s: &str) -> u32 {
 
 fn keyword_hash(name: &str) -> u32 {
     // `^(.-)/(.+)$`: the namespace ends at the first '/' and must be followed
-    // by at least one character.
+    // by at least one character; otherwise the whole name is the name.
     let (ns, bare) = match name.split_once('/') {
         Some((ns, rest)) if !rest.is_empty() => (Some(ns), rest),
         _ => (None, name),
@@ -68,7 +75,7 @@ fn pair_hash(from: &str, to: &str) -> u32 {
 /// Enumeration order of the pair keys: identity up to eight distinct pairs
 /// (PersistentArrayMap), then ascending five-bit hash fragments, low bits
 /// first, with full collisions keeping insertion order.
-pub fn indices(pairs: &[(String, String)]) -> Vec<usize> {
+pub fn indices(pairs: &[(&str, &str)]) -> Vec<usize> {
     let mut out: Vec<usize> = (0..pairs.len()).collect();
     if pairs.len() <= 8 {
         return out;

@@ -1,14 +1,10 @@
 //! Project files the inspector writes (#141): proposal write-back through
-//! the scene [`Boundary`] and the Regen request appended to
-//! `.uml-viewer/to-agent.edn`. Writes replace atomically (temp + rename);
-//! the queue shape is the `{:next-id n :queue [cmd …]}` mail contract.
-//! Companion wake-up and the mail reader belong to #142.
+//! the scene [`Boundary`]. The `to-agent.edn` mail queue is written through
+//! [`crate::mailbox::Mailbox`], the one owner of the queue contract.
 
 use std::path::Path;
 
-use edn::Value;
 use scene::document::Boundary;
-use scene::geom::{get, num};
 
 /// Write `text` next to `path` and rename it into place.
 pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
@@ -41,32 +37,4 @@ impl Boundary for Files {
             }
         }
     }
-}
-
-/// Append `{:id n :op op …extra}` to a mail queue file; returns the command.
-pub fn append(path: &Path, op: &str, extra: &[(Value, Value)]) -> std::io::Result<Value> {
-    let current = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|t| edn::parse(&t).ok())
-        .unwrap_or(Value::Nil);
-    let mut queue = match get(&current, "queue") {
-        Some(Value::Vector(q)) => q.clone(),
-        _ => Vec::new(),
-    };
-    let id = get(&current, "next-id").and_then(num).unwrap_or(1.0) as i64;
-    let mut cmd = Value::Map(vec![
-        (Value::keyword("id"), Value::Integer(id)),
-        (Value::keyword("op"), Value::keyword(op)),
-    ]);
-    for (k, v) in extra {
-        cmd.assoc(k.clone(), v.clone());
-    }
-    queue.push(cmd.clone());
-    let boxed = Value::Map(vec![
-        (Value::keyword("next-id"), Value::Integer(id + 1)),
-        (Value::keyword("queue"), Value::Vector(queue)),
-    ]);
-    let text = edn::encode(&boxed).map_err(|e| std::io::Error::other(e.to_string()))?;
-    write_atomic(path, &text)?;
-    Ok(cmd)
 }

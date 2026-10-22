@@ -1,6 +1,5 @@
 //! CJK font lookup order and the egui italic glyph probe (the honest egui
-//! equivalent of the cimgui vertex-slant assertion in
-//! `scripts/test_love_class_boxes.lua`).
+//! equivalent of the retired cimgui vertex-slant assertion).
 
 use std::path::Path;
 

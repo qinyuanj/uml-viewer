@@ -1183,8 +1183,8 @@ pub fn paint(
 
 /// Lay out the probe upright and slanted through the live font atlas and
 /// compare the tessellated glyph vertices: identical topology, identical
-/// baselines, shifted x. This is the egui equivalent of the cimgui
-/// vertex-slant assertion in `scripts/test_love_class_boxes.lua`.
+/// baselines, shifted x. This is the egui equivalent of the retired
+/// cimgui vertex-slant assertion.
 pub fn italic_glyph_probe(ctx: &egui::Context) -> Result<(), String> {
     italic_glyph_probe_text(ctx, "Abstract")
 }

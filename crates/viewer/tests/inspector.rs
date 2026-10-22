@@ -6,6 +6,7 @@ use edn::Value;
 use scene::document::{self, ViewState};
 use scene::geom::get;
 use viewer::inspector::{self, Choice};
+use viewer::mailbox::Mailbox;
 use viewer::project_files;
 
 fn load(text: &str) -> ViewState {
@@ -131,10 +132,11 @@ fn temp_dir(tag: &str) -> std::path::PathBuf {
 fn regen_appends_one_command_to_the_agent_queue() {
     let root = temp_dir("outbox");
     let path = root.join(".uml-viewer/to-agent.edn");
-    let first = project_files::append(&path, "regen", &[]).unwrap();
+    let mailbox = Mailbox::outbox(&root);
+    let first = mailbox.append("regen", &[]).unwrap();
     assert_eq!(first, edn::parse("{:id 1 :op :regen}").unwrap());
     std::fs::write(&path, r#"{:next-id 7 :queue [{:id 6 :op :omit}]}"#).unwrap();
-    project_files::append(&path, "regen", &[]).unwrap();
+    mailbox.append("regen", &[]).unwrap();
     let boxed = edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
         boxed,

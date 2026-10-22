@@ -27,7 +27,6 @@ pub mod hit;
 pub mod ir;
 pub mod layout;
 pub mod overlay;
-pub mod pair_order;
 pub mod policy;
 pub mod route;
 pub mod search;

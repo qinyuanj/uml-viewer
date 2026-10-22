@@ -4,13 +4,12 @@
 
 use std::collections::HashMap;
 
-use edn::Value;
-
-use crate::pair_order;
 use crate::value::{
     as_f64, contains, copy_map, drop_key, get, id, ids, key_of, kw, name, or, put, record, seq,
     truthy,
 };
+use edn::Value;
+use edn::pair_order;
 
 fn matches_prefix(x: &Value, p: &Value) -> bool {
     let (x, p) = (name(x), name(p));
@@ -110,8 +109,12 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         out[group.index] = best;
     }
     let names: Vec<(String, String)> = pairs.iter().map(pair_names).collect();
+    let keys: Vec<(&str, &str)> = names
+        .iter()
+        .map(|(f, t)| (f.as_str(), t.as_str()))
+        .collect();
     Value::Vector(
-        pair_order::indices(&names)
+        pair_order::indices(&keys)
             .into_iter()
             .map(|i| out[i].clone())
             .collect(),

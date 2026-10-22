@@ -3,7 +3,6 @@
 //! `apply_policy` itself belongs to the IR generator (#136).
 
 use crate::geom::{self, name};
-use crate::pair_order;
 use edn::Value;
 
 pub const PROPOSAL_NOTICE: &str = "PROPOSAL — not instantiated in code";
@@ -98,12 +97,25 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         })
         .collect();
     let pairs: Vec<(Value, Value)> = groups.into_iter().map(|g| g.pair).collect();
+    let keys: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(from, to)| (keyword_name(from), keyword_name(to)))
+        .collect();
     Value::Vector(
-        pair_order::indices(&pairs)
+        edn::pair_order::indices(&keys)
             .into_iter()
             .map(|i| best[i].clone())
             .collect(),
     )
+}
+
+/// A pair key is a keyword (the IR's edge endpoints); anything else would
+/// make Clojure's `group-by` key shape differ, so it is a programming error.
+fn keyword_name(value: &Value) -> &str {
+    match value {
+        Value::Keyword(n) => n.as_str(),
+        _ => panic!("pair order only hashes keyword pairs"),
+    }
 }
 
 /// Restamp `:violating` on dependency edges that climb the rank order, and

@@ -18,6 +18,8 @@
 //!
 //! Lists `( )` and character literals are unsupported, as in the Lua codec.
 
+pub mod pair_order;
+
 use std::fmt;
 
 /// Largest integral magnitude a double represents exactly (Lua parity).
