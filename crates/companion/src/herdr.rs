@@ -17,6 +17,11 @@ use std::rc::Rc;
 /// §6).
 const BOOTSTRAP_MS: i64 = 60000;
 
+/// A dropped `pane run` is indistinguishable from a slow runner start, so
+/// the submission is retried a bounded number of times before failing.
+const ACK_ATTEMPTS: u32 = 3;
+const ACK_WAIT_MS: i64 = 10000;
+
 pub use crate::domain::Selected;
 
 /// How the runner role is launched inside the pane: the argv the pane's shell
@@ -742,17 +747,32 @@ impl Herdr {
         self.progress("runner")?;
         self.await_pane_ready(session, &pane_id)?;
         let argv = self.runner_command(&base, &command)?;
-        self.pane_run(
-            session,
-            &pane_id,
-            &domain::pane_command(&argv, &shell.name)?,
-        )?;
-        let state = self.poll(
-            30000,
-            100,
-            &|| self.runner_state(&base),
-            "Herdr runner did not acknowledge startup",
-        )?;
+        let submission = domain::pane_command(&argv, &shell.name)?;
+        // Herdr 0.9.5 can still swallow the submission after the pane has
+        // printed its first output, and it reports success when it does.
+        // Resubmit while no runner state appears: the runner takes a
+        // generation lock, so a duplicate simply exits and cannot run twice.
+        let mut acknowledged = None;
+        for attempt in 0..ACK_ATTEMPTS {
+            self.pane_run(session, &pane_id, &submission)?;
+            match self.poll(
+                ACK_WAIT_MS,
+                100,
+                &|| self.runner_state(&base),
+                "Herdr runner did not acknowledge startup",
+            ) {
+                Ok(state) => {
+                    acknowledged = Some(state);
+                    break;
+                }
+                Err(error) => {
+                    if attempt + 1 == ACK_ATTEMPTS {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        let state = acknowledged.ok_or_else(|| Failure::new("No runner acknowledgement"))?;
         let phase = record::get_name(&state, "phase").unwrap_or_default();
         let clean_exit = phase == "exited" && record::get_i64(&state, "exit") == Some(0);
         if phase != "started" && !clean_exit {

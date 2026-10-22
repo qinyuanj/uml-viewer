@@ -251,8 +251,12 @@ def scenario_cancel(viewer):
         '{:next-id 3 :queue [{:id 1 :op :context :context :real} {:id 2 :op :display :path "diagram.edn"}]}')
     wait_for(lambda: ':queue []' in (project / '.uml-viewer/to-viewer.edn').read_text(), 60,
              message='FIFO drain after recovery')
+    # Mesa writes libEGL/MESA-LOADER warnings to the same log while wgpu probes
+    # the GPU; they are not viewer verdicts about mail.
+    noise = ('libEGL warning', 'MESA-LOADER')
     rejected = [line for line in (project / '.uml-viewer/viewer.log').read_text().splitlines()
-                if 'rejected' in line or 'failed' in line]
+                if ('rejected' in line or 'failed' in line)
+                and not line.lstrip().startswith(noise)]
     assert not rejected, f'mail after recovery was rejected: {rejected}'
     viewer.check('FIFO after recovery', 'queue drained oldest first, no rejection logged')
     viewer.crash_and_recover(2)
