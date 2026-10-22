@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use edn::Value;
@@ -19,6 +19,7 @@ use crate::bench;
 use crate::commands::{self, Command};
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
+use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::{cli::Options, fonts, identity, metrics, paint, strings, theme, watch};
 
@@ -327,6 +328,42 @@ struct Viewer {
     bench_geo: Option<bench::Geo>,
     /// Adapter name, backend, driver, driver info (protocol-1 environment).
     adapter: [String; 4],
+    /// Class/edge geometry, rebuilt only when the scene, selection, hover or
+    /// LOD tier changes (#143).
+    render_cache: RenderCache,
+    /// Canvas text layouts across frames (#143).
+    text_cache: paint::TextCache,
+    /// Stops the idle wake thread when the viewer is dropped.
+    wake_stop: Arc<AtomicBool>,
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        self.wake_stop.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Idle wake-ups (#143): a stat-only watcher repaints only when the diagram,
+/// metrics or mailbox stamp changes, so an idle viewer does not redraw on the
+/// poll cadence. The woken frame's `poll` does the actual reload.
+fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<AtomicBool> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let spawned = std::thread::Builder::new()
+        .name("uml-viewer-wake".into())
+        .spawn(move || {
+            let mut wake = watch::Wake::new(&diagram, &root);
+            while !flag.load(Ordering::SeqCst) {
+                std::thread::sleep(POLL_INTERVAL);
+                if wake.poll() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        eprintln!("uml viewer: could not start the idle watcher: {error}");
+    }
+    stop
 }
 
 impl Viewer {
@@ -397,6 +434,13 @@ impl Viewer {
             bench: None,
             bench_geo: None,
             adapter,
+            render_cache: RenderCache::default(),
+            text_cache: paint::TextCache::default(),
+            wake_stop: spawn_wake(
+                cc.egui_ctx.clone(),
+                setup.diagram.clone(),
+                setup.project_root.clone(),
+            ),
         };
         if let Some(evidence) = &setup.evidence {
             if let Some(info) = &renderer {
@@ -937,6 +981,8 @@ impl Viewer {
         }
         if step.continuous {
             ctx.request_repaint();
+        } else if let Some(seconds) = step.wake_s {
+            ctx.request_repaint_after(Duration::from_secs_f64(seconds));
         }
         if step.finished {
             let code = if passed == Some(true) { 0 } else { 1 };
@@ -1078,6 +1124,8 @@ impl eframe::App for Viewer {
             status.as_deref(),
             performance,
             self.show_performance,
+            &mut self.render_cache,
+            &mut self.text_cache,
         );
         self.draw_search(ctx);
 
@@ -1103,7 +1151,15 @@ impl eframe::App for Viewer {
             self.quit = true;
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
-        ctx.request_repaint_after(POLL_INTERVAL);
+        // Idle: no cadence; input and the wake watcher repaint. Drivers,
+        // timed runs and pending screenshots keep the poll cadence.
+        let shots_pending = self.shots_requested.len() > self.shots_sent.len()
+            || (self.evidence.is_some() && self.frames < 4);
+        if self.bench.is_none()
+            && (self.driver.is_some() || self.test_seconds.is_some() || shots_pending)
+        {
+            ctx.request_repaint_after(POLL_INTERVAL);
+        }
     }
 }
 

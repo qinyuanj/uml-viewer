@@ -2,11 +2,15 @@
 //! the zoom transform and the canvas chrome. Strokes are fixed screen points;
 //! only world geometry scales with zoom (the LOVE adapter's contract).
 
-use egui::{Align, Color32, FontFamily, FontId, Pos2, Rect as ERect, Stroke, StrokeKind};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use egui::{Align, Color32, FontFamily, FontId, Galley, Pos2, Rect as ERect, Stroke, StrokeKind};
 use scene::document::ViewState;
 use scene::geom::Rect;
 
 use crate::commands::{self, Command, EdgeCommand};
+use crate::render_cache::RenderCache;
 use crate::{lod, strings, theme};
 
 pub fn canvas_bg() -> Color32 {
@@ -82,9 +86,122 @@ pub fn measure(ctx: &egui::Context, size: f32, text: &str) -> f64 {
     })
 }
 
+/// Canvas text layouts kept across frames (#143). Font sizes are whole
+/// pixels, so zooming revisits a bounded set of (label, size) pairs; egui's
+/// own galley cache keeps a layout for one frame only, so every size step
+/// used to lay out every visible label again.
+#[derive(Default)]
+pub struct TextCache {
+    galleys: HashMap<(String, u32, bool, bool, Color32), Arc<Galley>>,
+    widths: HashMap<(String, u32), f32>,
+    /// Pixels per point and atlas fill ratio at the last frame: a changed
+    /// scale or a cleared atlas (fill dropped) invalidates every galley.
+    epoch: Option<(f32, f32)>,
+    layouts: u64,
+}
+
+/// Entries kept before the cache starts over (labels × sizes × styles).
+const TEXT_CACHE_LIMIT: usize = 50_000;
+
+impl TextCache {
+    /// Call once per frame before drawing.
+    pub fn begin_frame(&mut self, ctx: &egui::Context) {
+        let ppp = ctx.pixels_per_point();
+        let fill = ctx.fonts(|fonts| fonts.font_atlas_fill_ratio());
+        let stale = self.epoch.is_some_and(|(p, f)| p != ppp || fill < f);
+        if stale || self.galleys.len() + self.widths.len() > TEXT_CACHE_LIMIT {
+            self.galleys.clear();
+            self.widths.clear();
+        }
+        self.epoch = Some((ppp, fill));
+    }
+
+    /// How many layouts were computed (cache misses).
+    pub fn layouts(&self) -> u64 {
+        self.layouts
+    }
+
+    /// The monospace advance of `text` at `size` (see [`measure`]).
+    pub fn width(&mut self, ctx: &egui::Context, text: &str, size: f32) -> f32 {
+        let key = (text.to_owned(), size.to_bits());
+        if let Some(w) = self.widths.get(&key) {
+            return *w;
+        }
+        self.layouts += 1;
+        let w = measure(ctx, size, text) as f32;
+        self.widths.insert(key, w);
+        w
+    }
+
+    /// The laid-out label; centred galleys are centred on x = 0.
+    pub fn galley(
+        &mut self,
+        ctx: &egui::Context,
+        text: &str,
+        size: f32,
+        color: Color32,
+        italic: bool,
+        center: bool,
+    ) -> Arc<Galley> {
+        let key = (text.to_owned(), size.to_bits(), italic, center, color);
+        if let Some(g) = self.galleys.get(&key) {
+            return g.clone();
+        }
+        self.layouts += 1;
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            text,
+            0.0,
+            egui::TextFormat {
+                font_id: FontId::new(size, FontFamily::Monospace),
+                color,
+                italics: italic,
+                ..Default::default()
+            },
+        );
+        job.halign = if center { Align::Center } else { Align::LEFT };
+        let galley = ctx.fonts_mut(|fonts| fonts.layout_job(job));
+        self.galleys.insert(key, galley.clone());
+        galley
+    }
+}
+
+/// `commands::fit` on whole pixels: the largest integer size not above
+/// `size` whose text, bold offset and italic shear fit `budget`. Spec #134
+/// requires integer font sizes; fractional fits miss egui's galley cache and
+/// rasterize a new glyph size every zoom frame.
+fn fit_px(
+    ctx: &egui::Context,
+    text: &mut TextCache,
+    size: f32,
+    label: &str,
+    budget: f32,
+    bold: bool,
+    italic: bool,
+) -> f32 {
+    let mut width = |s: f32| {
+        text.width(ctx, label, s)
+            + if bold { s * 0.05 } else { 0.0 }
+            + if italic { s * 0.2 } else { 0.0 }
+    };
+    let nominal = size.floor().max(1.0);
+    let natural = width(nominal);
+    if natural <= budget || natural <= 0.0 {
+        return nominal;
+    }
+    let mut px = (nominal * budget.max(0.0) / natural)
+        .floor()
+        .min(nominal - 1.0);
+    while px >= 1.0 && width(px) > budget {
+        px -= 1.0;
+    }
+    px
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_text(
     ctx: &egui::Context,
+    text: &mut TextCache,
     painter: &egui::Painter,
     x: f32,
     y: f32,
@@ -100,34 +217,16 @@ fn draw_text(
         return;
     }
     let size = max_w.map_or(size, |budget| {
-        commands::fit(
-            |s, t| measure(ctx, s as f32, t),
-            size as f64,
-            label,
-            budget as f64,
-            bold,
-            italic,
-        ) as f32
+        fit_px(ctx, text, size, label, budget, bold, italic)
     });
-    if size < 1.0 {
+    // Below legibility a label is a smear of glyph quads (#143).
+    if size < MIN_TEXT_PX {
         return;
     }
-    let mut job = egui::text::LayoutJob::default();
-    job.append(
-        label,
-        0.0,
-        egui::TextFormat {
-            font_id: FontId::new(size, FontFamily::Monospace),
-            color,
-            italics: italic,
-            ..Default::default()
-        },
-    );
-    job.halign = if center { Align::Center } else { Align::LEFT };
-    if let Some(budget) = max_w {
-        job.wrap.max_width = budget;
-    }
-    let galley = ctx.fonts_mut(|fonts| fonts.layout_job(job));
+    // No wrap width: the fit keeps the label inside its budget, and centred
+    // rows centre on x = 0 either way; a per-zoom wrap width would defeat
+    // the cache.
+    let galley = text.galley(ctx, label, size, color, italic, center);
     // Bold is a second pass with the adapter's 5% offset.
     for pass in 0..if bold { 2 } else { 1 } {
         let offset = if pass == 0 { 0.0 } else { size * 0.05 };
@@ -220,18 +319,114 @@ fn paint_head(
     }
 }
 
-fn polyline_visible(points: &[[f64; 2]], viewport: Rect) -> bool {
-    let Some(first) = points.first() else {
-        return false;
-    };
-    let (mut min_x, mut min_y, mut max_x, mut max_y) = (first[0], first[1], first[0], first[1]);
-    for p in points {
-        min_x = min_x.min(p[0]);
-        min_y = min_y.min(p[1]);
-        max_x = max_x.max(p[0]);
-        max_y = max_y.max(p[1]);
+fn add_quad(mesh: &mut egui::Mesh, corners: [Pos2; 4], color: Color32) {
+    let i = mesh.vertices.len() as u32;
+    for v in corners {
+        mesh.colored_vertex(v, color);
     }
-    Rect::new(min_x, min_y, max_x - min_x, max_y - min_y).overlaps(viewport)
+    mesh.add_triangle(i, i + 1, i + 2);
+    mesh.add_triangle(i, i + 2, i + 3);
+}
+
+fn add_rect(mesh: &mut egui::Mesh, r: ERect, color: Color32) {
+    add_quad(
+        mesh,
+        [
+            r.left_top(),
+            r.right_top(),
+            r.right_bottom(),
+            r.left_bottom(),
+        ],
+        color,
+    );
+}
+
+/// A filled rect with an inside stroke, square-cornered.
+fn add_boxed(mesh: &mut egui::Mesh, r: ERect, fill: Color32, line: Stroke) {
+    add_rect(mesh, r, fill);
+    let w = line.width.min(r.width() / 2.0).min(r.height() / 2.0);
+    let c = line.color;
+    add_rect(
+        mesh,
+        ERect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + w)),
+        c,
+    );
+    add_rect(
+        mesh,
+        ERect::from_min_max(Pos2::new(r.min.x, r.max.y - w), r.max),
+        c,
+    );
+    add_rect(
+        mesh,
+        ERect::from_min_max(
+            Pos2::new(r.min.x, r.min.y + w),
+            Pos2::new(r.min.x + w, r.max.y - w),
+        ),
+        c,
+    );
+    add_rect(
+        mesh,
+        ERect::from_min_max(
+            Pos2::new(r.max.x - w, r.min.y + w),
+            Pos2::new(r.max.x, r.max.y - w),
+        ),
+        c,
+    );
+}
+
+fn add_disc(mesh: &mut egui::Mesh, center: Pos2, radius: f32, color: Color32) {
+    if radius <= 0.0 {
+        return;
+    }
+    let i = mesh.vertices.len() as u32;
+    mesh.colored_vertex(center, color);
+    for k in 0..8 {
+        let a = std::f32::consts::TAU * k as f32 / 8.0;
+        mesh.colored_vertex(center + radius * egui::vec2(a.cos(), a.sin()), color);
+    }
+    for k in 0..8 {
+        mesh.add_triangle(i, i + 1 + k, i + 1 + (k + 1) % 8);
+    }
+}
+
+/// Below this zoom Full-tier strokes also take the unfeathered mesh: a
+/// 2000-class view at zoom 0.4 strokes ~300k points (#143).
+const MESH_EDGE_SCALE: f32 = 0.6;
+
+/// Corner radius on screen; under 2 px it is invisible and square corners
+/// skip egui's arc tessellation.
+fn corner(radius: f32, scale: f32) -> f32 {
+    let r = radius * scale;
+    if r < 2.0 { 0.0 } else { r }
+}
+
+/// A mid-tier class name drawn above the overview mesh: position, label,
+/// size, colour, [italic, bold, centred], width budget.
+type DeferredName<'a> = (Pos2, &'a str, f32, Color32, [bool; 3], f32);
+
+/// Smallest canvas text size drawn, in points.
+const MIN_TEXT_PX: f32 = 5.0;
+
+/// Append a polyline as butt-ended quads (one per segment) to `mesh`.
+fn add_segments(
+    mesh: &mut egui::Mesh,
+    points: impl Iterator<Item = Pos2>,
+    width: f32,
+    color: Color32,
+) {
+    let half = width / 2.0;
+    let mut last: Option<Pos2> = None;
+    for p in points {
+        if let Some(a) = last {
+            let d = p - a;
+            let len = d.length();
+            if len > 0.0 {
+                let n = egui::vec2(-d.y, d.x) * (half / len);
+                add_quad(mesh, [a + n, a - n, p - n, p + n], color);
+            }
+        }
+        last = Some(p);
+    }
 }
 
 fn point_visible(p: [f64; 2], viewport: Rect) -> bool {
@@ -242,28 +437,47 @@ fn paint_edges(
     painter: &egui::Painter,
     transform: &Transform,
     viewport: Rect,
-    commands: &[EdgeCommand],
+    cache: &RenderCache,
     tier: lod::Tier,
 ) {
-    for command in commands {
+    // Mid-tier strokes: one unfeathered quad mesh. Feathered tessellation of
+    // the ~56k decimated points of a 500-class overview cost ~15 ms a frame
+    // (#143); at overview zoom the 1.6 pt lines need no anti-aliasing.
+    // Blocks (smallest zoom) draw no edges (spec #134 渲染).
+    if tier == lod::Tier::Blocks {
+        return;
+    }
+    let mut mesh = egui::Mesh::default();
+    for (command, polyline) in cache.edges() {
         match command {
             EdgeCommand::Stroke {
-                points,
+                color,
+                width,
+                dimmed,
+                ..
+            } if tier == lod::Tier::Frames || transform.scale < MESH_EDGE_SCALE => {
+                let Some(line) = polyline else {
+                    continue;
+                };
+                if line.bounds.overlaps(viewport) {
+                    let color = ink(color.color32(), *dimmed);
+                    let screen = line.points.iter().map(|p| transform.pos(*p));
+                    add_segments(&mut mesh, screen, *width, color);
+                }
+            }
+            EdgeCommand::Stroke {
                 color,
                 width,
                 dimmed,
                 ..
             } => {
-                if points.len() < 2 || !polyline_visible(points, viewport) {
+                let Some(line) = polyline else {
+                    continue;
+                };
+                if !line.bounds.overlaps(viewport) {
                     continue;
                 }
-                let simplified = if tier == lod::Tier::Frames {
-                    let budget = (lod::DECIMATE_PX / transform.scale.max(1e-6) as f64).max(1e-6);
-                    lod::decimate(points, budget)
-                } else {
-                    points.clone()
-                };
-                let screen: Vec<Pos2> = simplified.iter().map(|p| transform.pos(*p)).collect();
+                let screen: Vec<Pos2> = line.points.iter().map(|p| transform.pos(*p)).collect();
                 painter.add(egui::Shape::line(
                     screen,
                     stroke_of(ink(color.color32(), *dimmed), *width),
@@ -320,6 +534,9 @@ fn paint_edges(
             }
         }
     }
+    if !mesh.is_empty() {
+        painter.add(egui::Shape::mesh(mesh));
+    }
 }
 
 /// Paint one frame of the canvas: background, geometry and chrome.
@@ -333,16 +550,27 @@ pub fn paint(
     status: Option<&str>,
     performance: Option<String>,
     show_performance: bool,
+    cache: &mut RenderCache,
+    text: &mut TextCache,
 ) {
+    text.begin_frame(ctx);
     painter.rect_filled(screen, 0.0, canvas_bg());
     let transform = Transform::new(screen, state);
     let tier = lod::tier(if state.zoom > 0.0 { state.zoom } else { 1.0 });
     let viewport = transform.world_viewport(screen);
     let clipped = painter.with_clip_rect(screen);
 
-    let commands = commands::commands(&state.scene, state.selected.as_ref(), state.hover.as_ref());
-    for command in &commands {
-        if command.bounds().is_some_and(|b| !lod::visible(b, viewport)) {
+    // Geometry is rebuilt only on scene/selection/hover/tier change.
+    cache.frame(state, tier);
+    // Mid-tier overview: class boxes and C/M dots go into one unfeathered
+    // mesh and names are drawn above it. Feathered tessellation of 500 boxes
+    // and 1000 dots alone cost ~10 ms a frame (#143); at overview zoom the
+    // sub-pixel corner radii and anti-aliasing are invisible.
+    let overview = tier != lod::Tier::Full;
+    let mut boxes = egui::Mesh::default();
+    let mut names: Vec<DeferredName> = Vec::new();
+    for (bounds, command) in cache.commands() {
+        if bounds.is_some_and(|b| !lod::visible(b, viewport)) {
             continue;
         }
         match command {
@@ -360,7 +588,7 @@ pub fn paint(
                 if r.width() < 1.0 || r.height() < 1.0 {
                     continue;
                 }
-                let corner = (theme::radius::PACKAGE * transform.scale).max(0.0);
+                let corner = corner(theme::radius::PACKAGE, transform.scale);
                 painter.rect_filled(r, corner, fill.with_alpha(theme::ALPHA_PACKAGE_FILL));
                 let line = if *selected {
                     stroke_of(theme::GOLD.color32(), theme::widths::SELECTED)
@@ -378,6 +606,7 @@ pub fn paint(
                 let budget = (*max_w * transform.scale as f64) as f32;
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     r.min.x + commands::PAD as f32 * transform.scale,
                     r.min.y + 8.0 * transform.scale,
@@ -406,7 +635,7 @@ pub fn paint(
                 if r.width() < 1.0 || r.height() < 1.0 {
                     continue;
                 }
-                let corner = (theme::radius::CLASS * transform.scale).max(0.0);
+                let corner = corner(theme::radius::CLASS, transform.scale);
                 let line_color = if *selected {
                     ink(theme::GOLD.color32(), *dimmed)
                 } else if *hovered {
@@ -421,7 +650,14 @@ pub fn paint(
                 } else {
                     theme::widths::CLASS
                 };
-                if shape == "oval" {
+                if overview && shape != "oval" && !*missing {
+                    add_boxed(
+                        &mut boxes,
+                        r,
+                        ink(fill.color32(), *dimmed),
+                        stroke_of(line_color, width),
+                    );
+                } else if shape == "oval" {
                     ellipse(
                         &clipped,
                         r,
@@ -456,6 +692,22 @@ pub fn paint(
                 }
                 let center = transform.pos([*x, *y]);
                 let r = *radius as f32 * transform.scale;
+                if overview {
+                    let half = theme::widths::DOT / 2.0;
+                    add_disc(
+                        &mut boxes,
+                        center,
+                        r + half,
+                        ink(theme::stroke(*grade).color32(), *dimmed),
+                    );
+                    add_disc(
+                        &mut boxes,
+                        center,
+                        r - half,
+                        ink(theme::fill(*grade).color32(), *dimmed),
+                    );
+                    continue;
+                }
                 painter.circle_filled(center, r, ink(theme::fill(*grade).color32(), *dimmed));
                 painter.circle_stroke(
                     center,
@@ -468,6 +720,7 @@ pub fn paint(
                 if tier == lod::Tier::Full {
                     draw_text(
                         ctx,
+                        text,
                         &clipped,
                         center.x,
                         center.y - 4.5,
@@ -496,6 +749,7 @@ pub fn paint(
                 let p = transform.pos([*x, *y]);
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     p.x,
                     p.y,
@@ -523,6 +777,7 @@ pub fn paint(
                 let p = transform.pos([*x, *y]);
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     p.x,
                     p.y,
@@ -591,6 +846,11 @@ pub fn paint(
                     continue;
                 }
                 let px = lod::font_px(*size * transform.scale as f64, 1.0);
+                // Text below legibility is skipped (the #131 prototype drew
+                // no text under 4 px).
+                if px < MIN_TEXT_PX {
+                    continue;
+                }
                 let top_px = transform.pos([*x, top.unwrap_or(*y)]).y;
                 let slot_px = h.unwrap_or(*size) as f32 * transform.scale;
                 let base_y = top_px + ((slot_px - px) / 2.0).max(0.0);
@@ -599,18 +859,32 @@ pub fn paint(
                 } else {
                     transform.pos([*x, 0.0]).x
                 };
+                let color = ink(commands::text_color(role).color32(), *dimmed);
+                let budget = (*max_w * transform.scale as f64) as f32;
+                if overview {
+                    names.push((
+                        Pos2::new(cx, base_y),
+                        label,
+                        px,
+                        color,
+                        [*italic, *bold, *center],
+                        budget,
+                    ));
+                    continue;
+                }
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     cx,
                     base_y,
                     label,
                     px,
-                    ink(commands::text_color(role).color32(), *dimmed),
+                    color,
                     *italic,
                     *bold,
                     *center,
-                    Some((*max_w * transform.scale as f64) as f32),
+                    Some(budget),
                 );
             }
             Command::NoData {
@@ -627,9 +901,10 @@ pub fn paint(
                 }
                 let px = lod::font_px(*size * transform.scale as f64, 1.0);
                 let p = transform.pos([*right, *y]);
-                let width = measure(ctx, px, label) as f32;
+                let width = text.width(ctx, label, px);
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     p.x - width,
                     p.y,
@@ -652,7 +927,7 @@ pub fn paint(
                     continue;
                 }
                 let r = transform.rect(*rect);
-                painter.rect_filled(r, 2.0 * transform.scale, ink(*color, *dimmed));
+                painter.rect_filled(r, corner(2.0, transform.scale), ink(*color, *dimmed));
             }
             Command::PortLink {
                 behind,
@@ -692,7 +967,7 @@ pub fn paint(
                     continue;
                 }
                 let r = transform.rect(*rect);
-                let corner = 3.0 * transform.scale;
+                let corner = corner(3.0, transform.scale);
                 painter.rect_filled(
                     r,
                     corner,
@@ -727,6 +1002,7 @@ pub fn paint(
                 );
                 draw_text(
                     ctx,
+                    text,
                     &clipped,
                     r.center().x,
                     r.center().y - 5.0,
@@ -750,9 +1026,26 @@ pub fn paint(
         }
     }
 
-    let edges =
-        commands::edge_commands(&state.scene, state.selected.as_ref(), state.hover.as_ref());
-    paint_edges(&clipped, &transform, viewport, &edges, tier);
+    if !boxes.is_empty() {
+        clipped.add(egui::Shape::mesh(boxes));
+    }
+    for (at, label, px, color, [italic, bold, center], budget) in names {
+        draw_text(
+            ctx,
+            text,
+            &clipped,
+            at.x,
+            at.y,
+            label,
+            px,
+            color,
+            italic,
+            bold,
+            center,
+            Some(budget),
+        );
+    }
+    paint_edges(&clipped, &transform, viewport, cache, tier);
 
     // Screen-space chrome: banner, return scope, popup (view units = points).
     for command in commands::chrome(state, screen.width() as f64, screen.height() as f64) {
@@ -776,6 +1069,7 @@ pub fn paint(
                 color,
             } => draw_text(
                 ctx,
+                text,
                 painter,
                 screen.min.x + x as f32,
                 screen.min.y + y as f32,
@@ -789,6 +1083,7 @@ pub fn paint(
             ),
             Command::Hint { text: label } => draw_text(
                 ctx,
+                text,
                 painter,
                 screen.center().x,
                 screen.center().y,
@@ -819,6 +1114,7 @@ pub fn paint(
                 for (i, row) in rows.iter().enumerate() {
                     draw_text(
                         ctx,
+                        text,
                         painter,
                         box_rect.min.x + 8.0,
                         box_rect.min.y + 8.0 + i as f32 * 20.0,
@@ -846,6 +1142,7 @@ pub fn paint(
                 );
                 draw_text(
                     ctx,
+                    text,
                     painter,
                     r.center().x,
                     r.min.y + 5.0,
@@ -864,6 +1161,7 @@ pub fn paint(
     if let Some(label) = hint {
         draw_text(
             ctx,
+            text,
             painter,
             screen.center().x,
             screen.center().y,
@@ -879,6 +1177,7 @@ pub fn paint(
     if let Some(label) = status {
         draw_text(
             ctx,
+            text,
             painter,
             screen.min.x + 12.0,
             screen.max.y - 30.0,
@@ -894,6 +1193,7 @@ pub fn paint(
     if show_performance && let Some(line) = performance {
         draw_text(
             ctx,
+            text,
             painter,
             screen.min.x + 12.0,
             screen.min.y + 48.0,

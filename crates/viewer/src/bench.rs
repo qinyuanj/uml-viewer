@@ -218,8 +218,11 @@ pub fn evaluate(renderer: &str, classes: usize, results: &[PhaseResult]) -> Vec<
 pub struct Step {
     /// World centre + zoom to apply; `None` keeps the current camera (idle).
     pub camera: Option<(f64, f64, f64)>,
-    /// Continuous phases repaint every frame; idle waits on the poll cadence.
+    /// Continuous phases repaint every frame; idle repaints only on wakes.
     pub continuous: bool,
+    /// Seconds until the next frame the bench itself needs (idle's end); the
+    /// viewer has no repaint cadence of its own while idle (#143).
+    pub wake_s: Option<f64>,
     /// All phases done: results are written, the caller closes the window.
     pub finished: bool,
 }
@@ -293,6 +296,7 @@ impl Bench {
                 camera: Some((geo.cx, geo.cy, 1.0)),
                 continuous: true,
                 finished: false,
+                wake_s: None,
             };
         }
         if self.phase.is_none() {
@@ -330,7 +334,7 @@ impl Bench {
             );
         }
         let done = (t >= MIN_S && self.samples.len() >= MIN_FRAMES) || t >= MAX_S;
-        // Idle: request nothing but the poll wake-ups, so the phase ends.
+        // Idle: one self-scheduled wake ends the phase (no poll cadence).
         let idle_done = name == "idle" && t >= MIN_S;
         if done || idle_done {
             let cpu1 = self_cpu_seconds().unwrap_or(cpu0);
@@ -356,6 +360,7 @@ impl Bench {
                     camera,
                     continuous: false,
                     finished: true,
+                    wake_s: None,
                 };
             }
             self.phase = Some((pi + 1, now, cpu1));
@@ -365,6 +370,7 @@ impl Bench {
                 camera,
                 continuous: true,
                 finished: false,
+                wake_s: None,
             };
         }
         if name == "idle" {
@@ -374,12 +380,14 @@ impl Bench {
                 camera,
                 continuous: false,
                 finished: false,
+                wake_s: Some((MIN_S - t).max(0.0) + 0.01),
             }
         } else {
             Step {
                 camera,
                 continuous: true,
                 finished: false,
+                wake_s: None,
             }
         }
     }
@@ -708,6 +716,24 @@ mod tests {
             lo <= g.fit * 1.0001 && hi >= g.zoom_hi * 0.9999,
             "{lo}..{hi}"
         );
+        let _ = std::fs::remove_dir_all(&out);
+    }
+
+    #[test]
+    fn idle_asks_for_one_wake_at_the_phase_end_instead_of_a_poll_cadence() {
+        let out = std::env::temp_dir().join(format!("uml-bench-idle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        let mut bench = Bench::new(out.clone(), Some("idle".into()), "D3D12".into(), 500).unwrap();
+        let g = geo();
+        let t0 = Instant::now();
+        // Warmup, then the first idle frame 2 s into the phase.
+        bench.frame(&g, t0, None);
+        let start = t0 + std::time::Duration::from_secs_f64(WARMUP_S);
+        bench.frame(&g, start, None);
+        let step = bench.frame(&g, start + std::time::Duration::from_secs(2), None);
+        assert!(!step.continuous);
+        let wake = step.wake_s.expect("idle schedules its own end");
+        assert!((MIN_S - 2.0..MIN_S - 1.9).contains(&wake), "{wake}");
         let _ = std::fs::remove_dir_all(&out);
     }
 

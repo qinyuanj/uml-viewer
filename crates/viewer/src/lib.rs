@@ -15,6 +15,7 @@ pub mod identity;
 pub mod lod;
 pub mod metrics;
 pub mod paint;
+pub mod render_cache;
 pub mod search_box;
 pub mod strings;
 pub mod theme;
