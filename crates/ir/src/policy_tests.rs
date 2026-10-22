@@ -16,7 +16,12 @@ fn parse(text: &str) -> Value {
 
 fn assert_same(expected: &str, actual: Option<&Value>) {
     let actual = actual.unwrap_or_else(|| panic!("missing value; expected {expected}"));
-    assert_eq!(parse(expected), *actual, "actual: {}", edn::encode(actual).unwrap());
+    assert_eq!(
+        parse(expected),
+        *actual,
+        "actual: {}",
+        edn::encode(actual).unwrap()
+    );
 }
 
 #[test]
