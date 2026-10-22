@@ -1,0 +1,161 @@
+//! Inspector sidebar model (#141). Expected values are those of
+//! `love/spec/inspector_spec.lua` and `display_spec.lua` (view units ==
+//! egui points).
+
+use edn::Value;
+use scene::document::{self, ViewState};
+use scene::geom::get;
+use viewer::inspector::{self, Choice};
+use viewer::project_files;
+
+fn load(text: &str) -> ViewState {
+    document::new_state(scene::ir::read_document(text).unwrap(), None, None, None, &[], None)
+}
+
+const PLAN: &str = r#"{:hierarchical true :prefix "demo" :classes [{:id :a :ns "demo.a"}] :proposals [{:id :plan :name "中文方案" :layers []}]}"#;
+
+#[test]
+fn lists_the_source_diagram_then_declared_proposals_with_the_active_one() {
+    let state = load(PLAN);
+    let entries = inspector::entries(&state);
+    assert_eq!(entries.len(), 2);
+    assert_eq!((entries[0].label.as_str(), entries[0].active), ("源码图", true));
+    assert_eq!(entries[0].id, None);
+    assert_eq!((entries[1].label.as_str(), entries[1].active), ("中文方案", false));
+    let titled = load(r#"{:title "中文 Inspector" :hierarchical true :classes []}"#);
+    assert_eq!(inspector::entries(&titled)[0].label, "中文 Inspector");
+    assert_eq!(inspector::entries(&load(r#"{:hierarchical true :classes []}"#)).len(), 1);
+}
+
+#[test]
+fn choosing_switches_the_view_and_names_the_discussion_context() {
+    let state = load(PLAN);
+    let Choice { state: proposal, context } = inspector::choose(&state, Some(&Value::keyword("plan")));
+    assert_eq!(get(&proposal.extra, "proposal"), Some(&Value::Bool(true)));
+    assert_eq!(
+        context,
+        edn::parse(r#"{:context :proposal :proposal-id :plan :name "中文方案"}"#).unwrap()
+    );
+    assert!(inspector::entries(&proposal)[1].active);
+    let Choice { state: real, context } = inspector::choose(&proposal, None);
+    assert_eq!(get(&real.extra, "proposal"), Some(&Value::Bool(false)));
+    assert_eq!(context, edn::parse("{:context :real}").unwrap());
+}
+
+#[test]
+fn explains_the_empty_inspector_until_something_is_selected() {
+    let mut state = load(PLAN);
+    let text = inspector::empty_explanation(&state).unwrap();
+    assert!(text.contains("单击类或命名空间") && text.contains("双击命名空间或类"));
+    state.selected = Some(edn::parse("{:kind :class :id :a}").unwrap());
+    assert_eq!(inspector::empty_explanation(&state), None);
+}
+
+#[test]
+fn names_the_current_declutter_mode_on_its_button() {
+    let mut state = load(PLAN);
+    for expect in ["精简：无", "精简：箭头", "移除箭头", "精简：元素", "精简：类", "精简：无"] {
+        assert_eq!(inspector::declutter_label(&state), expect);
+        state = scene::events::cycle_declutter(&state);
+    }
+}
+
+#[test]
+fn sidebar_width_defaults_to_280_and_keeps_a_usable_canvas() {
+    assert_eq!(inspector::clamp_width(None, 1500.0), 280.0);
+    assert_eq!(inspector::clamp_width(Some(500.0), 1500.0), 500.0);
+    assert_eq!(inspector::clamp_width(Some(40.0), 1500.0), 200.0);
+    assert_eq!(inspector::clamp_width(Some(5000.0), 1500.0), 1260.0);
+    assert_eq!(inspector::clamp_width(Some(900.0), 300.0), 200.0);
+    assert_eq!(inspector::canvas_width(1500.0, 280.0), 1220.0);
+    assert_eq!(inspector::canvas_width(100.0, 200.0), 0.0);
+}
+
+#[test]
+fn the_left_edge_grip_drags_the_width() {
+    // Window 1500, width 280: the edge is at x = 1220, grip ±4.
+    assert!(inspector::on_edge(1220.0, 1500.0, 280.0));
+    assert!(inspector::on_edge(1216.0, 1500.0, 280.0));
+    assert!(!inspector::on_edge(1210.0, 1500.0, 280.0));
+    assert_eq!(inspector::drag_width(1160.0, 1500.0), 340.0);
+    assert_eq!(inspector::drag_width(1490.0, 1500.0), 200.0);
+}
+
+#[test]
+fn card_wheel_scrolls_in_48_point_steps_clamped_to_the_content() {
+    let mut state = load(PLAN);
+    state.selected = Some(edn::parse("{:kind :class :id :a}").unwrap());
+    let scrolled = inspector::scroll(&state, 1.0, 0.0);
+    assert_eq!(scrolled.detail_scroll, 48.0);
+    assert_eq!(inspector::scroll(&scrolled, -2.0, 0.0).detail_scroll, 0.0);
+    assert_eq!(inspector::scroll(&state, 99.0, 0.0).detail_scroll, 90.0);
+}
+
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("uml141-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn regen_appends_one_command_to_the_agent_queue() {
+    let root = temp_dir("outbox");
+    let path = root.join(".uml-viewer/to-agent.edn");
+    let first = project_files::append(&path, "regen", &[]).unwrap();
+    assert_eq!(first, edn::parse("{:id 1 :op :regen}").unwrap());
+    std::fs::write(&path, r#"{:next-id 7 :queue [{:id 6 :op :omit}]}"#).unwrap();
+    project_files::append(&path, "regen", &[]).unwrap();
+    let boxed = edn::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        boxed,
+        edn::parse("{:next-id 8 :queue [{:id 6 :op :omit} {:id 7 :op :regen}]}").unwrap()
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn proposal_write_back_keeps_other_proposals_and_policy_content() {
+    let root = temp_dir("policy");
+    let ir = root.join("diagram.edn");
+    let policy = root.join("diagram.policy.edn");
+    std::fs::write(
+        &ir,
+        r#"{:title "T" :hierarchical true :classes [{:id :a}] :proposals [{:id :plan :name "中文方案" :layers []} {:id :keep :name "保留" :layers [{:name "L" :members [:a]}]}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &policy,
+        r#"{:lang :lua :src "love" :omit [:x] :proposals [{:id :plan :name "中文方案" :layers []} {:id :keep :name "保留" :layers [{:name "L" :members [:a]}]}]}"#,
+    )
+    .unwrap();
+    let mut state = load(&std::fs::read_to_string(&ir).unwrap());
+    state.path = Some(ir.to_string_lossy().into_owned());
+    let renamed = scene::events::rename_proposal(
+        &state,
+        Some(&Value::keyword("plan")),
+        "中文方案输入",
+        Some(&project_files::Files),
+    );
+    // Proposals are written in their normalized form (as the LOVE viewer
+    // does): added `:omit []` and layer ids are not losses.
+    let written = edn::parse(&std::fs::read_to_string(&policy).unwrap()).unwrap();
+    assert_eq!(get(&written, "lang"), Some(&Value::keyword("lua")));
+    assert_eq!(get(&written, "src"), Some(&Value::String("love".into())));
+    assert_eq!(get(&written, "omit"), Some(&edn::parse("[:x]").unwrap()));
+    let Some(Value::Vector(proposals)) = get(&written, "proposals") else {
+        panic!("proposals lost")
+    };
+    let names: Vec<_> = proposals.iter().map(|p| get(p, "name").cloned()).collect();
+    assert_eq!(
+        names,
+        [Some(Value::String("中文方案输入".into())), Some(Value::String("保留".into()))]
+    );
+    let Some(Value::Vector(layers)) = get(&proposals[1], "layers") else {
+        panic!("layers lost")
+    };
+    assert_eq!(get(&layers[0], "name"), Some(&Value::String("L".into())));
+    assert_eq!(get(&layers[0], "members"), Some(&edn::parse("[:a]").unwrap()));
+    assert_eq!(inspector::entries(&renamed)[1].label, "中文方案输入");
+    let _ = std::fs::remove_dir_all(&root);
+}
