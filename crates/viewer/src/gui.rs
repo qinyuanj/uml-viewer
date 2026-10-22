@@ -726,13 +726,13 @@ impl Gui {
                             }
                             Some(source::Pos { row, col: d.to_source[col] })
                         };
-                        if response.drag_started() || response.clicked() || response.is_pointer_button_down_on() && w.anchor.is_none() {
-                            if let Some(p) = response.interact_pointer_pos() {
-                                if response.drag_started() || response.clicked() {
-                                    w.anchor = position(p);
-                                    w.caret = w.anchor;
-                                }
-                            }
+                        // egui reports drag_started only after the pointer moved
+                        // past the threshold: anchor at where the press began.
+                        if (response.drag_started() || response.clicked())
+                            && let Some(p) = ctx.input(|i| i.pointer.press_origin())
+                        {
+                            w.anchor = position(p);
+                            w.caret = w.anchor;
                         }
                         if response.dragged()
                             && let Some(p) = response.interact_pointer_pos()
@@ -985,6 +985,8 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
     let c = &model.class;
     let text = |v: Option<&Value>| match v {
         Some(Value::String(s)) => s.clone(),
+        Some(Value::Integer(n)) => n.to_string(),
+        Some(Value::Float(x)) => x.to_string(),
         Some(other) => name(other),
         None => String::new(),
     };
