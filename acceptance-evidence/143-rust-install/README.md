@@ -76,26 +76,33 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 - 空闲：后台线程只 stat IR、`.metrics/**` 和 `to-viewer.edn`，戳变化才请求重绘；driver、计时运行和待截图仍保留 250 ms 节奏。
   bench 的 idle 相位自己安排结束时的唤醒。
 
-### 合并 integration/spec-134 之后
+### 最终树（已合并 integration/spec-134 `e5cc114`）失效说明
 
-上面的数字在 `ticket/143-perf` 合并 integration tip（`e5cc114`）之前测得。合并后 #141 的检查器侧栏每帧深拷贝整份
-document，pan-detail 掉到约 29 fps、app CPU 约 33 ms（gui.draw 实测均值 11.2 ms/帧，其中 `inspector::entries`
-占 7.6–10.8 ms）。#141 在其分支上修复（`036c315`，侧栏 0.16–0.20 ms/帧）。在本分支上未提交地应用该修复后实测：
+合并后本分支的最终树**未达标**，原因是 #141 的检查器侧栏每帧深拷贝整份 document（`inspector::entries`），
+不是渲染缓存路径的回归。#141 已在其分支修复（`036c315`，侧栏 0.16–0.20 ms/帧，实测原为 7.8–10.2 ms/帧），
+但该提交尚未进入 integration/spec-134；本分支按协议只合并 integration tip，没有直接带入。
+
+最终树上各跑一次的验收（`bench/run_rust.sh bench/scenes/synthetic-500.edn <out>` 与
+`bench/run_rust.sh bench/scenes/synthetic-2000.edn <out>`）：
 
 | 场景 | 相位 | fps | p95 ms | 进程 CPU% |
 |---|---|---|---|---|
-| 500 | idle（仅 idle 相位，两次） | — | — | 1.10 / 0.80 |
-| 500 | pan-detail | 55.29 | 18.10 | 49.1 |
-| 500 | zoom-detail | 57.40 | 18.18 | 57.0 |
-| 500 | pan-fit | 58.70 | 17.63 | 49.0 |
-| 500 | zoom-fit | 57.38 | 18.62 | 61.1 |
-| 2000 | pan-detail | 58.09 | 18.05 | 62.0 |
-| 2000 | zoom-detail | 55.95 | 27.15 | 63.7 |
-| 2000 | pan-fit | 58.96 | 17.68 | 57.0 |
-| 2000 | zoom-fit | 46.74 | 34.96 | 64.0 |
+| 500 | idle | — | — | 0.50 |
+| 500 | pan-detail | 58.37 | 17.67 | 53.6 |
+| 500 | zoom-detail | 45.96 | 38.25 | 61.3 |
+| 500 | pan-fit | 52.99 | 29.64 | 59.5 |
+| 500 | zoom-fit | 53.89 | 28.64 | 64.3 |
+| 2000 | idle | — | — | 0.60 |
+| 2000 | pan-detail | 52.37 | 29.89 | 67.0 |
+| 2000 | zoom-detail | 35.40 | 44.44 | 62.8 |
+| 2000 | pan-fit | 34.18 | 45.76 | 59.9 |
+| 2000 | zoom-fit | 35.63 | 47.21 | 67.5 |
 
-那次运行与本机其他 agent 的 driver/bench 并发（负载约 3.9–4.7），所以 2000 的 zoom-fit 从 29.9 ms 变成 35.0 ms
-属于干扰，而不是回归；2000 全部达标是在合并前、同一代码路径上测得的。该修复必须先进入 integration，合并后的数字才有意义。
+对照：同一渲染路径在合并前（无 #141 侧栏）的两次验收见上表，2000 全部通过。
+在本分支上未提交地应用 #141 的 `036c315` 后实测（并发负载 3.9–4.7，单次）：
+500 pan-detail 55.29 / zoom-detail 57.40 / pan-fit 58.70 / zoom-fit 57.38 fps，idle 1.10 与 0.80%；
+2000 pan-detail 58.09 / zoom-detail 55.95 / pan-fit 58.96 / zoom-fit 46.74 fps。
+即侧栏修复进入 integration 后，渲染路径回到门槛附近；#141 必须先合并。
 
 仍未通过：500 类的 zoom-detail 和 zoom-fit 略低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
 Full 档 feather 细分）。2000 类全部通过。
