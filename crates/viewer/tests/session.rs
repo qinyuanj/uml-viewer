@@ -36,7 +36,10 @@ fn a_love_written_session_restores_view_selection_card_context_and_cursor() {
     assert_eq!(Some(Value::keyword("a")), restored.detail_id);
     let context = restored.discussion_context.expect("discussion context");
     assert_eq!(Some(&Value::keyword("plan")), get(&context, "proposal-id"));
-    assert_eq!(Some(&Value::String("中文方案".into())), get(&context, "name"));
+    assert_eq!(
+        Some(&Value::String("中文方案".into())),
+        get(&context, "name")
+    );
     assert_eq!(2, restored.mail_seen);
 }
 
@@ -82,7 +85,10 @@ fn a_session_without_a_context_keeps_the_current_discussion_context() {
     let real = edn::parse("{:context :real}").unwrap();
     state.discussion_context = Some(real.clone());
     let snapshot = edn::parse("{:zoom 2 :cam-x 1 :cam-y 2}").unwrap();
-    assert_eq!(Some(real), session::restore(&state, &snapshot).discussion_context);
+    assert_eq!(
+        Some(real),
+        session::restore(&state, &snapshot).discussion_context
+    );
 }
 
 #[test]
@@ -110,11 +116,17 @@ fn the_written_snapshot_uses_the_love_schema_and_restores_the_same_view() {
         "selected",
         "detail-id",
     ] {
-        assert!(get(&reread, key).is_some(), "snapshot lacks :{key}: {written}");
+        assert!(
+            get(&reread, key).is_some(),
+            "snapshot lacks :{key}: {written}"
+        );
     }
     assert_eq!(chrome, session::chrome(Some(&reread)));
     let again = session::restore(&loaded(), &reread);
-    assert_eq!((state.zoom, state.cam_x, state.cam_y), (again.zoom, again.cam_x, again.cam_y));
+    assert_eq!(
+        (state.zoom, state.cam_x, state.cam_y),
+        (again.zoom, again.cam_x, again.cam_y)
+    );
     assert_eq!(state.selected, again.selected);
     assert_eq!(state.detail_id, again.detail_id);
     assert_eq!(state.discussion_context, again.discussion_context);

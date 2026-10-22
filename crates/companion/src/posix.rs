@@ -857,8 +857,18 @@ mod tests {
         words.iter().map(OsString::from).collect()
     }
 
+    /// A forked child inherits open descriptors until it execs, so a lock that
+    /// a parent already released can still look held for a few milliseconds.
+    /// Fork-using tests and the flock singleton test therefore never overlap.
+    static FORK_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn fork_guard() -> std::sync::MutexGuard<'static, ()> {
+        FORK_GUARD.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
     #[test]
     fn run_passes_argv_literally_including_spaces_unicode_and_metacharacters() {
+        let _guard = fork_guard();
         let words = [
             "帶 空格",
             "a$(touch injected)b",
@@ -881,6 +891,7 @@ mod tests {
 
     #[test]
     fn run_reports_the_real_exit_code_and_both_streams() {
+        let _guard = fork_guard();
         let result = run(
             &args(&["/bin/sh", "-c", "printf out; printf err >&2; exit 23"]),
             None,
@@ -893,6 +904,7 @@ mod tests {
 
     #[test]
     fn run_times_out_a_bounded_command_and_reports_it() {
+        let _guard = fork_guard();
         let result = run(&args(&["/bin/sleep", "10"]), Some(300), &[]);
         assert!(result.timeout);
         assert_eq!(None, result.exit);
@@ -900,6 +912,7 @@ mod tests {
 
     #[test]
     fn a_timed_out_command_is_asked_to_stop_with_sigterm_so_it_can_release_resources() {
+        let _guard = fork_guard();
         let marker = temp_path("marker");
         let script = "trap 'echo released > \"$0\"' TERM; while :; do sleep 0.05; done".to_string();
         let argv = args(&["/bin/sh", "-c"]);
@@ -935,6 +948,7 @@ mod tests {
 
     #[test]
     fn a_detached_child_never_inherits_a_lock_its_parent_later_releases() {
+        let _guard = fork_guard();
         let lock_path = temp_path("lock");
         let log = temp_path("log");
         let held = try_acquire(&lock_path).unwrap().expect("lock");
@@ -958,6 +972,7 @@ mod tests {
 
     #[test]
     fn spawn_detached_reports_the_exact_creation_identity() {
+        let _guard = fork_guard();
         let log = temp_path("detached");
         let owner = spawn_detached(
             OsStr::new("/bin/sleep"),
@@ -975,6 +990,7 @@ mod tests {
 
     #[test]
     fn run_removes_only_the_named_variables_from_the_child_environment() {
+        let _guard = fork_guard();
         let home = std::env::var("HOME").unwrap();
         let present = run(
             &args(&["/bin/sh", "-c", "printf %s \"$HOME\""]),
@@ -1019,6 +1035,7 @@ mod tests {
 
     #[test]
     fn flock_singleton_blocks_a_second_holder_until_released() {
+        let _guard = fork_guard();
         let path = temp_path("flock");
         let held = try_acquire(&path).unwrap().expect("first lock");
         assert!(try_acquire(&path).unwrap().is_none());

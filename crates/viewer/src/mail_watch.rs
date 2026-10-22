@@ -98,71 +98,6 @@ impl Watch {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn project() -> PathBuf {
-        static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let dir = std::env::temp_dir().join(format!(
-            "uml mail watch {} {}",
-            std::process::id(),
-            SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(dir.join(".uml-viewer")).unwrap();
-        dir
-    }
-
-    #[test]
-    fn the_first_poll_is_due_and_an_idle_poll_reports_nothing() {
-        let dir = project();
-        let mut watch = Watch::new();
-        assert_eq!(Found { mail: true, worker: true }, watch.poll(&dir));
-        assert!(!watch.poll(&dir).any(), "an unchanged project is not news");
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn a_queued_command_is_noticed_once_and_a_pop_is_not_news_after_the_baseline() {
-        let dir = project();
-        let inbox = dir.join(".uml-viewer/to-viewer.edn");
-        let mut watch = Watch::new();
-        watch.poll(&dir);
-        std::fs::write(&inbox, "{:next-id 2 :queue [{:id 1 :op :context :context :real}]}").unwrap();
-        assert_eq!(Found { mail: true, worker: false }, watch.poll(&dir));
-        assert!(!watch.poll(&dir).any());
-        // The viewer pops the head itself: it must adopt that write, or its
-        // own edit would look like new mail on every poll.
-        std::fs::write(&inbox, "{:next-id 2 :queue []}").unwrap();
-        assert!(watch.poll(&dir).mail);
-        watch.baseline(&dir);
-        assert!(!watch.poll(&dir).any());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn the_newest_worker_event_is_noticed_and_an_older_one_ignored() {
-        let dir = project();
-        let state = dir.join(".uml-viewer");
-        let mut watch = Watch::new();
-        watch.poll(&dir);
-        let base = "companion-worker-abc";
-        std::fs::write(state.join(format!("{base}.event-1.edn")), "{:phase :starting}").unwrap();
-        assert!(watch.poll(&dir).worker);
-        assert!(!watch.poll(&dir).any());
-        std::fs::write(state.join(format!("{base}.event-2.edn")), "{:phase :ready}").unwrap();
-        assert!(watch.poll(&dir).worker);
-        // Rewriting an older event file does not change the newest stamp.
-        std::fs::write(state.join(format!("{base}.event-1.edn")), "{:phase :starting!}").unwrap();
-        assert!(!watch.poll(&dir).any());
-        assert_eq!(
-            Some(("companion-worker-abc.event-2.edn".to_string(), watch.seen.clone().unwrap().event.unwrap().1)),
-            newest_event(&dir)
-        );
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
-
 /// Wake the UI when the mail files change, without a frame source: the
 /// thread only stats the queue and the newest worker event every 250 ms and
 /// calls `wake` on a *difference*. An idle project produces no wake at all,
@@ -174,14 +109,12 @@ pub struct Waker {
 
 impl Waker {
     pub fn stop(&self) {
-        self.stop
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Did a watched file change since the last check? Clears the flag.
     pub fn take(&self) -> bool {
-        self.dirty
-            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        self.dirty.swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -214,4 +147,96 @@ pub fn spawn(
         }
     });
     Waker { stop, dirty }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project() -> PathBuf {
+        static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "uml mail watch {} {}",
+            std::process::id(),
+            SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(dir.join(".uml-viewer")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_first_poll_is_due_and_an_idle_poll_reports_nothing() {
+        let dir = project();
+        let mut watch = Watch::new();
+        assert_eq!(
+            Found {
+                mail: true,
+                worker: true
+            },
+            watch.poll(&dir)
+        );
+        assert!(!watch.poll(&dir).any(), "an unchanged project is not news");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_queued_command_is_noticed_once_and_a_pop_is_not_news_after_the_baseline() {
+        let dir = project();
+        let inbox = dir.join(".uml-viewer/to-viewer.edn");
+        let mut watch = Watch::new();
+        watch.poll(&dir);
+        std::fs::write(
+            &inbox,
+            "{:next-id 2 :queue [{:id 1 :op :context :context :real}]}",
+        )
+        .unwrap();
+        assert_eq!(
+            Found {
+                mail: true,
+                worker: false
+            },
+            watch.poll(&dir)
+        );
+        assert!(!watch.poll(&dir).any());
+        // The viewer pops the head itself: it must adopt that write, or its
+        // own edit would look like new mail on every poll.
+        std::fs::write(&inbox, "{:next-id 2 :queue []}").unwrap();
+        assert!(watch.poll(&dir).mail);
+        watch.baseline(&dir);
+        assert!(!watch.poll(&dir).any());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_newest_worker_event_is_noticed_and_an_older_one_ignored() {
+        let dir = project();
+        let state = dir.join(".uml-viewer");
+        let mut watch = Watch::new();
+        watch.poll(&dir);
+        let base = "companion-worker-abc";
+        std::fs::write(
+            state.join(format!("{base}.event-1.edn")),
+            "{:phase :starting}",
+        )
+        .unwrap();
+        assert!(watch.poll(&dir).worker);
+        assert!(!watch.poll(&dir).any());
+        std::fs::write(state.join(format!("{base}.event-2.edn")), "{:phase :ready}").unwrap();
+        assert!(watch.poll(&dir).worker);
+        // Rewriting an older event file does not change the newest stamp.
+        std::fs::write(
+            state.join(format!("{base}.event-1.edn")),
+            "{:phase :starting!}",
+        )
+        .unwrap();
+        assert!(!watch.poll(&dir).any());
+        assert_eq!(
+            Some((
+                "companion-worker-abc.event-2.edn".to_string(),
+                watch.seen.clone().unwrap().event.unwrap().1
+            )),
+            newest_event(&dir)
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

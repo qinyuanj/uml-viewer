@@ -6,7 +6,7 @@
 use edn::Value;
 use scene::document;
 use scene::geom::get;
-use viewer::mailbox::{self, Mailbox, MENU_OPS};
+use viewer::mailbox::{self, MENU_OPS, Mailbox};
 
 const QUEUE: &str = "{:next-id 3 :queue [{:id 1 :op :context :context :proposal :proposal-id :p :name \"中文\"} {:id 2 :op :display :path \"second.edn\"}]}";
 
@@ -50,7 +50,10 @@ fn a_cursor_beyond_the_queued_ids_never_hides_mail() {
     let head = head.unwrap();
     assert_eq!(Some(2.0), get(&head, "id").and_then(scene::geom::num));
     assert!(mailbox::queue(&rest).is_empty());
-    assert_eq!(0, mailbox::last_id(&edn::parse("{:next-id 1 :queue []}").unwrap()));
+    assert_eq!(
+        0,
+        mailbox::last_id(&edn::parse("{:next-id 1 :queue []}").unwrap())
+    );
 }
 
 #[test]
@@ -90,7 +93,9 @@ fn the_outbox_appends_ids_from_next_id_and_keeps_earlier_commands() {
 fn state() -> scene::document::ViewState {
     let doc = scene::ir::read_document(DIAGRAM).unwrap();
     let mut state = document::new_state(doc, None, None, None, &[], None);
-    state.extra.assoc(Value::keyword("proposal-id"), Value::keyword("p"));
+    state
+        .extra
+        .assoc(Value::keyword("proposal-id"), Value::keyword("p"));
     state
 }
 
@@ -101,7 +106,10 @@ fn a_menu_target_carries_the_namespace_and_the_proposal_under_discussion() {
     let target = mailbox::target(&state, Some(&selected));
     assert_eq!(Some(&Value::keyword("component")), get(&target, "kind"));
     assert_eq!(Some(&Value::keyword("app.target")), get(&target, "id"));
-    assert_eq!(Some(&Value::String("app.target".into())), get(&target, "ns"));
+    assert_eq!(
+        Some(&Value::String("app.target".into())),
+        get(&target, "ns")
+    );
     assert_eq!(Some(&Value::keyword("p")), get(&target, "proposal-id"));
 }
 
@@ -111,7 +119,11 @@ fn a_leaf_class_without_contents_is_a_class_target() {
     let selected = edn::parse("{:kind :class :id :app}").unwrap();
     let target = mailbox::target(&state, Some(&selected));
     assert_eq!(Some(&Value::keyword("class")), get(&target, "kind"));
-    assert_eq!(None, get(&target, "ns"), "a class without a namespace carries none");
+    assert_eq!(
+        None,
+        get(&target, "ns"),
+        "a class without a namespace carries none"
+    );
     // A proposal row and a package are components.
     let package = edn::parse("{:kind :package :id :app.target}").unwrap();
     assert_eq!(
@@ -137,7 +149,10 @@ fn a_scene_id_resolves_to_the_authored_document_class_and_its_namespace() {
     let selected = edn::parse("{:kind :class :id :d0-target}").unwrap();
     let target = mailbox::target(&state, Some(&selected));
     assert_eq!(Some(&Value::keyword("target")), get(&target, "id"));
-    assert_eq!(Some(&Value::String("app.target".into())), get(&target, "ns"));
+    assert_eq!(
+        Some(&Value::String("app.target".into())),
+        get(&target, "ns")
+    );
     assert_eq!(Some(&Value::keyword("class")), get(&target, "kind"));
 }
 

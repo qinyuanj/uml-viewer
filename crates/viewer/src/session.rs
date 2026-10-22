@@ -33,8 +33,18 @@ fn size(saved: Option<f64>, default: f64, minimum: f64, ui: f64) -> f64 {
 pub fn window_size(chrome: &Chrome, ui: f64) -> [f64; 2] {
     let ui = if ui > 0.0 { ui } else { 1.0 };
     [
-        size(chrome.window_w, WINDOW_SIZE[0] as f64, WINDOW_MIN[0] as f64, ui),
-        size(chrome.window_h, WINDOW_SIZE[1] as f64, WINDOW_MIN[1] as f64, ui),
+        size(
+            chrome.window_w,
+            WINDOW_SIZE[0] as f64,
+            WINDOW_MIN[0] as f64,
+            ui,
+        ),
+        size(
+            chrome.window_h,
+            WINDOW_SIZE[1] as f64,
+            WINDOW_MIN[1] as f64,
+            ui,
+        ),
     ]
 }
 

@@ -73,7 +73,8 @@ impl Companion {
             worker.phase = "failed".into();
             worker.message = Some(worker_error(error));
         }
-        let changed = before.0 != worker.seen || worker.phase == "failed" || before.1 != worker.phase;
+        let changed =
+            before.0 != worker.seen || worker.phase == "failed" || before.1 != worker.phase;
         if changed {
             self.status = Some(match &worker.message {
                 Some(message) => format!("Companion: {message}"),
@@ -202,7 +203,6 @@ pub fn context_mail(context: &Value) -> Vec<(Value, Value)> {
     }
 }
 
-
 /// Did the consumed mail ask for a restart? The durable queue's
 /// `:quit-for-restart` is the only trigger; the app then stops the helper
 /// with `keep`, saves the session and exits 0.
@@ -212,8 +212,8 @@ pub fn quit_requested(state: &ViewState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use scene::geom::get;
     use super::*;
+    use scene::geom::get;
 
     #[test]
     fn a_display_path_resolves_against_the_project_root_unless_absolute() {
@@ -233,16 +233,27 @@ mod tests {
         };
         let boundary = companion.boundary();
         let root = directory.to_string_lossy().into_owned();
-        assert_eq!(format!("{root}/second.edn"), boundary.resolve("second.edn", None));
+        assert_eq!(
+            format!("{root}/second.edn"),
+            boundary.resolve("second.edn", None)
+        );
         assert_eq!("/abs/x.edn", boundary.resolve("/abs/x.edn", None));
         // A state's own project root wins when it names one.
-        assert_eq!("/other/second.edn", boundary.resolve("second.edn", Some("/other")));
-        let loaded = boundary.load(&boundary.resolve("second.edn", None)).unwrap();
+        assert_eq!(
+            "/other/second.edn",
+            boundary.resolve("second.edn", Some("/other"))
+        );
+        let loaded = boundary
+            .load(&boundary.resolve("second.edn", None))
+            .unwrap();
         assert_eq!(
             Some(&Value::String("Second".into())),
             get(loaded.document.as_ref().unwrap(), "title")
         );
-        assert_eq!(Some(directory.to_string_lossy().into_owned()), loaded.project_root);
+        assert_eq!(
+            Some(directory.to_string_lossy().into_owned()),
+            loaded.project_root
+        );
         let _ = std::fs::remove_dir_all(directory);
     }
 

@@ -353,9 +353,7 @@ impl Gui {
                     .show(ui, |ui| {
                         strings::MENU
                             .iter()
-                            .map(|(op, label)| {
-                                (ui.button(*label), format!("menu-{op}"))
-                            })
+                            .map(|(op, label)| (ui.button(*label), format!("menu-{op}")))
                             .collect::<Vec<_>>()
                     })
                     .inner

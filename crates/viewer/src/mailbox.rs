@@ -136,7 +136,12 @@ pub fn last_id(queued: &Value) -> i64 {
 
 /// The element menu operations, in the order the menu shows them. The labels
 /// live in `strings::MENU`; the mail operations stay English.
-pub const MENU_OPS: [&str; 4] = ["refresh-crap", "refresh-mutate", "refresh-mutate-all", "omit"];
+pub const MENU_OPS: [&str; 4] = [
+    "refresh-crap",
+    "refresh-mutate",
+    "refresh-mutate-all",
+    "omit",
+];
 
 /// `mail_menu.target`: the mail target of the current selection. A proposal
 /// layer, a class with nested contents and a package are components; the
@@ -146,14 +151,11 @@ pub fn target(state: &ViewState, selection: Option<&Value>) -> Value {
     let class = selected.as_ref().and_then(|id| find_class(state, id));
     // Name the authored IR class: the scene prefixes section ids (`d0-x`),
     // and the mail contract never carried that prefix.
-    let id = class
-        .and_then(|c| get(c, "id"))
-        .cloned()
-        .or(selected);
+    let id = class.and_then(|c| get(c, "id")).cloned().or(selected);
     let component = events::layer_id(selection).is_some()
-        || class.is_some_and(|c| {
-            matches!(get(c, "contents"), Some(Value::Vector(items)) if !items.is_empty())
-        })
+        || class.is_some_and(
+            |c| matches!(get(c, "contents"), Some(Value::Vector(items)) if !items.is_empty()),
+        )
         || selection.and_then(|s| get(s, "kind")).map(name).as_deref() == Some("package");
     let mut target = Value::Map(vec![
         (
@@ -181,7 +183,10 @@ fn find_class<'a>(state: &'a ViewState, id: &Value) -> Option<&'a Value> {
         };
         let prefix = format!("d{}-", section(id));
         let authored = geom::name(id);
-        let authored = authored.strip_prefix(&prefix).unwrap_or(&authored).to_owned();
+        let authored = authored
+            .strip_prefix(&prefix)
+            .unwrap_or(&authored)
+            .to_owned();
         let matches = |candidate: Option<&Value>| {
             candidate.is_some_and(|candidate| {
                 candidate == id
@@ -210,7 +215,11 @@ fn find_class<'a>(state: &'a ViewState, id: &Value) -> Option<&'a Value> {
 
 /// One menu action: the operation's mail with `:target` (the exact
 /// `to-agent.edn` contract of the LOVE viewer).
-pub fn menu_mail(state: &ViewState, selection: Option<&Value>, op: &str) -> (String, Vec<(Value, Value)>) {
+pub fn menu_mail(
+    state: &ViewState,
+    selection: Option<&Value>,
+    op: &str,
+) -> (String, Vec<(Value, Value)>) {
     (
         op.to_string(),
         vec![(Value::keyword("target"), target(state, selection))],

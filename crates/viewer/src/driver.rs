@@ -529,7 +529,9 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
         },
         GuiCheck::NotContains(text) => match found {
             Some(Value::String(s)) => !s.contains(text.as_str()),
-            Some(other) => !edn::encode(other).unwrap_or_default().contains(text.as_str()),
+            Some(other) => !edn::encode(other)
+                .unwrap_or_default()
+                .contains(text.as_str()),
             None => true,
         },
         GuiCheck::Count(n) => matches!(found, Some(Value::Vector(items)) if items.len() == *n),
@@ -797,8 +799,7 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         },
         "dump-project" => Step::DumpProject {
             evidence: evidence_name(step)?,
-            project: text(Some(required(step, "project")?))
-                .ok_or("dump-project needs :project")?,
+            project: text(Some(required(step, "project")?)).ok_or("dump-project needs :project")?,
         },
         "start-timer" => Step::StartTimer {
             name: text(Some(required(step, "as")?)).ok_or("start-timer needs :as")?,
@@ -1227,9 +1228,7 @@ impl Runner {
                                 Value::Map(entries) => entries
                                     .into_iter()
                                     .filter(|(k, _)| {
-                                        !except
-                                            .iter()
-                                            .any(|drop| Value::keyword(drop) == *k)
+                                        !except.iter().any(|drop| Value::keyword(drop) == *k)
                                     })
                                     .collect(),
                                 other => return Some(other),
@@ -1428,8 +1427,7 @@ impl Runner {
                             return Ok(Progress::Running);
                         }
                         self.timers.remove(&key);
-                        let at =
-                            edn::encode(&Value::Vector(path.clone())).unwrap_or_default();
+                        let at = edn::encode(&Value::Vector(path.clone())).unwrap_or_default();
                         let seen = check_gui(&host.gui_record(), &path, &check)
                             .err()
                             .unwrap_or_default();

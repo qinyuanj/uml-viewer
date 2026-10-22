@@ -413,10 +413,8 @@ impl Viewer {
         });
         // The first frames measure the window before the content rect is
         // known: start from the requested (or restored) size.
-        let [start_w, start_h] = session::window_size(
-            &setup.chrome,
-            dpi_override().map(f64::from).unwrap_or(1.0),
-        );
+        let [start_w, start_h] =
+            session::window_size(&setup.chrome, dpi_override().map(f64::from).unwrap_or(1.0));
         let mut app = Viewer {
             state: ViewState::default(),
             project_root: setup.project_root.clone(),
@@ -829,23 +827,18 @@ impl Viewer {
                     // The durable queue is authoritative; the wake tells the
                     // agent there is something to consume. Without a helper
                     // the request still waits in the queue (#142).
-                    self.status = Some(
-                        match project_files::append(&outbox, "regen", &[]) {
-                            Ok(cmd) => {
-                                let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
-                                let woken = self
-                                    .companion
-                                    .as_mut()
-                                    .is_some_and(|c| c.wake(id).is_ok());
-                                if woken {
-                                    "Regen requested.".into()
-                                } else {
-                                    "Regen queued; Claude session not attached.".into()
-                                }
+                    self.status = Some(match project_files::append(&outbox, "regen", &[]) {
+                        Ok(cmd) => {
+                            let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
+                            let woken = self.companion.as_mut().is_some_and(|c| c.wake(id).is_ok());
+                            if woken {
+                                "Regen requested.".into()
+                            } else {
+                                "Regen queued; Claude session not attached.".into()
                             }
-                            Err(_) => "Regen failed.".into(),
-                        },
-                    );
+                        }
+                        Err(_) => "Regen failed.".into(),
+                    });
                     self.mail_watch.baseline(&self.project_root);
                 }
                 Action::Rename(id, new_name) => {
@@ -869,11 +862,8 @@ impl Viewer {
                 Action::Mail(op) => {
                     // The right-click menu writes the exact `to-agent.edn`
                     // command and wakes the companion for that delivery.
-                    let (op, extra) = mailbox::menu_mail(
-                        &self.state,
-                        self.state.selected.as_ref(),
-                        &op,
-                    );
+                    let (op, extra) =
+                        mailbox::menu_mail(&self.state, self.state.selected.as_ref(), &op);
                     match project_files::append(&outbox, &op, &extra) {
                         Ok(cmd) => {
                             let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
@@ -1029,7 +1019,10 @@ impl Viewer {
         Value::Map(vec![
             (kw("seen"), Value::Integer(self.state.mail_seen)),
             (kw("waiting"), Value::Bool(self.state.waiting)),
-            (kw("path"), self.state.path.clone().map_or(Value::Nil, Value::String)),
+            (
+                kw("path"),
+                self.state.path.clone().map_or(Value::Nil, Value::String),
+            ),
             (
                 kw("title"),
                 self.state
@@ -1536,8 +1529,7 @@ impl eframe::App for Viewer {
         }
         // Mail is polled only when the waker saw a change (or at startup):
         // an unchanged project does no mailbox work and no repaint.
-        let mail_due = self.frames <= 2
-            || self.waker.as_ref().is_some_and(|waker| waker.take());
+        let mail_due = self.frames <= 2 || self.waker.as_ref().is_some_and(|waker| waker.take());
         if mail_due {
             self.poll_mail(ctx);
         }
@@ -1723,11 +1715,7 @@ impl driver::Host for Viewer {
                 let suffix = format!("-{id}");
                 scene::geom::get_slice(get(&self.state.scene, "classes"))
                     .iter()
-                    .find(|c| {
-                        get(c, "id")
-                            .map(name)
-                            .is_some_and(|n| n.ends_with(&suffix))
-                    })
+                    .find(|c| get(c, "id").map(name).is_some_and(|n| n.ends_with(&suffix)))
             })
             .ok_or_else(|| format!("no class {id} on the scene"))?;
         let r = get(class, "rect")
@@ -1745,7 +1733,8 @@ impl driver::Host for Viewer {
             let origin = self.ctx.content_rect().min;
             let pos = egui::Pos2::new(origin.x + x as f32, origin.y + y as f32);
             self.gui_pointer = pos;
-            self.gui_batches.push_back(vec![egui::Event::PointerMoved(pos)]);
+            self.gui_batches
+                .push_back(vec![egui::Event::PointerMoved(pos)]);
             self.gui_batches
                 .push_back(vec![self.gui_button_event(true, true)]);
             self.gui_batches
