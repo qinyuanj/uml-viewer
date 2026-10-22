@@ -104,6 +104,8 @@ pub struct Gui {
     empty_help: bool,
     pub card: Card,
     cache: Option<(CardKey, detail::Model, Vec<detail::Row>)>,
+    entries_key: Option<(u64, u64)>,
+    entries_cache: Vec<inspector::Entry>,
     generation: u64,
     pub sources: Vec<SourceWindow>,
     serial: u64,
@@ -228,6 +230,34 @@ impl Gui {
         self.sources.pop();
     }
 
+    /// The diagram list, cached on the state revision: recomputing it walks
+    /// and clones the whole document (10 ms on 2000 classes, every frame).
+    fn entries(&mut self, state: &ViewState) -> Vec<inspector::Entry> {
+        let key = (state.revision, self.generation);
+        if self.entries_key != Some(key) {
+            self.entries_cache = inspector::entries(state);
+            self.entries_key = Some(key);
+        }
+        self.entries_cache.clone()
+    }
+
+    /// The diagram list plus whether this call had to rebuild it.
+    pub fn entries_for(&mut self, state: &ViewState) -> (Vec<inspector::Entry>, bool) {
+        let key = (state.revision, self.generation);
+        let rebuilt = self.entries_key != Some(key);
+        (self.entries(state), rebuilt)
+    }
+
+    /// `entries` for the read-only record.
+    fn cached_entries(&self, state: &ViewState) -> Vec<inspector::Entry> {
+        let key = (state.revision, self.generation);
+        if self.entries_key == Some(key) {
+            self.entries_cache.clone()
+        } else {
+            inspector::entries(state)
+        }
+    }
+
     fn card_for(
         &mut self,
         state: &ViewState,
@@ -263,10 +293,10 @@ impl Gui {
             self.edge(ctx, screen);
             self.sidebar(ctx, state, screen, frame, &mut actions);
             self.card_window(ctx, state, origin, &mut actions);
+            self.source_windows(ctx, origin);
         } else {
             self.card.open = false;
         }
-        self.source_windows(ctx, origin);
         actions
     }
 
@@ -313,7 +343,7 @@ impl Gui {
         let width = inspector::clamp_width(self.width, screen.width() as f64) as f32;
         let left = screen.max.x - width;
         let mut bounds: Vec<(String, ERect)> = Vec::new();
-        let entries = inspector::entries(state);
+        let entries = self.entries(state);
         let mut summary_id = state.selected.as_ref().and_then(|s| get(s, "id").cloned());
         let summary = summary_id.take().and_then(|id| {
             let kind = state.selected.as_ref().and_then(|s| get(s, "kind")).map(name);
@@ -849,7 +879,7 @@ impl Gui {
                 .collect(),
         );
         let entries = Value::Vector(
-            inspector::entries(state)
+            self.cached_entries(state)
                 .iter()
                 .map(|e| {
                     Value::Map(vec![
