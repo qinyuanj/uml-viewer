@@ -43,6 +43,15 @@ inspector.edn：输入框记录 `中文方案输入`，确认后写入 IR 与 po
 已核对：LOVE `hierarchy.lua` 的 `module_name` → `label(id)` 取 id 末段并首字母大写，
 Rust 一致（goldens 钉住）。不是偏差，未改。
 
+## 每帧成本（#143 报告后修复）
+
+`inspector::entries` 每帧深拷贝整份 IR（`state.document.clone()`）再遍历提案；
+合成 2000 类 pan-detail 实测侧栏 7.8–10.2 ms/帧（`gui.draw` 总量约 10 ms），
+而卡片/源码窗口在该场景为 0。改为按 `(state.revision, gui.generation)` 缓存条目
+（写回提案时 `invalidate()`，状态重载时 revision 变），侧栏降到 0.16–0.20 ms。
+单测 `the_diagram_list_is_recomputed_only_when_the_revision_changes` 用 3000 类
+钉住「同 revision 复用、新 revision 重建」。整帧 fps 仍受画布路径限制，属 #143。
+
 ## 回归
 
 `cargo test --release --workspace` 全绿；Rust driver 全部 PASS：class_boxes、detail_scroll、

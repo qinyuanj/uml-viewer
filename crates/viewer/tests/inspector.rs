@@ -194,3 +194,30 @@ fn proposal_write_back_keeps_other_proposals_and_policy_content() {
     assert_eq!(inspector::entries(&renamed)[1].label, "中文方案输入");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn the_diagram_list_is_recomputed_only_when_the_revision_changes() {
+    // The sidebar asks for this every frame. Rebuilding it walks and clones
+    // the whole document (measured ~10 ms on 2000 classes), so the GUI keeps
+    // it until the state revision or a policy write moves.
+    let mut doc = "{:hierarchical true :classes [".to_string();
+    for n in 0..3000 {
+        if n > 0 {
+            doc.push(' ');
+        }
+        doc.push_str(&format!("{{:id :c{n} :name \"C{n}\" :ops [{{:name \"go\"}}]}}"));
+    }
+    doc.push_str("] :proposals [{:id :plan :name \"方案\" :layers []}]}");
+    let mut state = load(&doc);
+    let mut gui = viewer::gui::Gui::default();
+    let (first, rebuilt) = gui.entries_for(&state);
+    assert!(rebuilt);
+    assert_eq!(first.len(), 2);
+    assert_eq!(first[1].label, "方案");
+    let (again, rebuilt) = gui.entries_for(&state);
+    assert_eq!(again, first);
+    assert!(!rebuilt, "a repeat call must reuse the cache");
+    state.revision += 1;
+    let (_, rebuilt) = gui.entries_for(&state);
+    assert!(rebuilt, "a new revision must rebuild");
+}
