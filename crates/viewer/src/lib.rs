@@ -16,6 +16,7 @@ pub mod lod;
 pub mod metrics;
 pub mod paint;
 pub mod search_box;
+pub mod source;
 pub mod strings;
 pub mod theme;
 pub mod watch;
