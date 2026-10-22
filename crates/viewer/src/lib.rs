@@ -8,6 +8,7 @@ pub mod app;
 pub mod bench;
 pub mod cli;
 pub mod commands;
+pub mod detail;
 pub mod driver;
 pub mod evidence;
 pub mod fonts;
