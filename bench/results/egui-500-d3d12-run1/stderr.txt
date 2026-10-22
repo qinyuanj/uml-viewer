@@ -1,0 +1,12 @@
+libEGL warning: failed to get driver name for fd -1
+
+libEGL warning: MESA-LOADER: failed to retrieve device information
+
+libEGL warning: failed to get driver name for fd -1
+
+{:stack "egui/eframe 0.37 wgpu" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync true :dpi 1 :view-w 1220 :view-h 920 :scene-w 8298.2 :scene-h 13742 :fit-zoom 0.06694804 :classes 500 :edges 1617 :packages 5 :text-quant 1}
+phase idle done; last painted (lod, classes, edges, texts) (2, 8, 169, 13); paint-build p95 0.66 ms
+phase pan-detail done; last painted (lod, classes, edges, texts) (2, 12, 191, 117); paint-build p95 1.06 ms
+phase zoom-detail done; last painted (lod, classes, edges, texts) (2, 0, 145, 1); paint-build p95 1.41 ms
+phase pan-fit done; last painted (lod, classes, edges, texts) (0, 500, 0, 5); paint-build p95 0.05 ms
+phase zoom-fit done; last painted (lod, classes, edges, texts) (1, 90, 536, 3); paint-build p95 1.41 ms

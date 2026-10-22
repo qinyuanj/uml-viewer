@@ -1,0 +1,6 @@
+{:stack "egui/eframe 0.37 wgpu" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync true :dpi 1 :view-w 1220 :view-h 920 :scene-w 14606.3 :scene-h 29034.9 :fit-zoom 0.031686004 :classes 2000 :edges 6495 :packages 10 :text-quant 1}
+phase=idle frames=1 fps=59.86 mean_ms=16.70 median_ms=16.70 p95_ms=16.70 p99_ms=16.70 max_ms=16.70 cpu_pct=0.40 app_cpu_ms_p95=4.18 zoom=-..-
+phase=pan-detail frames=563 fps=56.23 mean_ms=17.78 median_ms=16.92 p95_ms=26.60 p99_ms=32.14 max_ms=43.54 cpu_pct=52.83 app_cpu_ms_p95=5.93 zoom=1.00..1.00
+phase=zoom-detail frames=593 fps=59.23 mean_ms=16.88 median_ms=16.82 p95_ms=17.12 p99_ms=17.33 max_ms=29.14 cpu_pct=50.74 app_cpu_ms_p95=6.89 zoom=0.50..2.00
+phase=pan-fit frames=593 fps=59.21 mean_ms=16.89 median_ms=16.83 p95_ms=17.23 p99_ms=17.64 max_ms=20.39 cpu_pct=35.24 app_cpu_ms_p95=1.75 zoom=0.03..0.03
+phase=zoom-fit frames=594 fps=59.38 mean_ms=16.84 median_ms=16.81 p95_ms=17.10 p99_ms=17.32 max_ms=17.54 cpu_pct=33.09 app_cpu_ms_p95=2.62 zoom=0.03..0.13
