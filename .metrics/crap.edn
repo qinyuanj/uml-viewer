@@ -106,6 +106,7 @@
   {:name "read_module", :namespace "ir::scan::python", :complexity 21, :coverage 98.8764, :crap 21.0006}
   {:name "normalize", :namespace "scene::ir", :complexity 20, :coverage 90.7692, :crap 20.3146}
   {:name "acquire", :namespace "companion::posix", :complexity 4, :coverage 0.0, :crap 20.0}
+  {:name "indices", :namespace "edn::pair_order", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "statement_end", :namespace "ir::scan::typescript", :complexity 20, :coverage 100.0, :crap 20.0}
   {:name "load_snapshots", :namespace "scene::cli", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "default_diagram", :namespace "viewer::app", :complexity 4, :coverage 0.0, :crap 20.0}
@@ -167,6 +168,8 @@
   {:name "wake", :namespace "companion::herdr::Herdr", :complexity 12, :coverage 98.2456, :crap 12.0008}
   {:name "options", :namespace "companion::lifecycle", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "run", :namespace "companion::preflight", :complexity 3, :coverage 0.0, :crap 12.0}
+  {:name "keyword_hash", :namespace "edn::pair_order", :complexity 3, :coverage 0.0, :crap 12.0}
+  {:name "string_hash", :namespace "edn::pair_order", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "collapse_graph", :namespace "ir::policy", :complexity 12, :coverage 100.0, :crap 12.0}
   {:name "match_setmetatable", :namespace "ir::scan::lua", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "match_generic", :namespace "ir::scan::rust", :complexity 3, :coverage 0.0, :crap 12.0}
@@ -302,7 +305,6 @@
   {:name "complete", :namespace "companion::herdr_domain", :complexity 6, :coverage 88.2353, :crap 6.0586}
   {:name "row_color", :namespace "viewer::detail", :complexity 6, :coverage 90.0, :crap 6.036}
   {:name "simplify", :namespace "viewer::lod", :complexity 6, :coverage 90.9091, :crap 6.027}
-  {:name "append", :namespace "viewer::project_files", :complexity 6, :coverage 92.0, :crap 6.0184}
   {:name "level_groups", :namespace "ir::policy", :complexity 6, :coverage 92.3077, :crap 6.0164}
   {:name "compatible", :namespace "companion::herdr::Herdr", :complexity 6, :coverage 92.8571, :crap 6.0131}
   {:name "doc_classes", :namespace "scene::overlay", :complexity 6, :coverage 92.8571, :crap 6.0131}
@@ -373,7 +375,6 @@
   {:name "install", :namespace "viewer::signal", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "lookup", :namespace "viewer::source", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "string", :namespace "viewer::detail", :complexity 5, :coverage 66.6667, :crap 5.9259}
-  {:name "keyword_hash", :namespace "scene::pair_order", :complexity 5, :coverage 75.0, :crap 5.3906}
   {:name "proposal_layers", :namespace "scene::policy", :complexity 3, :coverage 36.3636, :crap 5.3193}
   {:name "pair_names", :namespace "ir::policy", :complexity 5, :coverage 77.7778, :crap 5.2743}
   {:name "consume", :namespace "viewer::mail::Companion", :complexity 5, :coverage 78.5714, :crap 5.246}
@@ -466,8 +467,6 @@
   {:name "ranks_from_layers", :namespace "scene::policy", :complexity 4, :coverage 93.75, :crap 4.0039}
   {:name "label", :namespace "scene::hierarchy", :complexity 4, :coverage 94.1176, :crap 4.0033}
   {:name "await_pane_ready", :namespace "companion::herdr::Herdr", :complexity 4, :coverage 94.4444, :crap 4.0027}
-  {:name "indices", :namespace "ir::pair_order", :complexity 4, :coverage 94.4444, :crap 4.0027}
-  {:name "indices", :namespace "scene::pair_order", :complexity 4, :coverage 94.4444, :crap 4.0027}
   {:name "quality", :namespace "viewer::commands", :complexity 4, :coverage 94.4444, :crap 4.0027}
   {:name "collect", :namespace "viewer::metrics", :complexity 4, :coverage 95.4545, :crap 4.0015}
   {:name "new", :namespace "scene::compose::ClassIndex", :complexity 4, :coverage 96.2963, :crap 4.0008}
@@ -544,7 +543,7 @@
   {:name "copy_map", :namespace "ir::value", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "seq", :namespace "scene::compose", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "score", :namespace "scene::config", :complexity 3, :coverage 80.0, :crap 3.072}
-  {:name "kw_name", :namespace "scene::pair_order", :complexity 3, :coverage 80.0, :crap 3.072}
+  {:name "keyword_name", :namespace "scene::policy", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "stop", :namespace "viewer::mail::Companion", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "queue", :namespace "viewer::mailbox", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "count", :namespace "viewer::render_cache", :complexity 3, :coverage 80.0, :crap 3.072}
@@ -605,8 +604,6 @@
   {:name "module_name", :namespace "ir::graph", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "ns_join", :namespace "ir::graph", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "scan_project", :namespace "ir::graph", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "keyword_hash", :namespace "ir::pair_order", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "string_hash", :namespace "ir::pair_order", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "hierarchical", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "layers_from", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "level_ranks", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -645,7 +642,6 @@
   {:name "seq", :namespace "scene::ir", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "seq", :namespace "scene::layout", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "seq", :namespace "scene::overlay", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "string_hash", :namespace "scene::pair_order", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "default", :namespace "scene::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "nse_ids", :namespace "scene::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "rank_of", :namespace "scene::policy", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -725,6 +721,10 @@
   {:name "is_delimiter", :namespace "edn", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "symbol_rest", :namespace "edn", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "symbol_start", :namespace "edn", :complexity 2, :coverage 100.0, :crap 2.0}
+  {:name "fmix", :namespace "edn::pair_order", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "mixh", :namespace "edn::pair_order", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "mixk", :namespace "edn::pair_order", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "pair_hash", :namespace "edn::pair_order", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "new", :namespace "ir::files::Adapter", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "block_comment", :namespace "ir::graph", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "line_comment", :namespace "ir::graph", :complexity 2, :coverage 100.0, :crap 2.0}
@@ -773,7 +773,6 @@
   {:name "connected_edges", :namespace "scene::hit", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "line", :namespace "scene::layout", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "sites", :namespace "scene::overlay", :complexity 2, :coverage 100.0, :crap 2.0}
-  {:name "utf16", :namespace "scene::pair_order", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "mark_violations", :namespace "scene::policy", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "matches", :namespace "scene::policy", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "nse_entry", :namespace "scene::policy", :complexity 2, :coverage 100.0, :crap 2.0}
@@ -957,10 +956,6 @@
   {:name "foreign_class", :namespace "ir::graph", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "mask_line_comment", :namespace "ir::graph", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "metadata_paths", :namespace "ir::graph", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "fmix", :namespace "ir::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "mixh", :namespace "ir::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "mixk", :namespace "ir::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "pair_hash", :namespace "ir::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ends_with_local", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ident", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "rest_of_line", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -1066,10 +1061,6 @@
   {:name "get", :namespace "scene::overlay::Ordered", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "values", :namespace "scene::overlay::Ordered", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "new", :namespace "scene::overlay::Snapshot", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "fmix", :namespace "scene::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "mixh", :namespace "scene::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "mixk", :namespace "scene::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "pair_hash", :namespace "scene::pair_order", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "get", :namespace "scene::policy", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "id", :namespace "scene::policy", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ids", :namespace "scene::policy", :complexity 1, :coverage 100.0, :crap 1.0}
