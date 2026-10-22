@@ -6,7 +6,10 @@
 use std::path::{Path, PathBuf};
 
 fn repository() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -64,7 +67,10 @@ fn repository_files_read_back_identically_when_written_with_unicode_escapes() {
             other => failures.push(format!("{}: {:?}", file.display(), other.err())),
         }
     }
-    assert!(escaped_files > 0, "no repository file has non-ASCII text to escape");
+    assert!(
+        escaped_files > 0,
+        "no repository file has non-ASCII text to escape"
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -81,10 +87,16 @@ fn every_repository_edn_file_round_trips_byte_stably() {
             let encoded = edn::encode(&value)?;
             let again = edn::parse(&encoded)?;
             if again != value {
-                return Err(edn::Error { offset: 0, message: "value changed".into() });
+                return Err(edn::Error {
+                    offset: 0,
+                    message: "value changed".into(),
+                });
             }
             if edn::encode(&again)? != encoded {
-                return Err(edn::Error { offset: 0, message: "bytes not stable".into() });
+                return Err(edn::Error {
+                    offset: 0,
+                    message: "bytes not stable".into(),
+                });
             }
             Ok(())
         });
@@ -92,5 +104,11 @@ fn every_repository_edn_file_round_trips_byte_stably() {
             failures.push(format!("{}: {:?}", file.display(), error));
         }
     }
-    assert!(failures.is_empty(), "{} of {} failed:\n{}", failures.len(), files.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} failed:\n{}",
+        failures.len(),
+        files.len(),
+        failures.join("\n")
+    );
 }

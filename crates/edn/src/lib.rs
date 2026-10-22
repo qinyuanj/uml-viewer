@@ -77,7 +77,8 @@ impl PartialEq for Value {
             (Vector(a), Vector(b)) => a == b,
             (Map(a), Map(b)) => {
                 a.len() == b.len()
-                    && a.iter().all(|(k, v)| b.iter().any(|(k2, v2)| k == k2 && v == v2))
+                    && a.iter()
+                        .all(|(k, v)| b.iter().any(|(k2, v2)| k == k2 && v == v2))
             }
             (Set(a), Set(b)) => a.len() == b.len() && a.iter().all(|x| b.contains(x)),
             (Tagged(t, a), Tagged(u, b)) => t == u && a == b,
@@ -109,7 +110,10 @@ const RANGE_MESSAGE: &str =
     "EDN number outside supported exact integer range [-9007199254740991, 9007199254740991]";
 
 pub fn parse(text: &str) -> Result<Value, Error> {
-    let mut parser = Parser { text: text.as_bytes(), p: 0 };
+    let mut parser = Parser {
+        text: text.as_bytes(),
+        p: 0,
+    };
     let value = parser.read()?;
     parser.skip()?;
     if parser.p < parser.text.len() {
@@ -145,7 +149,10 @@ fn is_symbol(token: &[u8]) -> bool {
 
 impl Parser<'_> {
     fn fail<T>(&self, message: &str) -> Result<T, Error> {
-        Err(Error { offset: self.p + 1, message: message.to_owned() })
+        Err(Error {
+            offset: self.p + 1,
+            message: message.to_owned(),
+        })
     }
 
     fn peek(&self) -> Option<u8> {
@@ -399,7 +406,10 @@ pub fn encode(value: &Value) -> Result<String, Error> {
 }
 
 fn encode_error<T>(message: &str) -> Result<T, Error> {
-    Err(Error { offset: 0, message: message.to_owned() })
+    Err(Error {
+        offset: 0,
+        message: message.to_owned(),
+    })
 }
 
 fn write_value(value: &Value, out: &mut String) -> Result<(), Error> {
@@ -457,7 +467,10 @@ fn write_value(value: &Value, out: &mut String) -> Result<(), Error> {
             out.push('}');
         }
         Value::Set(items) => {
-            let mut encoded = items.iter().map(encode).collect::<Result<Vec<_>, Error>>()?;
+            let mut encoded = items
+                .iter()
+                .map(encode)
+                .collect::<Result<Vec<_>, Error>>()?;
             encoded.sort();
             out.push_str("#{");
             out.push_str(&encoded.join(" "));

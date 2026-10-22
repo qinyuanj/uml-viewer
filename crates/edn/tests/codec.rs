@@ -13,12 +13,21 @@ fn round(text: &str) -> String {
 
 #[test]
 fn unicode_escapes_decode_including_surrogate_pairs() {
-    assert_eq!(Value::String("é中😀 A".into()), parse(r#""\u00e9\u4E2d\ud83d\ude00 \u0041""#).unwrap());
+    assert_eq!(
+        Value::String("é中😀 A".into()),
+        parse(r#""\u00e9\u4E2d\ud83d\ude00 \u0041""#).unwrap()
+    );
 }
 
 #[test]
 fn invalid_unicode_escapes_are_rejected_not_dropped() {
-    for text in [r#""\u12""#, r#""\uZZZZ""#, r#""\ud83d""#, r#""\ud83dx""#, r#""\ude00""#] {
+    for text in [
+        r#""\u12""#,
+        r#""\uZZZZ""#,
+        r#""\ud83d""#,
+        r#""\ud83dx""#,
+        r#""\ude00""#,
+    ] {
         assert!(parse(text).is_err(), "{text} must fail");
     }
 }
@@ -31,7 +40,10 @@ fn control_characters_encode_as_lowercase_unicode_escapes() {
 
 #[test]
 fn map_keys_encode_in_dictionary_order_whatever_the_input_order() {
-    assert_eq!("{:a 1 :b {:x nil :y true} :c [2 3]}", round("{:c [2 3] :b {:y true :x nil} :a 1}"));
+    assert_eq!(
+        "{:a 1 :b {:x nil :y true} :c [2 3]}",
+        round("{:c [2 3] :b {:y true :x nil} :a 1}")
+    );
 }
 
 #[test]
@@ -51,13 +63,20 @@ fn sets_round_trip_sorted_and_reject_duplicates() {
 #[test]
 fn tagged_values_keep_tag_and_value() {
     let value = parse(r#"#inst "2026-10-22T00:00:00Z""#).unwrap();
-    assert_eq!(Value::Tagged("inst".into(), Box::new(Value::String("2026-10-22T00:00:00Z".into()))), value);
+    assert_eq!(
+        Value::Tagged(
+            "inst".into(),
+            Box::new(Value::String("2026-10-22T00:00:00Z".into()))
+        ),
+        value
+    );
     assert_eq!(r#"#my.ns/tag {:a 1}"#, round("#my.ns/tag {:a 1}"));
 }
 
 #[test]
 fn comments_and_discarded_forms_are_skipped() {
-    let text = ";; header\n{:a 1 ; trailing\n #_ :gone #_ {:nested [1]} :b [1 #_ 2 3] #_ :end}\n; tail";
+    let text =
+        ";; header\n{:a 1 ; trailing\n #_ :gone #_ {:nested [1]} :b [1 #_ 2 3] #_ :end}\n; tail";
     assert_eq!("{:a 1 :b [1 3]}", round(text));
     assert_eq!("[]", round("[#_ 1]"));
     assert_eq!("nil", round("#_ 1 nil"));
@@ -79,10 +98,23 @@ fn integers_and_floats_stay_distinct_but_compare_numerically() {
 
 #[test]
 fn unsupported_numbers_are_rejected() {
-    for text in ["1/2", "1N", "1.5M", "0x10", "1e", "1.2.3", "1e400", "9007199254740992", "1e16"] {
+    for text in [
+        "1/2",
+        "1N",
+        "1.5M",
+        "0x10",
+        "1e",
+        "1.2.3",
+        "1e400",
+        "9007199254740992",
+        "1e16",
+    ] {
         assert!(parse(text).is_err(), "{text} must fail");
     }
-    assert_eq!(Value::Integer(-9_007_199_254_740_991), parse("-9007199254740991").unwrap());
+    assert_eq!(
+        Value::Integer(-9_007_199_254_740_991),
+        parse("-9007199254740991").unwrap()
+    );
 }
 
 #[test]
@@ -110,7 +142,10 @@ fn non_finite_floats_are_refused_by_the_encoder() {
 #[test]
 fn map_access_compares_keys_structurally() {
     let mut value = parse("{[:a 1] :vector-key :x 1}").unwrap();
-    assert_eq!(Some(&kw("vector-key")), value.get(&parse("[:a 1]").unwrap()));
+    assert_eq!(
+        Some(&kw("vector-key")),
+        value.get(&parse("[:a 1]").unwrap())
+    );
     value.assoc(kw("x"), Value::Integer(2));
     value.assoc(kw("y"), Value::Nil);
     assert_eq!("{:x 2 :y nil [:a 1] :vector-key}", encode(&value).unwrap());
