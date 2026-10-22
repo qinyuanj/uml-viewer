@@ -1,6 +1,6 @@
 # 0005 Drop the JVM: rewrite viewer and IR generation in love2d + cimgui-love
 
-**Status**: accepted
+**Status**: superseded by ADR-0008（放弃 JVM 与 Clojure 支持的决定仍有效）
 
 无论被分析项目是什么语言，用户都必须安装 Java 21+ 和 Clojure CLI，因为 viewer、IR 生成和 Herdr preflight 都跑在 JVM 上。非 Clojure 项目的质量工具早已是 Python（crapper / mutator），JVM 只为 uml-viewer 自身存在，冷启动还拖慢首次启动和 `--restart`。因此改用 love2d + cimgui-love（LuaJIT FFI 绑定 Dear ImGui）完全重写 viewer 与 IR 生成，整条链路不再依赖 JVM。规格见 #50。
 
