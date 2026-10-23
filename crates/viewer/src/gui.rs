@@ -183,6 +183,12 @@ impl Gui {
     }
 
     /// Does the GUI own this point (sidebar, its edge grip, a window, menu)?
+    /// Record a widget drawn outside the GUI (the window controls) under
+    /// `key`, so drivers can point at it. `draw` clears bounds each frame.
+    pub fn record_bound(&mut self, key: &str, rect: ERect, origin: Pos2) {
+        self.bounds.insert(key.to_string(), view_rect(rect, origin));
+    }
+
     pub fn captures(&self, x: f64, y: f64, window_w: f64) -> bool {
         let width = inspector::clamp_width(self.width, window_w);
         x >= inspector::canvas_width(window_w, width) - inspector::EDGE_GRIP

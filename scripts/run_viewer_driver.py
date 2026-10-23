@@ -336,6 +336,8 @@ def scenarios_dpi_window(project, evidence):
 # Environments a single-run driver needs. Missing here means the retired
 # wrapper's setup would be lost.
 DRIVER_ENV = {
+    # Force the undecorated Wayland window (the libxkbcommon-x11 fallback).
+    'window_controls': lambda p, e: {'UML_VIEWER_TEST_UNDECORATED': '1'},
     'inspector': env_inspector,
     'detail_scroll': env_inspector,
     'source_jump': env_source_jump,
@@ -375,6 +377,8 @@ DRIVERS = {
     'font_parity': {'seconds': 30, 'evidence': []},
     'dpi_window': {'seconds': 30, 'evidence': []},
     'companion_worker': {'seconds': 120, 'evidence': ['worker-ui-pass.txt', 'waiting.png']},
+    'window_controls': {'seconds': 30, 'evidence': ['window-controls-display.edn',
+                                                    'window-controls.png']},
     'session': {'seconds': 60, 'evidence': ['saved-session.edn', 'session-save-pass.edn',
                                             'restored-session.edn', 'session-restart-pass.edn',
                                             'session-legacy-pass.edn', 'session-love-pass.edn']},

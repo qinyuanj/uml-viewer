@@ -63,12 +63,31 @@ impl WindowMode {
     }
 }
 
-pub fn choose(x11_available: bool) -> WindowMode {
-    if x11_available {
+/// `force_undecorated` is the `UML_VIEWER_TEST_UNDECORATED` seam: drivers
+/// exercise the libxkbcommon-x11 fallback on a machine that has X11.
+pub fn mode_for(x11_available: bool, force_undecorated: bool) -> WindowMode {
+    if x11_available && !force_undecorated {
         WindowMode::X11Decorated
     } else {
         WindowMode::WaylandUndecorated
     }
+}
+
+/// Side of a window control button, in points.
+const CONTROL_W: f32 = 28.0;
+const CONTROL_H: f32 = DRAG_STRIP - RESIZE_GRIP - 2.0;
+
+/// The undecorated window's own `[minimise, close]` buttons: at the right
+/// of the drag strip, below the north grip and left of the east grip.
+pub fn window_controls(screen: egui::Rect) -> [egui::Rect; 2] {
+    let top = screen.min.y + RESIZE_GRIP + 1.0;
+    let right = screen.max.x - RESIZE_GRIP - 2.0;
+    let close = egui::Rect::from_min_max(
+        egui::pos2(right - CONTROL_W, top),
+        egui::pos2(right, top + CONTROL_H),
+    );
+    let minimise = close.translate(egui::vec2(-(CONTROL_W + 2.0), 0.0));
+    [minimise, close]
 }
 
 /// X11 needs libxkbcommon-x11 at runtime; probe it without elevating.
@@ -232,7 +251,10 @@ pub fn run(options: Options) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let mode = choose(x11_available());
+    let mode = mode_for(
+        x11_available(),
+        env_nonempty("UML_VIEWER_TEST_UNDECORATED").is_some(),
+    );
     let exit = Arc::new(AtomicU8::new(0));
     // A simulated scale also scales the window, so the canvas stays
     // 1500x920 points (Lua `display.window_size`: view units × ui).
@@ -357,7 +379,9 @@ impl Drop for Viewer {
 
 /// Idle wake-ups (#143): a stat-only watcher repaints only when the diagram,
 /// metrics or mailbox stamp changes, so an idle viewer does not redraw on the
-/// poll cadence. The woken frame's `poll` does the actual reload.
+/// poll cadence. The woken frame's `poll` does the actual reload. A pending
+/// SIGTERM/SIGINT also wakes it: the signal handler only sets a flag, and an
+/// idle viewer would otherwise not run a frame to act on it.
 fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
@@ -367,7 +391,7 @@ fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<Atomic
             let mut wake = watch::Wake::new(&diagram, &root);
             while !flag.load(Ordering::SeqCst) {
                 std::thread::sleep(POLL_INTERVAL);
-                if wake.poll() {
+                if wake.poll() || signal::terminated() {
                     ctx.request_repaint();
                 }
             }
@@ -1188,6 +1212,56 @@ impl Viewer {
         )));
     }
 
+    /// Undecorated fallback: no title bar, so the drag strip carries
+    /// minimise and close. Close is the normal close a window-manager close
+    /// takes (companion stop without keep, exit 0).
+    fn draw_window_controls(&mut self, ctx: &egui::Context) {
+        if self.decorated {
+            return;
+        }
+        let screen = ctx.content_rect();
+        let [minimise, close] = window_controls(screen);
+        let quiet = |ui: &mut egui::Ui, rect: egui::Rect, label: &str, hot: theme::Rgb| {
+            let response = ui.interact(rect, ui.scope_id().with(label), egui::Sense::click());
+            let painter = ui.painter();
+            if response.hovered() {
+                painter.rect_filled(rect, 3.0, theme::LINE.color32());
+            }
+            let ink = if response.hovered() {
+                hot
+            } else {
+                theme::MUTED
+            };
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(14.0),
+                ink.color32(),
+            );
+            response.clicked()
+        };
+        let (minimised, closed) = egui::Area::new(egui::Id::unique("uml-window-controls"))
+            .fixed_pos(screen.min)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                (
+                    quiet(ui, minimise, "—", theme::INK),
+                    quiet(ui, close, "×", theme::VIOLATION_HOT),
+                )
+            })
+            .inner;
+        self.gui
+            .record_bound("window-minimize", minimise, screen.min);
+        self.gui.record_bound("window-close", close, screen.min);
+        if minimised {
+            ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
+        }
+        if closed && !self.quit {
+            self.begin_normal_quit(ctx);
+        }
+    }
+
     /// Undecorated fallback: the top strip drags, the edges resize. Returns
     /// true when the press was consumed by a window region.
     fn window_chrome_input(&mut self, ctx: &egui::Context) -> bool {
@@ -1219,6 +1293,10 @@ impl Viewer {
             Some(egui::viewport::ResizeDirection::West)
         } else if pointer.x >= screen.max.x - RESIZE_GRIP {
             Some(egui::viewport::ResizeDirection::East)
+        } else if window_controls(screen).iter().any(|r| r.contains(pointer)) {
+            // The minimise/close buttons take the press (egui sees it); the
+            // canvas and the drag must not.
+            return true;
         } else if pointer.y <= screen.min.y + DRAG_STRIP {
             None
         } else {
@@ -1565,6 +1643,7 @@ impl eframe::App for Viewer {
         self.draw_search(ctx);
         let actions = self.gui.draw(ctx, &self.state, self.frames);
         self.apply_actions(actions, ctx);
+        self.draw_window_controls(ctx);
         self.gui_inflight = false;
         if self.driver.is_some() || !self.gui_batches.is_empty() {
             // Replayed input needs frames; a real session repaints on input.
