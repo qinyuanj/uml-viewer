@@ -914,7 +914,8 @@ mod tests {
     fn a_timed_out_command_is_asked_to_stop_with_sigterm_so_it_can_release_resources() {
         let _guard = fork_guard();
         let marker = temp_path("marker");
-        let script = "trap 'echo released > \"$0\"' TERM; while :; do sleep 0.05; done".to_string();
+        let script =
+            "trap 'echo released > \"$0\"; exit 0' TERM; while :; do sleep 0.05; done".to_string();
         let argv = args(&["/bin/sh", "-c"]);
         let mut argv = argv;
         argv.push(OsString::from(script));
