@@ -66,7 +66,12 @@ cargo build --release --locked
 ./uml ir ./examples/uml-viewer.policy.edn
 ./uml ./examples/uml-viewer.edn
 cargo test --workspace --locked          # pure and integration suites
+git config core.hooksPath .githooks      # once per clone: enable the pre-commit hook
 ```
+
+The versioned `.githooks/pre-commit` runs `cargo fmt --all -- --check` and
+`cargo clippy --workspace --all-targets --locked -- -D warnings`; a failure
+blocks the commit.
 
 From **any project** you want to view (no local uml-viewer checkout
 needed):
