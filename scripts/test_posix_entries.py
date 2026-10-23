@@ -348,7 +348,9 @@ class PosixEntries(unittest.TestCase):
         self.assertIn('本地修改', result.stderr)
         self.assertEqual('用户未提交内容', user_file.read_text())
 
-    def test_standard_mutation_is_serial_per_file(self):
+    def test_standard_mutation_passes_every_file_to_one_call(self):
+        # One mutator call shares its coverage run and baseline across files;
+        # mutator still publishes each source's snapshot on its own.
         directory = self.root / '.uml-viewer/mutator/.venv/bin'
         directory.mkdir(parents=True)
         python = directory / 'python'
@@ -359,7 +361,7 @@ class PosixEntries(unittest.TestCase):
         result = self.entry('mutate', 'src/a.lua', 'src/b.lua')
         self.assertEqual(3, result.returncode, result.stderr)
         calls = [json.loads(line) for line in (self.root / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual([['-m', 'mutator', 'src/a.lua'], ['-m', 'mutator', 'src/b.lua']], calls)
+        self.assertEqual([['-m', 'mutator', 'src/a.lua', 'src/b.lua']], calls)
         self.assertTrue(json.loads((self.root / '.uml-viewer/quality-result.json').read_text())['validResult'])
 
 
@@ -376,9 +378,9 @@ class PosixEntries(unittest.TestCase):
     def test_record_matches_operation_canonical_root_and_actual_exit(self):
         # The companion rejects a record whose operation, projectRoot or exitCode
         # differs from the call it made; the published record must carry exactly
-        # those three values, even through a symlinked project path and when
-        # per-file mutation exits differ.
-        self.stub_tool('mutator', 'import sys\nraise SystemExit(3 if sys.argv[-1].endswith("a.lua") else 0)\n')
+        # those three values, even through a symlinked project path and in
+        # either target order.
+        self.stub_tool('mutator', 'import sys\nraise SystemExit(3 if any(a.endswith("a.lua") for a in sys.argv) else 0)\n')
         self.stub_tool('dryer', 'raise SystemExit(0)\n')
         (self.root / 'src/b.lua').write_text('return {}')
         (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {'sourceRoots': ['src']}}))

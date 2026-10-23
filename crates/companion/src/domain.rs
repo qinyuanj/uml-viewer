@@ -50,8 +50,9 @@ do not publish a result record.
 2. Run ./uml crap with declared scope: standard tools cover the whole
    business tree; an operation override may declare targets scope.
    Preserve unrelated class metrics under the selected tool contract.
-3. Run ./uml mutate on each changed source file (differential).
-   Invoke mutation once per source file, never a file list.
+3. Run one ./uml mutate call on every changed source file
+   (differential); it shares one coverage run and baseline and
+   publishes each file's snapshot.
    Retain explicit targets; never inject --source-root on scoped mutation.
    Uncovered mutants and survivors are findings: keep the snapshot;
    do not re-run the file or pass --mutate-all because of findings.

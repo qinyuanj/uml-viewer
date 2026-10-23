@@ -716,7 +716,8 @@ Quality refreshes share CLI dispatch and its configured scope/exclusions. Instal
 an absent public entry with `get-uml-viewer --install-only`. Process mail oldest
 first, popping and rewriting the queue; keep real/proposal discussion context
 until later context mail, and preserve proposal definitions and omit semantics.
-Invoke mutation once per selected source file, never a file list. Scoped
+Pass every selected source file to one mutation call: mutator shares one
+coverage run and baseline and still publishes each file's snapshot. Scoped
 mutation passes selected files without adding source-root flags.
 
 Before each serialized quality invocation remove the previous

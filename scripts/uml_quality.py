@@ -173,7 +173,7 @@ def dispatch(root, operation, forward):
             scope_name = 'whole-tree'
         elif operation == 'mutate':
             extra, files = targets(root, forward, roots, standard.get('exclude', []))
-            commands = [argv + options + extra + [file] for file in files]
+            commands = [argv + options + extra + files]
         else:
             if standard.get('exclude'):
                 files = sorted({str(p.relative_to(root)) for source in roots for p in source.rglob('*') if p.is_file() and not p.is_symlink() and p.suffix in EXTENSIONS and business(root, p, roots, standard['exclude'])})

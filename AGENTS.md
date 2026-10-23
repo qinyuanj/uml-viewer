@@ -33,9 +33,10 @@ The diagram is already on screen.
   `:refresh-crap` follows declared scope (standard tools measure the whole
   business tree; an operation override may declare target scope);
   `:refresh-mutate` is differential on target files; `:refresh-mutate-all`
-  passes `--mutate-all` only on those files. Invoke mutation once per source
-  file, never a file list. Scoped mutation keeps explicit targets, without
-  source-root flags.
+  passes `--mutate-all` only on those files. Pass every target file to one
+  `./uml mutate` call: mutator shares one coverage run and baseline across
+  them and still publishes each file's snapshot. Scoped mutation keeps
+  explicit targets, without source-root flags.
 - Serialize quality calls. Remove the old `.uml-viewer/quality-result.json`
   before each call, await its actual exit, and require a freshly published
   version-1 record matching operation, canonical project root and actual exit,
