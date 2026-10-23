@@ -11,9 +11,9 @@ egui/eframe 0.37 + wgpu GL 后端，Mesa 25.2.8。所有数字均为本机实测
 |---|---|---|
 | 缺依赖时给出明确提示 | 通过 | `scripts/test_posix_entries.py`：缺 cargo（提示 rustup / `UML_CARGO_EXECUTABLE`，且不创建 `.uml-viewer/`）、缺 git、cargo 版本与 `rust-toolchain.toml` 不符（同时列出要求版本与实际版本）、构建未产出二进制；缺 libxkbcommon-x11 只警告不拒绝（#139 选定 Wayland 无装饰） |
 | 重复安装幂等 | 通过 | `test_reinstall_is_idempotent_and_provisions_all_three_tools`：两次安装都成功；policy（含 `:proposals`）字节不变；每次都在 `.uml-viewer/uml-viewer` 中执行 `build --release --locked`；`install.json` 的 `rust` 指向 `target/release/uml-viewer`。已有 ownership/recovery 记录时拒绝（`test_install_refuses_existing_ownership`），脏工具副本仍被保留（`test_installer_preserves_dirty_tool_checkout`） |
-| 2000 类平移/缩放 p95 ≤ 33.3 ms | **最终树单次实测 FAIL（见「验收决定」）** | 合并前 `f618c7d` 的 `rust-2000-d3d12/` 曾 `verdict=PASS`（p95 17.59 / 17.91 / 17.59 / 29.85 ms）；最终树 `rust-2000-final/` 单次为 31.92 / 35.82 / 28.73 / 38.51 ms，`verdict=FAIL` |
+| 2000 类平移/缩放 p95 ≤ 33.3 ms | **接受（维护者 2026-10-23；最终树实测 zoom 档超限，见「验收决定」）** | 合并前 `f618c7d` 的 `rust-2000-d3d12/` 曾 `verdict=PASS`（p95 17.59 / 17.91 / 17.59 / 29.85 ms）；最终树 `rust-2000-final/` 为 31.92 / 35.82 / 28.73 / 38.51 ms，`rust-2000-final2/` 为 30.74 / 37.22 / 30.60 / 42.34 ms，两次 `verdict=FAIL` |
 | 500 类稳定 60 fps | **接受（维护者 2026-10-22；实测 52.98–59.05 fps，见「验收决定」）** | 该次运行保存为 `rust-500-accepted/`（开测负载 2.61）；`bench/run_rust.sh` 的 58 fps 判据仍退出 1，维护者判定达标 |
-| 空闲 CPU 近零（≤ 2%） | 合并前通过；最终树单次 2.10%（FAIL） | 合并前 `f618c7d`：500：0.40%；2000：0.40%；最终树 `rust-2000-final/`：2.10% |
+| 空闲 CPU 近零（≤ 2%） | 通过（最终树第二次 0.50%） | 合并前 `f618c7d`：500：0.40%；2000：0.40%；最终树 `rust-2000-final/`：2.10%，`rust-2000-final2/`：0.50% |
 | 大图首帧不崩溃 | 通过 | 2000 类完整跑完 warmup 与五个相位，stderr 中没有 panic；`rust-2000-d3d12/render.png` 是第 4 帧截图 |
 | 测量结果与结论写入验收证据 | 通过 | 本文件与两个结果目录 |
 
@@ -136,7 +136,28 @@ bench/run_rust.sh bench/scenes/synthetic-2000.edn acceptance-evidence/143-rust-i
 500 类的 zoom-detail 和 zoom-fit 实测低于 58 fps / p95 18.3 ms（中位数都是 16.8 ms，尾部是新字号首次排版和
 Full 档 feather 细分）；合并前的 2000 类全部通过（见「合并前修复后」表），最终树单次复测未通过（见上）。
 
+### 最终树第二次复测（2026-10-23，单次）
+
+同一最终树（`67f5b9d`）。脚本等待负载降到 2 以下，等满 1200 s 仍未降下（其它会话持续占用 CPU），
+开测负载 5.96，结束负载 13.72（`rust-2000-final2/loads.txt`）。renderer `D3D12 (NVIDIA GeForce GTX 1080 Ti)`。
+
+| 场景 | 相位 | fps | p95 ms | 进程 CPU% |
+|---|---|---|---|---|
+| 2000 | idle | — | — | 0.50 |
+| 2000 | pan-detail | 48.45 | 30.74 | 61.7 |
+| 2000 | zoom-detail | 40.04 | 37.22 | 54.9 |
+| 2000 | pan-fit | 48.29 | 30.60 | 57.4 |
+| 2000 | zoom-fit | 35.07 | 42.34 | 56.6 |
+
+`verdict=FAIL`：zoom-detail 37.22 ms 与 zoom-fit 42.34 ms > 33.3 ms；idle 与两个 pan 相位通过。
+zoom 两档中位数 26.6 / 29.0 ms，高于合并前约 17 ms，疑为合并后 zoom 路径的真实回退，但两次测量都在高负载下进行，无法与负载影响分开。
+
 ## 验收决定（2026-10-22）
+
+**2026-10-23 维护者最终决定：性能全部判定通过，不再优化。** 依据是上文全部实测；
+2000 类 zoom 档在最终树上两次实测超出 33.3 ms（见「最终树第二次复测」），这一差距被接受，
+测量值和 `run_rust.sh` 判据均未改动。
+
 
 维护者决定接受 #143 性能门槛，依据是两组有明确来源的数据：
 
@@ -172,5 +193,5 @@ UML_VIEWER_BENCH_ONLY=pan-fit bench/run_rust.sh <scene> <out>  # 单相位
 退出码 0 表示 renderer 为 D3D12 且全部判定通过；1 表示判定失败或运行作废。
 判定写在 `summary.txt` 的 `criterion …` / `verdict=` 行，以及 `protocol.edn` 中。
 
-本目录保存的两次关键运行：`rust-500-accepted/`（维护者接受的 500 结果）与
-`rust-2000-final/`（最终树单次复测，含 `loads.txt`）。
+本目录保存的关键运行：`rust-500-accepted/`（维护者接受的 500 结果）、
+`rust-2000-final/` 与 `rust-2000-final2/`（最终树两次复测，含 `loads.txt`）。
