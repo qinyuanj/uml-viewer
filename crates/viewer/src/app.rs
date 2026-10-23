@@ -357,7 +357,9 @@ impl Drop for Viewer {
 
 /// Idle wake-ups (#143): a stat-only watcher repaints only when the diagram,
 /// metrics or mailbox stamp changes, so an idle viewer does not redraw on the
-/// poll cadence. The woken frame's `poll` does the actual reload.
+/// poll cadence. The woken frame's `poll` does the actual reload. A pending
+/// SIGTERM/SIGINT also wakes it: the signal handler only sets a flag, and an
+/// idle viewer would otherwise not run a frame to act on it.
 fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
@@ -367,7 +369,7 @@ fn spawn_wake(ctx: egui::Context, diagram: PathBuf, root: PathBuf) -> Arc<Atomic
             let mut wake = watch::Wake::new(&diagram, &root);
             while !flag.load(Ordering::SeqCst) {
                 std::thread::sleep(POLL_INTERVAL);
-                if wake.poll() {
+                if wake.poll() || signal::terminated() {
                     ctx.request_repaint();
                 }
             }
