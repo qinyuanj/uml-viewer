@@ -526,11 +526,14 @@ impl Viewer {
         }
         if let Some(out) = setup.bench.clone() {
             let (classes, _, _) = bench::scene_counts(&app.state.scene);
+            let provenance = bench::Provenance::from_env(bench::load_one_minute())?;
             let runner = bench::Bench::new(
                 out,
                 setup.bench_only.clone(),
                 app.adapter[0].clone(),
                 classes,
+                provenance,
+                bench::load_one_minute,
             )?;
             app.bench = Some(runner);
             // The bench sets the unclamped protocol camera; no viewer fit.

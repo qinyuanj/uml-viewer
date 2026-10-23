@@ -190,8 +190,20 @@ UML_VIEWER_BENCH_ONLY=pan-fit bench/run_rust.sh <scene> <out>  # 单相位
 
 `run_rust.sh` 会设置 `GALLIUM_DRIVER=d3d12`、`WGPU_BACKEND=gl`，使用隔离的
 项目根，并把 `UML_VIEWER_BENCH=<out>` 交给 viewer（`crates/viewer/src/bench.rs`）。
-退出码 0 表示 renderer 为 D3D12 且全部判定通过；1 表示判定失败或运行作废。
+退出码 0 表示 renderer 为 D3D12、负载未超限且全部判定通过；1 表示判定失败或运行作废。
 判定写在 `summary.txt` 的 `criterion …` / `verdict=` 行，以及 `protocol.edn` 中。
+
+运行作废时 `verdict=VOID`（不是 FAIL），`summary.txt` 中每个原因各占一行 `void reason=…`，
+`protocol.edn` 中写入 `:void-reasons […]`。作废条件：renderer 不含 `D3D12`；或开测、结束时的
+1 分钟负载超过上限、或无法读取。上限默认 2.0，可用 `UML_BENCH_MAX_LOAD` 调整。
+`UML_BENCH_WAIT_LOAD_SECS=N`（默认 0）表示开测前最多等 N 秒，等负载降到上限以下。
+
+来源记录：`protocol.edn` 的 `:environment` 新增 `:commit`（`git rev-parse HEAD`）、`:dirty`
+（`git status --porcelain` 非空）、`:load-1m-start`、`:load-1m-end`、`:load-1m-max`、
+`:load-wait-s`；未知值记为 `nil`。`summary.txt` 中对应一行
+`provenance commit=… dirty=… load_1m_start=… load_1m_end=… load_1m_max=… load_wait_s=…`。
+引用测量结果时，以 `:commit` 和 `:dirty false` 确认结果来自哪棵树。
+本节以前记录的运行没有这些字段，其测量值不变。
 
 本目录保存的关键运行：`rust-500-accepted/`（维护者接受的 500 结果）、
 `rust-2000-final/` 与 `rust-2000-final2/`（最终树两次复测，含 `loads.txt`）。

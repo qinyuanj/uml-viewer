@@ -26,6 +26,11 @@ pub const MEAN_FPS_500: f64 = 58.0;
 pub const P95_500_MS: f64 = 18.3;
 pub const IDLE_CPU_PCT: f64 = 2.0;
 
+/// Default ceiling for the 1-minute load average at the start and the end
+/// of a run; above it the run is void (concurrent load contaminates frame
+/// timing). `UML_BENCH_MAX_LOAD` overrides it.
+pub const DEFAULT_MAX_LOAD: f64 = 2.0;
+
 /// getconf CLK_TCK on Ubuntu x86_64; /proc/<pid>/stat fields 14/15 are ticks.
 const CLK_TCK: f64 = 100.0;
 
@@ -163,7 +168,8 @@ pub struct Criterion {
 /// The protocol-1 verdict table (bench/README.md): the 2000-class scene
 /// needs p95 ≤ 33.3 ms on every interactive phase; the 500-class scene needs
 /// mean fps ≥ 58 and p95 ≤ 18.3 ms; idle CPU ≤ 2 % on both. A renderer
-/// string without `D3D12` voids the run: no performance claim survives it.
+/// string without `D3D12` voids the run (see `void_reasons`): no performance
+/// claim survives it, so no other criterion is evaluated.
 pub fn evaluate(renderer: &str, classes: usize, results: &[PhaseResult]) -> Vec<Criterion> {
     let mut criteria = vec![Criterion {
         name: "renderer contains D3D12 (otherwise the run is void)".to_string(),
@@ -213,6 +219,160 @@ pub fn evaluate(renderer: &str, classes: usize, results: &[PhaseResult]) -> Vec<
     criteria
 }
 
+/// Overall outcome of a run. A void run makes no performance claim either
+/// way: it is neither a PASS nor a FAIL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Pass,
+    Fail,
+    Void,
+}
+
+impl Verdict {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Verdict::Pass => "PASS",
+            Verdict::Fail => "FAIL",
+            Verdict::Void => "VOID",
+        }
+    }
+}
+
+/// Where and under what load a run happened. `commit`/`dirty`/`waited_s` come
+/// from `bench/run_rust.sh`; the viewer samples the load itself at the start
+/// (bench creation) and at the end (results written).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Provenance {
+    pub commit: Option<String>,
+    pub dirty: Option<bool>,
+    pub max_load: f64,
+    pub waited_s: Option<f64>,
+    pub load_start: Option<f64>,
+    pub load_end: Option<f64>,
+}
+
+impl Provenance {
+    /// Reads `UML_BENCH_COMMIT`, `UML_BENCH_DIRTY` (`true`/`false`),
+    /// `UML_BENCH_LOAD_WAITED_S` and `UML_BENCH_MAX_LOAD` through `var`.
+    /// An unparsable or non-positive maximum load is an error.
+    pub fn from_vars(
+        var: impl Fn(&str) -> Option<String>,
+        load_start: Option<f64>,
+    ) -> Result<Provenance, String> {
+        let max_load = match var("UML_BENCH_MAX_LOAD").filter(|v| !v.trim().is_empty()) {
+            None => DEFAULT_MAX_LOAD,
+            Some(raw) => match raw.trim().parse::<f64>() {
+                Ok(v) if v.is_finite() && v > 0.0 => v,
+                _ => {
+                    return Err(format!(
+                        "UML_BENCH_MAX_LOAD must be a positive number, got {raw:?}"
+                    ));
+                }
+            },
+        };
+        Ok(Provenance {
+            commit: var("UML_BENCH_COMMIT").filter(|c| !c.trim().is_empty()),
+            dirty: match var("UML_BENCH_DIRTY").as_deref() {
+                Some("true") => Some(true),
+                Some("false") => Some(false),
+                _ => None,
+            },
+            max_load,
+            waited_s: var("UML_BENCH_LOAD_WAITED_S").and_then(|v| v.trim().parse().ok()),
+            load_start,
+            load_end: None,
+        })
+    }
+
+    pub fn from_env(load_start: Option<f64>) -> Result<Provenance, String> {
+        Provenance::from_vars(|name| std::env::var(name).ok(), load_start)
+    }
+
+    /// The keys added to the `:environment` map.
+    pub fn edn_entries(&self) -> String {
+        let e = |x: Option<f64>| x.map(|v| v.to_string()).unwrap_or("nil".into());
+        format!(
+            ":commit {} :dirty {} :load-1m-start {} :load-1m-end {} :load-1m-max {} :load-wait-s {}",
+            self.commit
+                .as_ref()
+                .map(|c| format!("\"{}\"", c.replace('"', "'")))
+                .unwrap_or("nil".into()),
+            self.dirty.map(|d| d.to_string()).unwrap_or("nil".into()),
+            e(self.load_start),
+            e(self.load_end),
+            self.max_load,
+            e(self.waited_s),
+        )
+    }
+
+    /// The `provenance …` line of summary.txt.
+    pub fn summary_line(&self) -> String {
+        let f = |x: Option<f64>| x.map(|v| format!("{v:.2}")).unwrap_or("-".into());
+        format!(
+            "provenance commit={} dirty={} load_1m_start={} load_1m_end={} load_1m_max={} load_wait_s={}\n",
+            self.commit.as_deref().unwrap_or("-"),
+            self.dirty.map(|d| d.to_string()).unwrap_or("-".into()),
+            f(self.load_start),
+            f(self.load_end),
+            self.max_load,
+            f(self.waited_s),
+        )
+    }
+}
+
+/// The first field of /proc/loadavg: the 1-minute load average.
+pub fn parse_loadavg(text: &str) -> Option<f64> {
+    text.split_whitespace().next()?.parse().ok()
+}
+
+pub fn load_one_minute() -> Option<f64> {
+    parse_loadavg(&std::fs::read_to_string("/proc/loadavg").ok()?)
+}
+
+/// Why the run is void, if it is: a non-D3D12 renderer, or a 1-minute load
+/// above the maximum (or unknown) at the start or the end of the run.
+pub fn void_reasons(criteria: &[Criterion], provenance: &Provenance) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if let Some(renderer) = criteria.first().filter(|c| !c.pass) {
+        reasons.push(format!("renderer is not D3D12: {}", renderer.detail));
+    }
+    let max = provenance.max_load;
+    for (when, load) in [
+        ("start", provenance.load_start),
+        ("end", provenance.load_end),
+    ] {
+        match load {
+            None => reasons.push(format!("1-min load at {when} unknown")),
+            Some(load) if load > max => {
+                reasons.push(format!("1-min load at {when} {load} > max {max}"))
+            }
+            Some(_) => {}
+        }
+    }
+    reasons
+}
+
+/// VOID when any void reason exists, else PASS only if every criterion passed.
+pub fn verdict(criteria: &[Criterion], void: &[String]) -> Verdict {
+    if !void.is_empty() {
+        Verdict::Void
+    } else if criteria.iter().all(|c| c.pass) {
+        Verdict::Pass
+    } else {
+        Verdict::Fail
+    }
+}
+
+/// `meta` (the `:environment` map) with the provenance keys appended.
+pub fn environment_with(meta: &str, provenance: &Provenance) -> String {
+    let body = meta.trim().strip_suffix('}').unwrap_or("{").trim_end();
+    if body == "{" {
+        format!("{{{}}}", provenance.edn_entries())
+    } else {
+        format!("{body} {}}}", provenance.edn_entries())
+    }
+}
+
 /// What the eframe seam does with one painted frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Step {
@@ -241,7 +401,9 @@ pub struct Bench {
     cpu_samples: Vec<f64>,
     zoom_range: Option<(f64, f64)>,
     results: Vec<PhaseResult>,
-    verdict: Option<bool>,
+    provenance: Provenance,
+    sample_load: fn() -> Option<f64>,
+    verdict: Option<Verdict>,
 }
 
 impl Bench {
@@ -250,6 +412,8 @@ impl Bench {
         only: Option<String>,
         renderer: String,
         classes: usize,
+        provenance: Provenance,
+        sample_load: fn() -> Option<f64>,
     ) -> Result<Bench, String> {
         if let Some(name) = &only
             && !PHASES.contains(&name.as_str())
@@ -272,6 +436,8 @@ impl Bench {
             cpu_samples: Vec::new(),
             zoom_range: None,
             results: Vec::new(),
+            provenance,
+            sample_load,
             verdict: None,
         })
     }
@@ -282,8 +448,14 @@ impl Bench {
         self.meta = meta;
     }
 
-    /// Overall verdict once `frame` reported `finished`; None before.
+    /// Whether the run passed once `frame` reported `finished`; None before.
+    /// A void run did not pass.
     pub fn passed(&self) -> Option<bool> {
+        self.verdict.map(|v| v == Verdict::Pass)
+    }
+
+    /// Overall verdict once `frame` reported `finished`; None before.
+    pub fn verdict(&self) -> Option<Verdict> {
         self.verdict
     }
 
@@ -394,8 +566,11 @@ impl Bench {
 
     fn write_results(&mut self) {
         let criteria = evaluate(&self.renderer, self.classes, &self.results);
-        let verdict = criteria.iter().all(|c| c.pass);
+        self.provenance.load_end = (self.sample_load)();
+        let void = void_reasons(&criteria, &self.provenance);
+        let verdict = verdict(&criteria, &void);
         self.verdict = Some(verdict);
+        let environment = environment_with(&self.meta, &self.provenance);
         let mut phases = String::new();
         let mut summary = String::new();
         let f = |x: Option<f64>| x.map(|v| format!("{v:.2}")).unwrap_or("-".into());
@@ -448,18 +623,25 @@ impl Bench {
                 c.name, c.pass, c.detail
             );
         }
-        summary += &format!("verdict={}\n", if verdict { "PASS" } else { "FAIL" });
+        summary += &self.provenance.summary_line();
+        let mut void_edn = String::new();
+        for reason in &void {
+            void_edn += &format!("\"{}\" ", reason.replace('"', "'"));
+            summary += &format!("void reason={reason}\n");
+        }
+        summary += &format!("verdict={}\n", verdict.as_str());
         let protocol = format!(
-            "{{:protocol 1 :environment {} :phases [{}] :criteria [{}] :verdict \"{}\"}}\n",
-            self.meta,
+            "{{:protocol 1 :environment {} :phases [{}] :criteria [{}] :void-reasons [{}] :verdict \"{}\"}}\n",
+            environment,
             phases,
             criteria_edn,
-            if verdict { "PASS" } else { "FAIL" }
+            void_edn.trim_end(),
+            verdict.as_str()
         );
         if let Err(error) = std::fs::write(self.out.join("protocol.edn"), protocol).and_then(|()| {
             std::fs::write(
                 self.out.join("summary.txt"),
-                format!("{}\n{summary}", self.meta),
+                format!("{environment}\n{summary}"),
             )
         }) {
             eprintln!("uml viewer: could not write bench results: {error}");
@@ -524,6 +706,189 @@ mod tests {
             fit: 0.0317,
             zoom_hi: 0.1268,
         }
+    }
+
+    /// A quiet, attributed run: loads well under the default maximum.
+    fn quiet() -> Provenance {
+        Provenance {
+            commit: Some("0123abc".into()),
+            dirty: Some(false),
+            max_load: DEFAULT_MAX_LOAD,
+            waited_s: Some(0.0),
+            load_start: Some(0.4),
+            load_end: None,
+        }
+    }
+
+    fn quiet_end() -> Option<f64> {
+        Some(0.6)
+    }
+
+    fn busy_end() -> Option<f64> {
+        Some(7.5)
+    }
+
+    fn criterion(pass: bool) -> Criterion {
+        Criterion {
+            name: "c".into(),
+            pass,
+            detail: "d".into(),
+        }
+    }
+
+    #[test]
+    fn provenance_reads_the_script_variables_and_the_load_ceiling() {
+        let vars = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        let p = Provenance::from_vars(
+            vars(&[
+                ("UML_BENCH_COMMIT", "77ebe92"),
+                ("UML_BENCH_DIRTY", "true"),
+                ("UML_BENCH_LOAD_WAITED_S", "12"),
+                ("UML_BENCH_MAX_LOAD", "3.5"),
+            ]),
+            Some(1.25),
+        )
+        .unwrap();
+        assert_eq!(Some("77ebe92".to_string()), p.commit);
+        assert_eq!(Some(true), p.dirty);
+        assert_eq!(Some(12.0), p.waited_s);
+        assert_eq!(3.5, p.max_load);
+        assert_eq!(Some(1.25), p.load_start);
+        assert_eq!(None, p.load_end);
+        // Nothing set: unknown provenance and the default ceiling.
+        let none = Provenance::from_vars(vars(&[]), None).unwrap();
+        assert_eq!(
+            (None, None, None, DEFAULT_MAX_LOAD),
+            (none.commit, none.dirty, none.waited_s, none.max_load)
+        );
+        let clean = Provenance::from_vars(vars(&[("UML_BENCH_DIRTY", "false")]), None).unwrap();
+        assert_eq!(Some(false), clean.dirty);
+        // A ceiling that is not a positive number is refused, not defaulted.
+        for bad in ["abc", "0", "-1", "NaN", "inf"] {
+            let pairs: &'static [(&'static str, &'static str)] = match bad {
+                "abc" => &[("UML_BENCH_MAX_LOAD", "abc")],
+                "0" => &[("UML_BENCH_MAX_LOAD", "0")],
+                "-1" => &[("UML_BENCH_MAX_LOAD", "-1")],
+                "NaN" => &[("UML_BENCH_MAX_LOAD", "NaN")],
+                _ => &[("UML_BENCH_MAX_LOAD", "inf")],
+            };
+            let error = Provenance::from_vars(vars(pairs), None).unwrap_err();
+            assert!(error.contains("UML_BENCH_MAX_LOAD"), "{bad}: {error}");
+        }
+    }
+
+    #[test]
+    fn loadavg_parses_the_one_minute_field() {
+        assert_eq!(Some(5.96), parse_loadavg("5.96 13.72 9.01 3/1234 5678\n"));
+        assert_eq!(None, parse_loadavg(""));
+        assert_eq!(None, parse_loadavg("x 1 2"));
+        // The real file parses on this host.
+        assert!(load_one_minute().unwrap() >= 0.0);
+    }
+
+    #[test]
+    fn load_above_the_ceiling_at_either_end_voids_the_run() {
+        let ok = vec![criterion(true), criterion(true)];
+        let mut p = quiet();
+        p.load_end = Some(0.6);
+        assert!(void_reasons(&ok, &p).is_empty());
+        assert_eq!(Verdict::Pass, verdict(&ok, &void_reasons(&ok, &p)));
+        // Exactly at the ceiling is still clean; above it is void.
+        p.load_start = Some(DEFAULT_MAX_LOAD);
+        assert!(void_reasons(&ok, &p).is_empty());
+        p.load_start = Some(5.96);
+        let reasons = void_reasons(&ok, &p);
+        assert_eq!(
+            vec!["1-min load at start 5.96 > max 2".to_string()],
+            reasons
+        );
+        assert_eq!(Verdict::Void, verdict(&ok, &reasons));
+        p.load_start = Some(0.4);
+        p.load_end = Some(13.72);
+        let reasons = void_reasons(&ok, &p);
+        assert_eq!(vec!["1-min load at end 13.72 > max 2".to_string()], reasons);
+        // A raised ceiling accepts the same load.
+        p.max_load = 20.0;
+        assert!(void_reasons(&ok, &p).is_empty());
+        // An unknown load cannot rule out contamination.
+        p.load_start = None;
+        assert_eq!(
+            vec!["1-min load at start unknown".to_string()],
+            void_reasons(&ok, &p)
+        );
+    }
+
+    #[test]
+    fn a_void_run_is_neither_pass_nor_fail() {
+        let mut p = quiet();
+        p.load_end = Some(0.5);
+        // A failing criterion on a clean run is a FAIL.
+        let failing = vec![criterion(true), criterion(false)];
+        assert_eq!(
+            Verdict::Fail,
+            verdict(&failing, &void_reasons(&failing, &p))
+        );
+        // The same failing numbers under load are VOID, not FAIL.
+        p.load_end = Some(9.0);
+        assert_eq!(
+            Verdict::Void,
+            verdict(&failing, &void_reasons(&failing, &p))
+        );
+        // A non-D3D12 renderer is void with its own reason.
+        p.load_end = Some(0.5);
+        let criteria = evaluate("llvmpipe (LLVM 19)", 500, &[]);
+        let reasons = void_reasons(&criteria, &p);
+        assert_eq!(
+            vec!["renderer is not D3D12: llvmpipe (LLVM 19)".to_string()],
+            reasons
+        );
+        assert_eq!(Verdict::Void, verdict(&criteria, &reasons));
+        assert_eq!(
+            ["PASS", "FAIL", "VOID"],
+            [
+                Verdict::Pass.as_str(),
+                Verdict::Fail.as_str(),
+                Verdict::Void.as_str()
+            ]
+        );
+    }
+
+    #[test]
+    fn environment_gains_the_provenance_keys() {
+        let mut p = quiet();
+        p.load_end = Some(0.6);
+        let env = environment_with("{:renderer \"D3D12\" :dpi 1}", &p);
+        assert_eq!(
+            "{:renderer \"D3D12\" :dpi 1 :commit \"0123abc\" :dirty false :load-1m-start 0.4 :load-1m-end 0.6 :load-1m-max 2 :load-wait-s 0}",
+            env
+        );
+        assert!(edn::parse(&env).is_ok(), "{env}");
+        // Unknown values are nil; an empty meta still yields a map.
+        let unknown = Provenance {
+            commit: None,
+            dirty: None,
+            max_load: 3.0,
+            waited_s: None,
+            load_start: None,
+            load_end: None,
+        };
+        let env = environment_with("", &unknown);
+        assert_eq!(
+            "{:commit nil :dirty nil :load-1m-start nil :load-1m-end nil :load-1m-max 3 :load-wait-s nil}",
+            env
+        );
+        assert!(edn::parse(&env).is_ok());
+        assert_eq!(
+            "provenance commit=- dirty=- load_1m_start=- load_1m_end=- load_1m_max=3 load_wait_s=-\n",
+            unknown.summary_line()
+        );
     }
 
     #[test]
@@ -655,7 +1020,15 @@ mod tests {
     fn bench_runs_the_phases_and_writes_results() {
         let out = std::env::temp_dir().join(format!("uml-bench-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
-        let mut bench = Bench::new(out.clone(), None, "D3D12 (test)".into(), 500).unwrap();
+        let mut bench = Bench::new(
+            out.clone(),
+            None,
+            "D3D12 (test)".into(),
+            500,
+            quiet(),
+            quiet_end,
+        )
+        .unwrap();
         bench.set_meta("{:test true}".into());
         let g = geo();
         let t0 = Instant::now();
@@ -683,8 +1056,56 @@ mod tests {
         assert!(protocol.contains(":protocol 1"));
         assert!(protocol.contains("\"pan-detail\""));
         assert!(protocol.contains(":verdict \"PASS\""));
+        assert!(protocol.contains(":void-reasons []"));
+        assert!(protocol.contains(":commit \"0123abc\" :dirty false"));
+        assert!(protocol.contains(":load-1m-start 0.4 :load-1m-end 0.6 :load-1m-max 2"));
+        assert!(edn::parse(&protocol).is_ok(), "{protocol}");
         let summary = std::fs::read_to_string(out.join("summary.txt")).unwrap();
         assert!(summary.contains("verdict=PASS"));
+        assert!(
+            summary.contains(
+                "provenance commit=0123abc dirty=false load_1m_start=0.40 load_1m_end=0.60"
+            )
+        );
+        let _ = std::fs::remove_dir_all(&out);
+    }
+
+    #[test]
+    fn a_run_ending_under_load_writes_a_void_verdict() {
+        let out = std::env::temp_dir().join(format!("uml-bench-void-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        let mut bench = Bench::new(
+            out.clone(),
+            Some("pan-fit".into()),
+            "D3D12".into(),
+            2000,
+            quiet(),
+            busy_end,
+        )
+        .unwrap();
+        bench.set_meta("{:test true}".into());
+        let g = geo();
+        let mut now = Instant::now();
+        let mut finished = false;
+        for _ in 0..100 * 60 {
+            now += std::time::Duration::from_millis(10);
+            if bench.frame(&g, now, None).finished {
+                finished = true;
+                break;
+            }
+        }
+        assert!(finished);
+        // The frame numbers would pass; the load voids them.
+        assert_eq!(Some(Verdict::Void), bench.verdict());
+        assert_eq!(Some(false), bench.passed());
+        let protocol = std::fs::read_to_string(out.join("protocol.edn")).unwrap();
+        assert!(protocol.contains(":verdict \"VOID\""), "{protocol}");
+        assert!(protocol.contains(":void-reasons [\"1-min load at end 7.5 > max 2\"]"));
+        assert!(protocol.contains("{:test true :commit"));
+        assert!(edn::parse(&protocol).is_ok(), "{protocol}");
+        let summary = std::fs::read_to_string(out.join("summary.txt")).unwrap();
+        assert!(summary.contains("void reason=1-min load at end 7.5 > max 2\nverdict=VOID\n"));
+        assert!(!summary.contains("verdict=FAIL"));
         let _ = std::fs::remove_dir_all(&out);
     }
 
@@ -692,8 +1113,15 @@ mod tests {
     fn bench_only_runs_a_single_named_phase() {
         let out = std::env::temp_dir().join(format!("uml-bench-only-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
-        let mut bench =
-            Bench::new(out.clone(), Some("zoom-fit".into()), "D3D12".into(), 2000).unwrap();
+        let mut bench = Bench::new(
+            out.clone(),
+            Some("zoom-fit".into()),
+            "D3D12".into(),
+            2000,
+            quiet(),
+            quiet_end,
+        )
+        .unwrap();
         let g = geo();
         let t0 = Instant::now();
         let mut now = t0;
@@ -723,7 +1151,15 @@ mod tests {
     fn idle_asks_for_one_wake_at_the_phase_end_instead_of_a_poll_cadence() {
         let out = std::env::temp_dir().join(format!("uml-bench-idle-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
-        let mut bench = Bench::new(out.clone(), Some("idle".into()), "D3D12".into(), 500).unwrap();
+        let mut bench = Bench::new(
+            out.clone(),
+            Some("idle".into()),
+            "D3D12".into(),
+            500,
+            quiet(),
+            quiet_end,
+        )
+        .unwrap();
         let g = geo();
         let t0 = Instant::now();
         // Warmup, then the first idle frame 2 s into the phase.
@@ -740,7 +1176,15 @@ mod tests {
     #[test]
     fn bench_refuses_an_unknown_only_phase() {
         let out = std::env::temp_dir().join(format!("uml-bench-bad-{}", std::process::id()));
-        let error = Bench::new(out, Some("fly".into()), "D3D12".into(), 500).unwrap_err();
+        let error = Bench::new(
+            out,
+            Some("fly".into()),
+            "D3D12".into(),
+            500,
+            quiet(),
+            quiet_end,
+        )
+        .unwrap_err();
         assert!(error.contains("fly"));
     }
 }
