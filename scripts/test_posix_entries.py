@@ -852,5 +852,101 @@ class ViewerLaunchEnv(unittest.TestCase):
         self.assertEqual('virgl', env['GALLIUM_DRIVER'])
         self.assertEqual('gl', env['WGPU_BACKEND'])
 
+
+# A stand-in viewer: records each launch (script, argv, the session.edn and
+# diagram it found), publishes the markers named for its script, and on the
+# save phase writes the session.edn the restore phase must find.
+FAKE_VIEWER = r'''#!{python}
+import json, os, sys
+from pathlib import Path
+project = Path(os.environ['UML_VIEWER_PROJECT_ROOT'])
+evidence = Path(os.environ['UML_VIEWER_EVIDENCE'])
+script = Path(os.environ['UML_VIEWER_TEST_DRIVER']).stem
+session = project / '.uml-viewer/session.edn'
+with open(os.environ['FAKE_VIEWER_LOG'], 'a') as log:
+    log.write(json.dumps({{'script': script, 'argv': sys.argv[1:],
+                          'session': session.read_text() if session.exists() else None,
+                          'diagram': (project / 'diagram.edn').read_text()}}) + '\n')
+for marker in json.loads(os.environ['FAKE_VIEWER_MARKERS']).get(script, []):
+    (evidence / marker).write_text('')
+if script == 'session':
+    session.write_text('{{:saved-by :session}}')
+'''
+
+SESSION_MARKERS = {
+    'session': ['saved-session.edn', 'session-save-pass.edn'],
+    'session_restore': ['restored-session.edn', 'session-restart-pass.edn'],
+    'session_legacy': ['session-legacy-pass.edn'],
+    'session_love': ['session-love-pass.edn', 'love-session-restored.png'],
+}
+
+
+class ViewerDriverRunner(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='uml driver ')
+        self.addCleanup(self.temporary.cleanup)
+        root = Path(self.temporary.name)
+        viewer = root / 'fake-viewer'
+        viewer.write_text(FAKE_VIEWER.format(python=sys.executable))
+        viewer.chmod(0o755)
+        self.log = root / 'launches.jsonl'
+        self.root = root
+        self.env = dict(os.environ, UML_VIEWER_RUST_EXECUTABLE=str(viewer),
+                        FAKE_VIEWER_LOG=str(self.log),
+                        FAKE_VIEWER_MARKERS=json.dumps(SESSION_MARKERS))
+
+    def run_driver(self, name):
+        evidence = self.root / f'evidence-{name}'
+        result = subprocess.run([sys.executable, '-I', str(REPO / 'scripts/run_viewer_driver.py'),
+                                 name, '--evidence', str(evidence)],
+                                env=self.env, text=True, capture_output=True, timeout=60)
+        launches = [json.loads(line) for line in self.log.read_text().splitlines()] \
+            if self.log.exists() else []
+        self.log.unlink(missing_ok=True)
+        return result, launches
+
+    def test_each_session_phase_runs_standalone_by_name(self):
+        expected = {
+            'session_restore': [('session', []), ('session_restore', ['--restart'])],
+            'session_legacy': [('session_legacy', ['--restart'])],
+            'session_love': [('session_love', ['--restart'])],
+        }
+        for name, launches_expected in expected.items():
+            with self.subTest(driver=name):
+                result, launches = self.run_driver(name)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn(f'PASS driver {name}', result.stdout)
+                self.assertEqual(launches_expected,
+                                 [(l['script'], l['argv'][1:-1]) for l in launches])
+                for launch in launches:
+                    self.assertEqual('viewer', launch['argv'][0])
+                    self.assertEqual('diagram.edn', launch['argv'][-1])
+                last = launches[-1]
+                if name == 'session_restore':
+                    # Restore reads the session the save phase wrote.
+                    self.assertEqual('{:saved-by :session}', last['session'])
+                    self.assertIn('"Session"', last['diagram'])
+                elif name == 'session_legacy':
+                    self.assertIn(':zoom 1.25', last['session'])
+                    self.assertIn('"Session"', last['diagram'])
+                else:
+                    # The LOVE-written session, pointed at this project's diagram.
+                    self.assertNotIn('/tmp/uml142', last['session'])
+                    self.assertIn('diagram.edn', last['session'])
+
+    def test_session_phase_requires_its_markers(self):
+        self.env['FAKE_VIEWER_MARKERS'] = '{}'
+        result, _ = self.run_driver('session_legacy')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('legacy: driver did not publish session-legacy-pass.edn', result.stderr)
+
+    def test_unknown_driver_names_the_known_ones_without_launching(self):
+        result, launches = self.run_driver('session_nope')
+        self.assertEqual(2, result.returncode)
+        self.assertIn("unknown driver 'session_nope'", result.stderr)
+        for known in ('session', 'session_restore', 'session_legacy', 'session_love', 'metrics'):
+            self.assertIn(known, result.stderr)
+        self.assertEqual([], launches)
+
 if __name__ == '__main__':
     unittest.main()

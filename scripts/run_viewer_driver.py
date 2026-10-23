@@ -12,6 +12,7 @@ POSIX 替代，因此断言本身不丢失。
     python3 -I scripts/run_viewer_driver.py metrics
     python3 -I scripts/run_viewer_driver.py navigation
     python3 -I scripts/run_viewer_driver.py metrics --evidence DIR --seconds 60
+    python3 -I scripts/run_viewer_driver.py session_legacy   # 单独一个 session 阶段
 """
 import argparse
 import json
@@ -319,6 +320,23 @@ def scenarios_session(project, evidence):
     ]
 
 
+# Each session phase also runs standalone by its script name. A phase gets the
+# same fixture, setup, `--restart` and markers as in the composite run; the
+# restore phase restores what the save phase wrote, so it runs save first.
+SESSION_PHASES = {
+    'session_restore': ('save', 'restart'),
+    'session_legacy': ('legacy',),
+    'session_love': ('love',),
+}
+
+
+def session_phase(name):
+    def scenarios(project, evidence):
+        tags = SESSION_PHASES[name]
+        return [s for s in scenarios_session(project, evidence) if s['tag'] in tags]
+    return scenarios
+
+
 def scenarios_companion_worker(project, evidence):
     # `--backend herdr`: the viewer starts the isolated companion itself.
     return [{'tag': 'worker', 'env': env_companion_worker,
@@ -352,7 +370,9 @@ SCENARIOS = {
     'font_parity': scenarios_font_parity,
     'review_fixes': scenarios_review_fixes,
     'dpi_window': scenarios_dpi_window,
+    **{name: session_phase(name) for name in SESSION_PHASES},
 }
+FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
@@ -389,6 +409,10 @@ def edn_script(name):
     """The declarative script of a driver (#139)."""
     path = REPO / f'scripts/drivers/{name}.edn'
     return path if path.is_file() else None
+
+
+def known_drivers():
+    return sorted(path.stem for path in (REPO / 'scripts/drivers').glob('*.edn'))
 
 
 def rust_executable():
@@ -452,13 +476,18 @@ def main():
                         help='evidence file the driver must create (repeatable)')
     arguments = parser.parse_args()
 
-    spec = DRIVERS.get(arguments.driver, {'seconds': 90, 'evidence': []})
-    seconds = arguments.seconds or spec['seconds']
-    markers = list(arguments.pass_marker) or list(spec['evidence'])
     script = edn_script(arguments.driver)
     if not script:
-        print(f'no EDN driver: scripts/drivers/{arguments.driver}.edn', file=sys.stderr)
+        print(f'unknown driver {arguments.driver!r}: no scripts/drivers/{arguments.driver}.edn; '
+              f'known drivers: {", ".join(known_drivers())}', file=sys.stderr)
         return 2
+    # Session phases are not in DRIVERS (check.py --native already covers them
+    # through `session`); standalone they keep that driver's time budget.
+    spec = DRIVERS.get(arguments.driver) or \
+        (DRIVERS['session'] if arguments.driver in SESSION_PHASES else None) or \
+        {'seconds': 90, 'evidence': []}
+    seconds = arguments.seconds or spec['seconds']
+    markers = list(arguments.pass_marker) or list(spec['evidence'])
     driver = script
     evidence = Path(arguments.evidence or tempfile.mkdtemp(prefix='uml-viewer-evidence-'))
     evidence.mkdir(parents=True, exist_ok=True)
