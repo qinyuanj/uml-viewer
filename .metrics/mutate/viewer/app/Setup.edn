@@ -1,0 +1,1 @@
+{:version 1 :tested-at "2026-10-23T16:43:05+08:00" :source "crates/viewer/src/app.rs" :namespace "viewer::app::Setup" :outcomes {} :forms [{:id "defn-/from_options" :kind "defn-" :file "crates/viewer/src/app.rs" :line 181 :end-line 232 :hash "5e5f4e86be9bfbbd961a32b36b0c084fe782ee6c215c8d7a999f0796490f5333" :killed 0 :survived 0 :uncovered 0 :sites 0}]}

@@ -1,0 +1,1 @@
+{:version 1 :tested-at "2026-10-23T16:43:05+08:00" :source "crates/viewer/src/app.rs" :namespace "viewer::app::WindowMode" :outcomes {} :forms [{:id "defn/decorated" :kind "defn" :file "crates/viewer/src/app.rs" :line 61 :end-line 63 :hash "2299100673794e501ae71973bfc200ed1093b51f26ee70c140b69004cbaf027e" :killed 0 :survived 0 :uncovered 1 :sites 1}]}
