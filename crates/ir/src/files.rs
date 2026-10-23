@@ -31,14 +31,7 @@ fn canonical(path: &str) -> Result<String, String> {
 }
 
 fn absolute(root: &str, path: &str) -> String {
-    let bytes = path.as_bytes();
-    if bytes.first() == Some(&b'/')
-        || bytes.first() == Some(&b'\\')
-        || (bytes.len() > 2
-            && bytes[0].is_ascii_alphabetic()
-            && bytes[1] == b':'
-            && matches!(bytes[2], b'/' | b'\\'))
-    {
+    if path.starts_with('/') {
         return path.to_owned();
     }
     format!("{root}/{path}")

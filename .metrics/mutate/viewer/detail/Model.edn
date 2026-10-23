@@ -1,0 +1,1 @@
+{:version 1 :tested-at "2026-10-23T22:02:39+08:00" :source "crates/viewer/src/detail.rs" :namespace "viewer::detail::Model" :outcomes {} :forms [{:id "defn/of" :kind "defn" :file "crates/viewer/src/detail.rs" :line 47 :end-line 57 :hash "bc30db8e3fe3b1db542c9f9c52d990fea817dae3a49abe28ad4045929ac945b8" :killed 0 :survived 0 :uncovered 0 :sites 0}]}

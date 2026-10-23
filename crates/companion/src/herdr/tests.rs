@@ -310,7 +310,7 @@ fn backend(
             owner: Rc::new(owner),
             clock: Rc::new(|| 0),
             sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.replace('\\', "/")),
+            canonical: Rc::new(|path| path.to_owned()),
             selected: Some(Selected {
                 path: "herdr".to_owned(),
                 release: "0.9.3".to_owned(),

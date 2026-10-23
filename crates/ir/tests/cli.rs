@@ -88,3 +88,22 @@ fn source_symlinks_are_refused() {
     assert_eq!(ExitCode::from(1), code);
     assert!(!dir.join("result.edn").exists());
 }
+
+#[test]
+fn a_backslash_in_a_posix_file_name_is_kept() {
+    let dir = tempdir("backslash");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/odd\\name.lua"), "local M = {}\nreturn M\n").unwrap();
+    std::fs::write(
+        dir.join("policy.edn"),
+        "{:lang :lua :src \"src\" :prefix \"app\"}",
+    )
+    .unwrap();
+    let code = run_in(&dir, &["policy.edn", "result.edn"]);
+    assert_eq!(ExitCode::SUCCESS, code);
+    let document = std::fs::read_to_string(dir.join("result.edn")).unwrap();
+    assert!(
+        document.contains(r#":file "src/odd\\name.lua""#),
+        "{document}"
+    );
+}

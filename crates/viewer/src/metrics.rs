@@ -50,7 +50,7 @@ fn collect(base: &Path, rel: &Path, files: &mut Vec<Snapshot>) {
         {
             let mtime = watch::mtime(&path).unwrap_or_default();
             files.push(Snapshot::new(
-                &next.to_string_lossy().replace('\\', "/"),
+                &next.to_string_lossy(),
                 &text,
                 Value::String(mtime),
             ));

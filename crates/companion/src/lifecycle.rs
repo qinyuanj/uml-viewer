@@ -30,8 +30,7 @@ pub fn config_root() -> String {
 /// `uml-viewer-<project>-<hash8>-<uuid8>`: the project name is the only part
 /// that may shrink, so the socket path stays inside the measured limit.
 pub fn session_name(root: &str, uuid: &str, config_root: Option<&str>) -> Result<String> {
-    let normalized = root.replace('\\', "/");
-    let base: String = normalized
+    let base: String = root
         .trim_end_matches('/')
         .rsplit('/')
         .next()
@@ -86,7 +85,7 @@ pub fn load(root: &str) -> Result<Option<Value>> {
     domain::recorded_backend(Some(&value))?;
     herdr_domain::complete(&value)?;
     let cwd = record::get_name(&value, "cwd").unwrap_or_default();
-    let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.replace('\\', "/"));
+    let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.to_owned());
     if canonical(&cwd) != canonical(root) {
         return Err(Failure::new(
             "Companion ownership is missing, ambiguous or belongs to another project; retained",
@@ -173,7 +172,7 @@ pub fn create(root: &str, options_in: CreateOptions) -> Result<(Value, Herdr)> {
         domain::STANDING_RULES.to_owned(),
         domain::RECOVERY_PROMPT.to_owned(),
     ];
-    let canonical = posix::canonical(root).unwrap_or_else(|_| root.replace('\\', "/"));
+    let canonical = posix::canonical(root).unwrap_or_else(|_| root.to_owned());
     let provisional = record::map(vec![
         ("backend", Value::keyword("herdr")),
         ("owner-role", Value::keyword("companion")),
@@ -329,11 +328,11 @@ mod tests {
 
     #[test]
     fn names_a_fresh_session_uniquely_per_launch_within_the_grammar() {
-        let name = session_name("C:/projects/some project", "abcdef12-rest", None).unwrap();
+        let name = session_name("/projects/some project", "abcdef12-rest", None).unwrap();
         assert!(name.len() <= 64);
         assert!(herdr_domain::session_valid(&name), "{name}");
         let long = session_name(
-            &format!("C:/projects/{}", "x".repeat(200)),
+            &format!("/projects/{}", "x".repeat(200)),
             "abcdef12-rest",
             None,
         )
@@ -342,8 +341,8 @@ mod tests {
         let stripped: String = long.trim_start_matches("uml-viewer-").to_owned();
         assert!(stripped.ends_with("-abcdef12"), "{long}");
         // Two roots whose names share a prefix must not collide.
-        let a = session_name("C:/projects/alpha-one", "abcdef12-rest", None).unwrap();
-        let b = session_name("C:/projects/alpha-two", "abcdef12-rest", None).unwrap();
+        let a = session_name("/projects/alpha-one", "abcdef12-rest", None).unwrap();
+        let b = session_name("/projects/alpha-two", "abcdef12-rest", None).unwrap();
         assert_ne!(a, b);
     }
 

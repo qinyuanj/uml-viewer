@@ -402,7 +402,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
     let base = model
         .file
         .as_ref()
-        .and_then(|f| f.replace('\\', "/").rsplit('/').next().map(String::from));
+        .and_then(|f| f.rsplit('/').next().map(String::from));
     let drill = get(c, "drill?") == Some(&Value::Bool(true));
     let module = match &base {
         Some(b) if !drill && b.to_lowercase().ends_with(".rs") => Some(b.clone()),

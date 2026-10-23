@@ -158,10 +158,8 @@ pub struct DisplayBoundary {
 
 impl MailBoundary for DisplayBoundary {
     fn resolve(&self, path: &str, root: Option<&str>) -> String {
-        let path = path.replace('\\', "/");
-        let absolute = path.starts_with('/') || path.chars().nth(1) == Some(':');
-        if absolute {
-            return path;
+        if path.starts_with('/') {
+            return path.to_owned();
         }
         let base = root
             .map(str::to_owned)
@@ -238,6 +236,15 @@ mod tests {
             boundary.resolve("second.edn", None)
         );
         assert_eq!("/abs/x.edn", boundary.resolve("/abs/x.edn", None));
+        // POSIX names: `\` is an ordinary character and `C:` no drive.
+        assert_eq!(
+            format!("{root}/odd\\name.edn"),
+            boundary.resolve("odd\\name.edn", None)
+        );
+        assert_eq!(
+            format!("{root}/C:/x.edn"),
+            boundary.resolve("C:/x.edn", None)
+        );
         // A state's own project root wins when it names one.
         assert_eq!(
             "/other/second.edn",

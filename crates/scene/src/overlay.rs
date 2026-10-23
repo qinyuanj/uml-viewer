@@ -87,7 +87,7 @@ pub fn load(files: &[Snapshot]) -> Metrics {
         let Ok(data) = edn::parse(&f.text) else {
             continue;
         };
-        if f.path.replace('\\', "/").ends_with(".metrics/crap.edn") {
+        if f.path.ends_with(".metrics/crap.edn") {
             for entry in seq(g(&data, "entries")) {
                 if let Some(Value::String(ns)) = g(entry, "namespace") {
                     crap.entry(ns.clone()).or_default().push(entry.clone());
@@ -98,11 +98,7 @@ pub fn load(files: &[Snapshot]) -> Metrics {
             if ns.is_none()
                 && let Some(Value::String(source)) = g(&data, "source")
             {
-                let derived = source
-                    .replace('\\', "/")
-                    .strip_prefix("src/")
-                    .map(|s| s.to_owned())
-                    .unwrap_or_else(|| source.replace('\\', "/"));
+                let derived = source.strip_prefix("src/").unwrap_or(source).to_owned();
                 // Drop the last dot-suffix (`%.[^%.]+$`), then `/` become dots.
                 let no_ext = match derived.rsplit_once('.') {
                     Some((stem, ext)) if !ext.is_empty() => stem,

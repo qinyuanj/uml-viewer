@@ -185,18 +185,15 @@ pub fn module_name(cid: &Value) -> String {
 
 /// `relative_path(path, cwd)`: both sides canonicalized by the caller.
 pub fn relative_path(path: &str, cwd: &str) -> String {
-    let path = path.replace('\\', "/");
-    let cwd = cwd.replace('\\', "/");
     let prefix = format!("{cwd}/");
     match path.strip_prefix(&prefix) {
         Some(rest) => rest.to_owned(),
-        None => path,
+        None => path.to_owned(),
     }
 }
 
 /// `file_base(path)`: last segment, allowing a trailing slash.
 pub fn file_base(path: &str) -> Option<String> {
-    let path = path.replace('\\', "/");
     let trimmed = path.trim_end_matches('/');
     trimmed.rsplit('/').next().map(str::to_owned)
 }

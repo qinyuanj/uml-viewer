@@ -51,8 +51,7 @@ pub fn select(policy: &Value, filenames: &[String]) -> Result<Option<Value>, Str
     }
     let mut found = std::collections::HashSet::new();
     for path in filenames {
-        let path = path.replace('\\', "/");
-        let path = path.strip_prefix("./").unwrap_or(&path);
+        let path = path.strip_prefix("./").unwrap_or(path);
         if path == "package.json" {
             found.insert("typescript");
         } else if path == "Cargo.toml" {

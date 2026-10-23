@@ -37,7 +37,7 @@ pub fn select(root: &str, args: &[String], restart: bool) -> Result<Selected> {
 pub fn select_on_path(root: &str, args: &[String], restart: bool, path: &str) -> Result<Selected> {
     let (_, requested) = domain::selection_args(args)?;
     let record = ownership::read(root)?;
-    let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.replace('\\', "/"));
+    let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.to_owned());
     domain::preflight_checks(
         record.as_ref(),
         &domain::PreflightOptions {

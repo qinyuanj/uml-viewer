@@ -123,7 +123,7 @@ fn counts_unscored_descendants_as_red_without_inheriting_into_files() {
 
 #[test]
 fn uses_namespace_labels_except_rust_files_and_preserves_camel_capitals() {
-    let d = parse(r#"{:hierarchical true :classes [{:id :rust :file "src/lib.rs"} {:id :rust.main :file "src/main.rs"} {:id :rust.proto :file "src\\proto.RS"} {:id :graph-python :file "src/graph_python.lua"} {:id :tauriFs}] :edges []}"#).unwrap();
+    let d = parse(r#"{:hierarchical true :classes [{:id :rust :file "src/lib.rs"} {:id :rust.main :file "src/main.rs"} {:id :rust.proto :file "src/proto.RS"} {:id :graph-python :file "src/graph_python.lua"} {:id :tauriFs}] :edges []}"#).unwrap();
     let root = H::view_at(&d, &[]);
     let inner = H::view_at(&d, &[kw("rust")]);
     let name_of = |v: &Value, id: &str| match get(box_at(v, id).unwrap(), "name").unwrap() {

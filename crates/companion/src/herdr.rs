@@ -99,9 +99,7 @@ impl Options {
             }),
             clock: Rc::new(posix::monotonic_ms),
             sleep: Rc::new(posix::sleep),
-            canonical: Rc::new(|path| {
-                posix::canonical(path).unwrap_or_else(|_| path.replace('\\', "/"))
-            }),
+            canonical: Rc::new(|path| posix::canonical(path).unwrap_or_else(|_| path.to_owned())),
             selected: None,
             write_companion: Rc::new(crate::ownership::write),
             read_companion: Rc::new(crate::ownership::read),

@@ -39,8 +39,8 @@ pub fn record(root: &Path) -> io::Result<PathBuf> {
     let pid = std::process::id();
     let started = starttime(pid)
         .ok_or_else(|| io::Error::other("Could not read the viewer creation identity"))?;
-    let cwd = root.to_string_lossy().replace('\\', "/");
-    let target = Path::new(&cwd).join(".uml-viewer").join(FILE_NAME);
+    let cwd = root.to_string_lossy();
+    let target = root.join(".uml-viewer").join(FILE_NAME);
     write_atomic(&target, &encode(pid, &started, &cwd))?;
     Ok(target)
 }

@@ -277,18 +277,16 @@ pub struct FileSource {
 }
 
 fn absolute(path: &str) -> bool {
-    let b = path.as_bytes();
-    path.starts_with('/') || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
+    path.starts_with('/')
 }
 
 impl FileSource {
     pub fn locate(&self, ident: &Ident, files: &Files) -> Option<String> {
         let path = ident.file.as_deref().filter(|p| !p.is_empty())?;
-        let mut path = path.replace('\\', "/");
+        let mut path = path.to_owned();
         if let Some(root) = &files.root
             && !absolute(&path)
         {
-            let root = root.replace('\\', "/");
             path = format!("{}/{path}", root.trim_end_matches('/'));
         }
         (files.is_file)(&path).then_some(path)

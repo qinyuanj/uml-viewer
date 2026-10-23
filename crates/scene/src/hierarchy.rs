@@ -92,12 +92,11 @@ fn module_name(c: &Value) -> String {
     label(get(c, "id").unwrap())
 }
 
-/// `G.file_base`: trailing path segment after `/` or `\`.
+/// `G.file_base`: trailing path segment after `/`.
 fn file_base(path: &Value) -> Option<String> {
     match path {
         Value::String(s) => {
-            let norm = s.replace('\\', "/");
-            let trimmed = norm.trim_end_matches('/');
+            let trimmed = s.trim_end_matches('/');
             Some(trimmed.rsplit('/').next().unwrap_or(trimmed).to_owned())
         }
         _ => None,
