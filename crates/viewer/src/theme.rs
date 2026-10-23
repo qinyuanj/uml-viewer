@@ -79,19 +79,19 @@ pub const CHILD_WASH: Rgb = Rgb(232, 196, 72);
 pub const PORT_FILL: Rgb = Rgb(42, 56, 52);
 pub const PORT_FILL_ON: Rgb = Rgb(74, 96, 78);
 pub const POPUP_BG: Rgb = Rgb(18, 22, 24);
-// Sidebar buttons and the light source window (theme.lua).
+// Sidebar buttons and the dark source window. Its target line is a GOLD
+// wash (ALPHA_ROW_WASH); tokens avoid the red/green quality hues.
 pub const BUTTON_HOVER: Rgb = Rgb(54, 76, 66);
 pub const BUTTON_ACTIVE: Rgb = Rgb(66, 90, 76);
-pub const SOURCE_BG: Rgb = Rgb(248, 250, 252);
-pub const SOURCE_INK: Rgb = Rgb(17, 24, 39);
-pub const SOURCE_FILE: Rgb = Rgb(90, 104, 112);
-pub const SOURCE_GUTTER_BG: Rgb = Rgb(238, 242, 247);
-pub const SOURCE_GUTTER: Rgb = Rgb(107, 114, 128);
-pub const SOURCE_HIGHLIGHT: Rgb = Rgb(253, 230, 138);
-pub const SOURCE_SELECTION: Rgb = Rgb(191, 219, 254);
-pub const SOURCE_COMMENT: Rgb = Rgb(107, 114, 128);
-pub const SOURCE_STRING: Rgb = Rgb(180, 83, 9);
-pub const SOURCE_KEYWORD: Rgb = Rgb(29, 78, 216);
+pub const SOURCE_BG: Rgb = PANEL;
+pub const SOURCE_INK: Rgb = INK;
+pub const SOURCE_FILE: Rgb = MUTED;
+pub const SOURCE_GUTTER_BG: Rgb = SIDEBAR;
+pub const SOURCE_GUTTER: Rgb = MUTED;
+pub const SOURCE_SELECTION: Rgb = Rgb(38, 54, 70);
+pub const SOURCE_COMMENT: Rgb = Rgb(120, 140, 130);
+pub const SOURCE_STRING: Rgb = Rgb(230, 160, 110);
+pub const SOURCE_KEYWORD: Rgb = Rgb(122, 162, 247);
 
 pub const ALPHA_PACKAGE_FILL: u8 = 80;
 pub const ALPHA_PACKAGE_STROKE: u8 = 170;

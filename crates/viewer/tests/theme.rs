@@ -35,3 +35,40 @@ fn fade_scales_alpha_but_keeps_the_hue() {
     assert_eq!((200, 214, 204), (faded.r(), faded.g(), faded.b()));
     assert_eq!(theme::ALPHA_DIMMED, faded.a());
 }
+
+/// WCAG 2 contrast ratio between two opaque colors.
+fn contrast(a: Rgb, b: Rgb) -> f64 {
+    let lum = |c: Rgb| {
+        let ch = |v: u8| {
+            let s = v as f64 / 255.0;
+            if s <= 0.03928 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * ch(c.0) + 0.7152 * ch(c.1) + 0.0722 * ch(c.2)
+    };
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+#[test]
+fn source_window_is_dark_and_readable() {
+    // The source window joins the dark theme instead of a light island.
+    assert_eq!(theme::PANEL, theme::SOURCE_BG);
+    for ink in [
+        theme::SOURCE_INK,
+        theme::SOURCE_KEYWORD,
+        theme::SOURCE_STRING,
+    ] {
+        assert!(contrast(ink, theme::SOURCE_BG) >= 4.5, "{ink:?}");
+        assert!(
+            contrast(ink, theme::SOURCE_SELECTION) >= 4.5,
+            "{ink:?} on selection"
+        );
+    }
+    assert!(contrast(theme::SOURCE_COMMENT, theme::SOURCE_BG) >= 3.0);
+    assert!(contrast(theme::SOURCE_FILE, theme::SOURCE_BG) >= 4.5);
+    assert!(contrast(theme::SOURCE_GUTTER, theme::SOURCE_GUTTER_BG) >= 4.5);
+}

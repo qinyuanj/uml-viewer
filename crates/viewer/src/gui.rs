@@ -869,7 +869,6 @@ impl Gui {
                 .collapsible(false)
                 .frame(egui::Frame::window(&ctx.global_style()).fill(rgb(theme::SOURCE_BG)))
                 .show(ctx, |ui| {
-                    ui.visuals_mut().override_text_color = Some(rgb(theme::SOURCE_INK));
                     let button = ui.button(strings::CLOSE_SOURCE);
                     close = button.clicked();
                     if Some(w.serial) == newest {
@@ -956,7 +955,11 @@ impl Gui {
                                 Vec2::new(rect.width(), line_h),
                             );
                             if row.highlight {
-                                painter.rect_filled(line, 0.0, rgb(theme::SOURCE_HIGHLIGHT));
+                                painter.rect_filled(
+                                    line,
+                                    0.0,
+                                    theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH),
+                                );
                                 target_rect = Some(line);
                             }
                             painter.rect_filled(
