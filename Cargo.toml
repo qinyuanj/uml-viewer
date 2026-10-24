@@ -12,5 +12,11 @@ edition = "2024"
 rust-version = "1.99.1"
 publish = false
 
+# Each mutation worker relinks ~19 viewer test binaries per mutant; full
+# debuginfo peaked at 4.3 GB per worker and exhausted a 15 GiB WSL host with
+# three workers. Line tables keep backtraces and peak at 1.8 GB.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 debug = false
