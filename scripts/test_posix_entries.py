@@ -853,6 +853,49 @@ class ViewerLaunchEnv(unittest.TestCase):
         self.assertEqual('gl', env['WGPU_BACKEND'])
 
 
+class RemovedRuntimeRecord(unittest.TestCase):
+    """A launcher record left by the removed love runtime blocks only a
+    restart or a still-running process, never a fresh start."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+    def state_with(self, pid, started):
+        state = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, state)
+        (state / 'viewer-process.json').write_text(json.dumps(
+            {'pid': pid, 'started': started, 'runtime': 'love', 'cwd': str(state)}))
+        return state
+
+    def dead_identity(self):
+        child = subprocess.Popen([sys.executable, '-c', 'pass'])
+        started = Path(f'/proc/{child.pid}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        child.wait()
+        return child.pid, started
+
+    def own_identity(self):
+        started = Path('/proc/self/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        return os.getpid(), started
+
+    def test_fresh_start_passes_over_a_dead_love_record(self):
+        from uml_launch import verify_previous
+        state = self.state_with(*self.dead_identity())
+        verify_previous(state, state, restart=False)
+
+    def test_restart_still_refuses_a_love_record(self):
+        from uml_launch import verify_previous
+        state = self.state_with(*self.dead_identity())
+        with self.assertRaisesRegex(ValueError, '已移除'):
+            verify_previous(state, state, restart=True)
+
+    def test_fresh_start_refuses_a_live_love_record(self):
+        from uml_launch import verify_previous
+        state = self.state_with(*self.own_identity())
+        with self.assertRaisesRegex(ValueError, '已移除'):
+            verify_previous(state, state, restart=False)
+
+
 # A stand-in viewer: records each launch (script, argv, the session.edn and
 # diagram it found), publishes the markers named for its script, and on the
 # save phase writes the session.edn the restore phase must find.

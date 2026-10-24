@@ -68,9 +68,13 @@ def verify_previous(state, root, restart):
         started = record.get('started')
         if type(pid) is not int or pid < 1 or not isinstance(started, str) or not started.isdigit():
             raise ValueError(f'{label} 进程身份记录无效；拒绝 restart。')
-        if record.get('runtime') != RUNTIME:
-            raise ValueError(f"{label} 记录的运行时 {record.get('runtime')!r} 已移除；请 fresh 启动 viewer。")
         observed = proc_identity(pid)
+        if record.get('runtime') != RUNTIME:
+            # A fresh start may pass over a removed runtime's record once its
+            # process is gone; launch() overwrites the launcher record.
+            if not restart and (observed is None or observed['start'] != started):
+                continue
+            raise ValueError(f"{label} 记录的运行时 {record.get('runtime')!r} 已移除；请 fresh 启动 viewer。")
         if observed is not None and observed['start'] != started:
             raise ValueError(f'{label} 进程身份已变化；拒绝 restart。')
     return launcher, viewer
