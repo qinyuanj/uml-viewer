@@ -22,8 +22,8 @@ pub fn getd<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
 /// `default(v, d)`: `nil`, EDN `nil` and `false` fall back.
 pub fn or<'a>(value: Option<&'a Value>, default: &'a Value) -> &'a Value {
     match value {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => default,
-        Some(value) => value,
+        Some(x) if edn::record::truthy(value) => x,
+        _ => default,
     }
 }
 

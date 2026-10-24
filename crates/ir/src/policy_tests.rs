@@ -274,3 +274,10 @@ fn a_timestamp_named_proposal_is_kept_but_never_invented() {
     assert_same(r#""2026-10-22 14:11:13""#, name);
     assert_eq!(None, get(&doc, "proposal"));
 }
+
+#[test]
+fn an_explicit_nil_proposal_has_no_layers() {
+    // policy.lua:113-116: `E.get` finds the key, `get` then yields nil, and
+    // `normalize_proposal(nil)` has no layers. #154: no panic.
+    assert!(policy::proposal_layers(&parse("{:proposal nil}")).is_empty());
+}

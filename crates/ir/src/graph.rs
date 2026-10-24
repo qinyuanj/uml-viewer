@@ -134,7 +134,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
 
 fn blank(s: Option<&Value>) -> bool {
     match s {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => true,
+        _ if !edn::record::truthy(s) => true,
         Some(Value::String(s)) => s
             .trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r'))
             .is_empty(),

@@ -15,7 +15,7 @@ fn matches_prefix(x: &Value, p: &Value) -> bool {
 }
 
 pub fn hierarchical(p: &Value) -> bool {
-    get(p, "hierarchical") == Some(&Value::Bool(true))
+    edn::record::is_true(p, "hierarchical")
         || (get(p, "packages").is_none() && get(p, "diagrams").is_none())
 }
 
@@ -92,7 +92,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
                 best: None,
             }
         });
-        group.violating = group.violating || get(e, "violating") == Some(&Value::Bool(true));
+        group.violating = group.violating || edn::record::is_true(e, "violating");
         let better = match &group.best {
             None => true,
             Some(best) => kind_rank(get(e, "kind")) >= kind_rank(get(best, "kind")),
@@ -320,7 +320,9 @@ pub fn proposal_layers(x: &Value) -> Vec<Value> {
         return seq(get(&first, "layers")).to_vec();
     }
     let value = match x {
-        Value::Map(_) if x.get(&kw("proposal")).is_some() => get(x, "proposal").unwrap().clone(),
+        Value::Map(_) if edn::record::get_raw(x, "proposal").is_some() => {
+            get(x, "proposal").cloned().unwrap_or(Value::Nil)
+        }
         _ => x.clone(),
     };
     normalize_proposal(&value)
@@ -360,7 +362,7 @@ pub fn rank_of<'a>(x: &Value, ranks: &'a Value) -> Option<&'a Value> {
     let mut n = Some(id_name(x));
     while let Some(current) = n {
         if let Some(rank) = ranks.get(&kw(&current))
-            && !matches!(rank, Value::Nil | Value::Bool(false))
+            && truthy(Some(rank))
         {
             return Some(rank);
         }
@@ -438,7 +440,7 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: &Value, omit: &[Value]) -> Vec<V
         }
         let mut c = copy_map(e);
         if let Some(k) = kinds.get(&pair)
-            && !matches!(k, Value::Nil | Value::Bool(false))
+            && truthy(Some(k))
         {
             put(&mut c, "kind", k.clone());
         }
@@ -457,7 +459,7 @@ fn ir_class(c: &Value, hide: bool) -> Value {
     ]);
     for key in ["ns", "lang", "file", "stereotype"] {
         if let Some(v) = get(c, key)
-            && *v != Value::Bool(false)
+            && truthy(Some(v))
         {
             put(&mut r, key, v.clone());
         }
