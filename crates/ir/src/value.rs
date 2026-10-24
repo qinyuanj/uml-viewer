@@ -1,30 +1,18 @@
 //! IR idioms over `edn::Value` mirroring the `uml.edn` usage of the IR
 //! pipeline. Generic record reading (`get`, `truthy`, `num`, `seq`,
 //! `local_name`, `put`, `remove`, `record`) lives in `edn::record`; this
-//! module keeps only the IR-specific idioms built on it: scanner-style
-//! defaults that also skip `false`, id construction, and map copies.
+//! module keeps only the IR-specific idioms built on it: truthy reads where
+//! `false` falls back like a missing key, id construction, and map copies.
 
 use edn::Value;
 use edn::record::{get, local_name};
 
-pub fn kw(name: &str) -> Value {
-    Value::Keyword(name.to_owned())
-}
-
-/// Scanner-style `get(m, k, d)`: `false` also counts as missing.
-pub fn getd<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
-    match get(m, key) {
-        Some(Value::Bool(false)) => None,
-        value => value,
-    }
-}
-
-/// `default(v, d)`: `nil`, EDN `nil` and `false` fall back.
-pub fn or<'a>(value: Option<&'a Value>, default: &'a Value) -> &'a Value {
-    match value {
-        Some(x) if edn::record::truthy(value) => x,
-        _ => default,
-    }
+/// The entry only when it is Lua truthy: absent, `nil` and `false` all read
+/// as `None`. This is the scanner `get(m, k, d)` and the `policy.lua`
+/// `default(g(m, k), d)` idiom, where `false` falls back like a missing key
+/// (`get_truthy(m, k).unwrap_or(d)`).
+pub fn get_truthy<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
+    get(m, key).filter(|v| edn::record::truthy(Some(v)))
 }
 
 /// `policy.lua` `name(x)` on a value that must be a namespace id: the
@@ -35,7 +23,7 @@ pub fn id_name(x: &Value) -> String {
 
 /// `id(x)`: the keyword of `id_name(x)`.
 pub fn id(x: &Value) -> Value {
-    kw(&id_name(x))
+    Value::keyword(&id_name(x))
 }
 
 /// `ids(xs)`.
@@ -48,7 +36,7 @@ pub fn contains(xs: &[Value], x: &Value) -> bool {
 }
 
 /// `E.encode` as a hash key; ids are keywords, so encoding cannot fail here.
-pub fn key_of(value: &Value) -> String {
+pub fn encode_key(value: &Value) -> String {
     edn::encode(value).unwrap_or_default()
 }
 

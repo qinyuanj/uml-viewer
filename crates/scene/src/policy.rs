@@ -4,7 +4,7 @@
 
 use crate::geom;
 use edn::Value;
-use edn::record::{get, local_name, seq};
+use edn::record::{flag, get, local_name, seq};
 
 pub const PROPOSAL_NOTICE: &str = "PROPOSAL — not instantiated in code";
 
@@ -24,10 +24,7 @@ fn ids(xs: &[Value]) -> Vec<Value> {
 }
 
 fn matches(x: &Value, p: &Value) -> bool {
-    let (x, p) = (
-        local_name(x).unwrap_or_default().to_owned(),
-        local_name(p).unwrap_or_default().to_owned(),
-    );
+    let (x, p) = (geom::name(x), geom::name(p));
     x == p || x.starts_with(&format!("{p}."))
 }
 
@@ -37,10 +34,7 @@ pub fn omitted_id(x: &Value, omit: Option<&Value>) -> bool {
 }
 
 pub fn kind_rank(k: Option<&Value>) -> i64 {
-    match k
-        .map(|v| local_name(v).unwrap_or_default().to_owned())
-        .as_deref()
-    {
+    match k.map(geom::name).as_deref() {
         Some("implements") | Some("inheritance") => 4,
         Some("composition") => 3,
         Some("aggregation") => 2,
@@ -127,7 +121,7 @@ pub fn restamp_ranks(classes: &[Value], edges: &[Value], ranks: &Value) -> Value
 }
 
 pub fn rank_of(x: &Value, ranks: &Value) -> Option<f64> {
-    let mut n = Some(local_name(x).unwrap_or_default().to_owned());
+    let mut n = Some(geom::name(x));
     while let Some(cur) = n {
         if let Some(v) = ranks.get(&Value::keyword(&cur))
             && edn::record::truthy(Some(v))
@@ -176,7 +170,7 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
             } else {
                 c.clone()
             };
-            if !edn::record::truthy(get(c, "foreign"))
+            if !flag(c, "foreign")
                 && let Some(rank) = rank_of(get(c, "id").unwrap(), ranks)
             {
                 edn::record::put(&mut out, "level", geom::numval(rank));
@@ -254,7 +248,7 @@ fn nse_entry(x: &Value) -> Value {
     let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
     let mut out = x.clone();
     edn::record::put(&mut out, "id", cid.clone());
-    let label = Value::String(local_name(&cid).unwrap_or_default().to_owned());
+    let label = Value::String(geom::name(&cid));
     edn::record::put(&mut out, "label", default(get(x, "label"), &label).clone());
     edn::record::put(&mut out, "nses", Value::Vector(nses));
     out
@@ -272,7 +266,7 @@ fn layers_from(xs: Option<&Value>) -> Vec<Value> {
             let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
             let mut out_x = x.clone();
             edn::record::put(&mut out_x, "id", cid.clone());
-            let label = Value::String(local_name(&cid).unwrap_or_default().to_owned());
+            let label = Value::String(geom::name(&cid));
             edn::record::put(
                 &mut out_x,
                 "label",
@@ -323,11 +317,11 @@ fn named(p: &Value, i: usize) -> Option<Value> {
     let normalized = normalize_proposal(Some(p));
     let mut out = p.clone();
     edn::record::put(&mut out, "id", cid.clone());
-    let fallback_name = Value::String(local_name(&cid).unwrap_or_default().to_owned());
+    let fallback_name = Value::String(geom::name(&cid));
     let name_v = default(get(p, "name").or_else(|| get(p, "label")), &fallback_name);
     let name_s = match name_v {
         Value::String(s) => Value::String(s.clone()),
-        other => Value::String(local_name(other).unwrap_or_default().to_owned()),
+        other => Value::String(geom::name(other)),
     };
     edn::record::put(&mut out, "name", name_s);
     edn::record::put(

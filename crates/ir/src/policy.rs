@@ -4,10 +4,10 @@
 
 use std::collections::HashMap;
 
-use crate::value::{contains, copy_map, id, id_name, ids, key_of, kw, or};
+use crate::value::{contains, copy_map, encode_key, get_truthy, id, id_name, ids};
 use edn::Value;
 use edn::pair_order;
-use edn::record::{get, num, put, record, remove, seq, truthy};
+use edn::record::{flag, get, num, put, record, remove, seq, truthy};
 
 fn matches_prefix(x: &Value, p: &Value) -> bool {
     let (x, p) = (id_name(x), id_name(p));
@@ -38,7 +38,7 @@ pub fn unassigned(p: &Value, g: &Value) -> Vec<Value> {
     }
     let assigned = assigned(p);
     for c in seq(get(g, "classes")) {
-        if !truthy(get(c, "foreign")) && !contains(&assigned, get(c, "id").unwrap()) {
+        if !flag(c, "foreign") && !contains(&assigned, get(c, "id").unwrap()) {
             r.push(c.clone());
         }
     }
@@ -82,7 +82,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
             get(e, "from").cloned().unwrap_or(Value::Nil),
             get(e, "to").cloned().unwrap_or(Value::Nil),
         ]);
-        let key = key_of(&pair);
+        let key = encode_key(&pair);
         let group = groups.entry(key).or_insert_with(|| {
             out.push(e.clone());
             pairs.push(pair.clone());
@@ -102,7 +102,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         }
         let mut best = copy_map(group.best.as_ref().unwrap());
         remove(&mut best, "violating");
-        if get(&best, "kind") == Some(&kw("dependency")) && group.violating {
+        if get(&best, "kind") == Some(&Value::keyword("dependency")) && group.violating {
             put(&mut best, "violating", Value::Bool(true));
         }
         out[group.index] = best;
@@ -126,7 +126,7 @@ pub fn collapse_graph(p: &Value, g: &Value) -> Value {
     let mut foreigns: HashMap<String, Value> = HashMap::new();
     for c in seq(get(g, "classes")) {
         let cid = get(c, "id").cloned().unwrap_or(Value::Nil);
-        if truthy(get(c, "foreign")) {
+        if flag(c, "foreign") {
             let mut best: Option<Value> = None;
             for prefix in ids(seq(get(p, "foreign"))) {
                 if matches_prefix(&cid, &prefix)
@@ -138,7 +138,7 @@ pub fn collapse_graph(p: &Value, g: &Value) -> Value {
                 }
             }
             if let Some(best) = best {
-                remap.insert(key_of(&cid), best.clone());
+                remap.insert(encode_key(&cid), best.clone());
                 foreigns.insert(id_name(&best), best);
             }
         } else {
@@ -158,15 +158,16 @@ pub fn collapse_graph(p: &Value, g: &Value) -> Value {
     let present: std::collections::HashSet<String> = classes
         .iter()
         .filter_map(|c| get(c, "id"))
-        .map(key_of)
+        .map(encode_key)
         .collect();
     let mut edges: Vec<Value> = Vec::new();
     for e in seq(get(g, "edges")) {
         let from = get(e, "from").cloned().unwrap_or(Value::Nil);
         let to = get(e, "to").cloned().unwrap_or(Value::Nil);
-        let from = remap.get(&key_of(&from)).cloned().unwrap_or(from);
-        let to = remap.get(&key_of(&to)).cloned().unwrap_or(to);
-        if present.contains(&key_of(&from)) && present.contains(&key_of(&to)) && from != to {
+        let from = remap.get(&encode_key(&from)).cloned().unwrap_or(from);
+        let to = remap.get(&encode_key(&to)).cloned().unwrap_or(to);
+        if present.contains(&encode_key(&from)) && present.contains(&encode_key(&to)) && from != to
+        {
             let mut c = copy_map(e);
             put(&mut c, "from", from);
             put(&mut c, "to", to);
@@ -185,14 +186,18 @@ fn nse_entry(x: &Value) -> Value {
     if !matches!(x, Value::Map(_)) {
         return id(x);
     }
-    let cid = id(or(get(x, "id"), or(get(x, "label"), &Value::Nil)));
+    let cid = id(get_truthy(x, "id")
+        .or_else(|| get_truthy(x, "label"))
+        .unwrap_or(&Value::Nil));
     let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
     let mut out = copy_map(x);
     put(&mut out, "id", cid.clone());
     put(
         &mut out,
         "label",
-        or(get(x, "label"), &Value::String(id_name(&cid))).clone(),
+        get_truthy(x, "label")
+            .unwrap_or(&Value::String(id_name(&cid)))
+            .clone(),
     );
     put(&mut out, "nses", Value::Vector(nses));
     out
@@ -214,15 +219,19 @@ fn layers_from(xs: &[Value]) -> Vec<Value> {
     let mut r = Vec::new();
     for (i, x) in xs.iter().enumerate() {
         if matches!(x, Value::Map(_)) {
-            let fallback = kw(&format!("layer-{i}"));
-            let cid = id(or(get(x, "id"), or(get(x, "label"), &fallback)));
+            let fallback = Value::keyword(&format!("layer-{i}"));
+            let cid = id(get_truthy(x, "id")
+                .or_else(|| get_truthy(x, "label"))
+                .unwrap_or(&fallback));
             let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
             let mut out = copy_map(x);
             put(&mut out, "id", cid.clone());
             put(
                 &mut out,
                 "label",
-                or(get(x, "label"), &Value::String(id_name(&cid))).clone(),
+                get_truthy(x, "label")
+                    .unwrap_or(&Value::String(id_name(&cid)))
+                    .clone(),
             );
             put(&mut out, "nses", Value::Vector(nses));
             r.push(out);
@@ -245,7 +254,9 @@ pub fn normalize_proposal(p: &Value) -> Option<Value> {
     let mut r = record(vec![
         (
             "notice",
-            or(get(p, "notice"), &Value::String(PROPOSAL_NOTICE.to_owned())).clone(),
+            get_truthy(p, "notice")
+                .unwrap_or(&Value::String(PROPOSAL_NOTICE.to_owned()))
+                .clone(),
         ),
         ("layers", Value::Vector(layers)),
     ]);
@@ -259,15 +270,17 @@ fn named(p: &Value, i: usize) -> Option<Value> {
     if !matches!(p, Value::Map(_)) {
         return None;
     }
-    let cid = id(or(get(p, "id"), &kw(&format!("proposal-{i}"))));
+    let cid = id(get_truthy(p, "id").unwrap_or(&Value::keyword(&format!("proposal-{i}"))));
     let normalized = normalize_proposal(p);
     let mut out = copy_map(p);
     put(&mut out, "id", cid.clone());
-    let fallback = id_name(or(get(p, "label"), &cid));
+    let fallback = id_name(get_truthy(p, "label").unwrap_or(&cid));
     put(
         &mut out,
         "name",
-        or(get(p, "name"), &Value::String(fallback)).clone(),
+        get_truthy(p, "name")
+            .unwrap_or(&Value::String(fallback))
+            .clone(),
     );
     put(
         &mut out,
@@ -282,7 +295,9 @@ fn named(p: &Value, i: usize) -> Option<Value> {
     put(
         &mut out,
         "notice",
-        or(get(p, "notice"), &Value::String(PROPOSAL_NOTICE.to_owned())).clone(),
+        get_truthy(p, "notice")
+            .unwrap_or(&Value::String(PROPOSAL_NOTICE.to_owned()))
+            .clone(),
     );
     Some(out)
 }
@@ -297,7 +312,7 @@ pub fn named_proposals(x: &Value) -> Vec<Value> {
             }
         }
     } else if let Some(map @ Value::Map(_)) = one {
-        if (truthy(get(map, "name")) || !seq(get(map, "layers")).is_empty())
+        if (flag(map, "name") || !seq(get(map, "layers")).is_empty())
             && let Some(n) = named(map, 0)
         {
             r.push(n);
@@ -306,7 +321,7 @@ pub fn named_proposals(x: &Value) -> Vec<Value> {
         && let Some(n) = normalize_proposal(one.unwrap())
     {
         r.push(record(vec![
-            ("id", kw("proposal")),
+            ("id", Value::keyword("proposal")),
             ("name", Value::String("Proposal".to_owned())),
             ("layers", get(&n, "layers").cloned().unwrap_or(Value::Nil)),
             ("notice", get(&n, "notice").cloned().unwrap_or(Value::Nil)),
@@ -361,7 +376,7 @@ pub fn level_ranks(p: &Value) -> Value {
 pub fn rank_of<'a>(x: &Value, ranks: &'a Value) -> Option<&'a Value> {
     let mut n = Some(id_name(x));
     while let Some(current) = n {
-        if let Some(rank) = ranks.get(&kw(&current))
+        if let Some(rank) = ranks.get(&Value::keyword(&current))
             && truthy(Some(rank))
         {
             return Some(rank);
@@ -374,7 +389,7 @@ pub fn rank_of<'a>(x: &Value, ranks: &'a Value) -> Option<&'a Value> {
 }
 
 fn violating_dependency(e: &Value, ranks: &Value) -> bool {
-    if get(e, "kind") != Some(&kw("dependency")) {
+    if get(e, "kind") != Some(&Value::keyword("dependency")) {
         return false;
     }
     let f = rank_of(get(e, "from").unwrap(), ranks);
@@ -410,7 +425,7 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
         } else {
             copy_map(c)
         };
-        let rank = if !truthy(get(c, "foreign")) {
+        let rank = if !flag(c, "foreign") {
             get(c, "id").and_then(|cid| rank_of(cid, ranks))
         } else {
             None
@@ -425,7 +440,7 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
 
 pub fn apply_edge_kinds(edges: &[Value], kinds: &Value, omit: &[Value]) -> Vec<Value> {
     let empty = Value::Map(Vec::new());
-    let kinds = or(Some(kinds), &empty);
+    let kinds = if truthy(Some(kinds)) { kinds } else { &empty };
     let mut r = Vec::new();
     for e in edges {
         let pair = Value::Vector(vec![
@@ -444,7 +459,7 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: &Value, omit: &[Value]) -> Vec<V
         {
             put(&mut c, "kind", k.clone());
         }
-        if get(&c, "kind") != Some(&kw("dependency")) {
+        if get(&c, "kind") != Some(&Value::keyword("dependency")) {
             remove(&mut c, "violating");
         }
         r.push(c);
@@ -455,7 +470,7 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: &Value, omit: &[Value]) -> Vec<V
 fn ir_class(c: &Value, hide: bool) -> Value {
     let mut r = record(vec![
         ("id", get(c, "id").cloned().unwrap_or(Value::Nil)),
-        ("name", or(get(c, "name"), &Value::Nil).clone()),
+        ("name", get_truthy(c, "name").unwrap_or(&Value::Nil).clone()),
     ]);
     for key in ["ns", "lang", "file", "stereotype"] {
         if let Some(v) = get(c, key)
@@ -464,8 +479,8 @@ fn ir_class(c: &Value, hide: bool) -> Value {
             put(&mut r, key, v.clone());
         }
     }
-    if truthy(get(c, "foreign")) {
-        put(&mut r, "shape", kw("oval"));
+    if flag(c, "foreign") {
+        put(&mut r, "shape", Value::keyword("oval"));
         r
     } else if hide {
         put(&mut r, "hide-members", Value::Bool(true));
@@ -478,9 +493,9 @@ fn ir_class(c: &Value, hide: bool) -> Value {
 fn packaged_document(p: &Value, g: &Value) -> Value {
     let index: HashMap<String, &Value> = seq(get(g, "classes"))
         .iter()
-        .map(|c| (key_of(get(c, "id").unwrap()), c))
+        .map(|c| (encode_key(get(c, "id").unwrap()), c))
         .collect();
-    let lookup = |cid: &Value| index.get(&key_of(&id(cid))).copied();
+    let lookup = |cid: &Value| index.get(&encode_key(&id(cid))).copied();
     let visible = |nses: Vec<Value>, hide: bool| {
         nses.iter()
             .filter_map(&lookup)
@@ -489,16 +504,19 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
     };
     let mut diagrams = Vec::new();
     for d in seq(get(p, "diagrams")) {
-        let overview = get(d, "view") == Some(&kw("overview"));
+        let overview = get(d, "view") == Some(&Value::keyword("overview"));
         let mut packages: Vec<Value> = Vec::new();
         let mut home: Vec<Value> = Vec::new();
         let mut all: Vec<Value> = Vec::new();
-        let hide = truthy(get(d, "hide-members"));
+        let hide = flag(d, "hide-members");
         if overview {
             for pkg in seq(get(p, "packages")) {
                 packages.push(record(vec![
                     ("id", id(get(pkg, "id").unwrap())),
-                    ("label", or(get(pkg, "label"), &Value::Nil).clone()),
+                    (
+                        "label",
+                        get_truthy(pkg, "label").unwrap_or(&Value::Nil).clone(),
+                    ),
                     (
                         "classes",
                         Value::Vector(visible(ids(seq(get(pkg, "nses"))), hide)),
@@ -509,7 +527,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
             if !extra.is_empty() {
                 let cs: Vec<Value> = extra.iter().map(|c| ir_class(c, hide)).collect();
                 packages.push(record(vec![
-                    ("id", kw("unassigned")),
+                    ("id", Value::keyword("unassigned")),
                     ("label", Value::String("Unassigned".to_owned())),
                     ("classes", Value::Vector(cs)),
                 ]));
@@ -546,14 +564,17 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
             }
             for cid in &stubs {
                 if let Some(c) = lookup(cid)
-                    && !truthy(get(c, "foreign"))
+                    && !flag(c, "foreign")
                 {
                     cs.push(ir_class(c, true));
                 }
             }
             packages.push(record(vec![
                 ("id", id(get(pkg, "id").unwrap())),
-                ("label", or(get(pkg, "label"), &Value::Nil).clone()),
+                (
+                    "label",
+                    get_truthy(pkg, "label").unwrap_or(&Value::Nil).clone(),
+                ),
                 ("classes", Value::Vector(cs.clone())),
             ]));
             for c in &cs {
@@ -566,7 +587,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
             let target = get(e, "to").unwrap();
             if let Some(c) = lookup(target)
                 && contains(&home, get(e, "from").unwrap())
-                && truthy(get(c, "foreign"))
+                && flag(c, "foreign")
                 && !contains(&wanted, target)
             {
                 wanted.push(target.clone());
@@ -584,19 +605,25 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
                 && (overview
                     || contains(&home, get(e, "from").unwrap())
                     || contains(&home, get(e, "to").unwrap())
-                    || get(e, "kind") == Some(&kw("implements")))
+                    || get(e, "kind") == Some(&Value::keyword("implements")))
             {
                 edges.push(e.clone());
             }
         }
         let mut diagram = record(vec![
-            ("title", or(get(d, "title"), &Value::Nil).clone()),
+            (
+                "title",
+                get_truthy(d, "title").unwrap_or(&Value::Nil).clone(),
+            ),
             (
                 "direction",
-                id(or(
-                    get(d, "direction"),
-                    &Value::String(if overview { "tb".into() } else { "lr".into() }),
-                )),
+                id(
+                    get_truthy(d, "direction").unwrap_or(&Value::String(if overview {
+                        "tb".into()
+                    } else {
+                        "lr".into()
+                    })),
+                ),
             ),
             ("packages", Value::Vector(packages)),
             (
@@ -606,7 +633,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
                         Value::Vector(items) => items,
                         other => vec![other],
                     },
-                    or(get(d, "edge-kinds"), &Value::Map(Vec::new())),
+                    get_truthy(d, "edge-kinds").unwrap_or(&Value::Map(Vec::new())),
                     seq(get(d, "omit-edges")),
                 )),
             ),
@@ -619,7 +646,9 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
     record(vec![
         (
             "title",
-            or(get(p, "title"), &Value::String("UML".to_owned())).clone(),
+            get_truthy(p, "title")
+                .unwrap_or(&Value::String("UML".to_owned()))
+                .clone(),
         ),
         ("diagrams", Value::Vector(diagrams)),
     ])
@@ -645,22 +674,30 @@ pub fn apply_policy(p: &Value, g: &Value) -> Value {
     let mut doc = record(vec![
         (
             "title",
-            or(get(p, "title"), &Value::String("UML".to_owned())).clone(),
+            get_truthy(p, "title")
+                .unwrap_or(&Value::String("UML".to_owned()))
+                .clone(),
         ),
         ("hierarchical", Value::Bool(true)),
         (
             "prefix",
-            or(get(p, "prefix"), &Value::String("uml-viewer".to_owned())).clone(),
+            get_truthy(p, "prefix")
+                .unwrap_or(&Value::String("uml-viewer".to_owned()))
+                .clone(),
         ),
         ("order", Value::Vector(ids(seq(get(p, "order"))))),
         ("levels", Value::Vector(level_groups(p))),
         (
             "edge-kinds",
-            or(get(p, "edge-kinds"), &Value::Map(Vec::new())).clone(),
+            get_truthy(p, "edge-kinds")
+                .unwrap_or(&Value::Map(Vec::new()))
+                .clone(),
         ),
         (
             "omit-edges",
-            or(get(p, "omit-edges"), &Value::Vector(Vec::new())).clone(),
+            get_truthy(p, "omit-edges")
+                .unwrap_or(&Value::Vector(Vec::new()))
+                .clone(),
         ),
         ("omit", Value::Vector(ids(seq(get(p, "omit"))))),
         ("classes", get(&g, "classes").cloned().unwrap_or(Value::Nil)),

@@ -244,7 +244,7 @@ fn card_target(s: &ViewState, id: &Value) -> bool {
 }
 
 fn selected_target(s: &ViewState, sel: &Value) -> bool {
-    let Some(kind) = get(sel, "kind").map(|v| local_name(v).unwrap_or_default().to_owned()) else {
+    let Some(kind) = get(sel, "kind").map(geom::name) else {
         // A bare id (or a record without :kind) is a card target itself.
         return card_target(s, sel);
     };

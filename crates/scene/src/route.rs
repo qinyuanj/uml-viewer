@@ -429,8 +429,7 @@ pub fn route(scene: &mut Value) {
     let diagram = edn::record::get(scene, "diagram")
         .cloned()
         .unwrap_or(Value::Nil);
-    let direction = edn::record::get(&diagram, "direction")
-        .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned());
+    let direction = edn::record::get(&diagram, "direction").map(geom::name);
     let lr = direction.as_deref() == Some("lr") || direction.as_deref() == Some("rl");
     let mut nodes: Vec<Node> = Vec::new();
     let mut idx: HashMap<String, usize> = HashMap::new();
@@ -607,9 +606,7 @@ pub fn route(scene: &mut Value) {
         let mut edge = e.edge.clone();
         let points: Vec<Value> = e.ps.iter().map(|p| geom::point(*p)).collect();
         edn::record::put(&mut edge, "points", Value::Vector(points));
-        let head = match edn::record::get(&edge, "kind")
-            .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
-        {
+        let head = match edn::record::get(&edge, "kind").map(geom::name) {
             Some(k) if k == "inheritance" || k == "implements" => "triangle",
             Some(k) if k == "composition" => "diamond-fill",
             Some(k) if k == "aggregation" => "diamond",

@@ -9,10 +9,7 @@ use std::collections::HashSet;
 /// row or port. Packages, edges and dependency triangles focus no class.
 pub fn box_id(hit: Option<&Value>) -> Option<Value> {
     let hit = hit?;
-    match get(hit, "kind")
-        .map(|v| local_name(v).unwrap_or_default().to_owned())
-        .as_deref()
-    {
+    match get(hit, "kind").map(crate::geom::name).as_deref() {
         Some("class") => get(hit, "id").cloned(),
         Some("child") | Some("port") => get(hit, "parent").cloned(),
         _ => None,

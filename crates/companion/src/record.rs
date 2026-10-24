@@ -22,23 +22,10 @@ pub fn get_i64(record: &Value, key: &str) -> Option<i64> {
     }
 }
 
-pub fn get_bool(record: &Value, key: &str) -> Option<bool> {
-    match get(record, key) {
-        Some(Value::Bool(b)) => Some(*b),
-        _ => None,
-    }
-}
-
-pub fn get_vec(record: &Value, key: &str) -> Option<Vec<Value>> {
-    match get(record, key) {
-        Some(Value::Vector(items)) => Some(items.clone()),
-        _ => None,
-    }
-}
-
-pub fn string_vec(value: Option<Vec<Value>>) -> Vec<String> {
-    value
-        .unwrap_or_default()
+/// The string items of a vector (`edn::record::seq`); other items are
+/// skipped.
+pub fn string_vec(items: &[Value]) -> Vec<String> {
+    items
         .iter()
         .filter_map(|item| match item {
             Value::String(text) => Some(text.clone()),
@@ -68,10 +55,9 @@ mod tests {
 
     #[test]
     fn lookups_see_keywords_strings_and_absent_nil() {
-        let record = edn::parse(
-            r#"{:backend :herdr :session "uml-viewer-A" :missing nil :pid 42 :flag true}"#,
-        )
-        .unwrap();
+        let record =
+            edn::parse(r#"{:backend :herdr :session "uml-viewer-A" :missing nil :pid 42}"#)
+                .unwrap();
         assert_eq!(Some("herdr".to_owned()), get_name(&record, "backend"));
         assert_eq!(
             Some("uml-viewer-A".to_owned()),
@@ -79,6 +65,5 @@ mod tests {
         );
         assert_eq!(None, get_name(&record, "missing"));
         assert_eq!(Some(42), get_i64(&record, "pid"));
-        assert_eq!(Some(true), get_bool(&record, "flag"));
     }
 }

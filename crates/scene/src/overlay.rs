@@ -5,7 +5,7 @@
 use crate::config;
 use crate::geom::numval;
 use edn::Value;
-use edn::record::{local_name, put, seq};
+use edn::record::{flag, local_name, put, seq};
 use std::collections::BTreeMap;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
@@ -109,7 +109,7 @@ pub fn load(files: &[Snapshot]) -> Metrics {
 }
 
 fn doc_classes(doc: &Value) -> Vec<Value> {
-    if edn::record::flag(doc, "hierarchical") {
+    if flag(doc, "hierarchical") {
         return seq(g(doc, "classes")).to_vec();
     }
     let mut cs = Vec::new();
@@ -134,7 +134,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut count = 0;
     for c in classes {
         if g(c, "lang").and_then(local_name) == Some("rust")
-            && !edn::record::truthy(g(c, "foreign"))
+            && !flag(c, "foreign")
             && !local_name(g(c, "id").unwrap())
                 .unwrap_or_default()
                 .contains('.')
@@ -147,9 +147,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut best_rank = i64::MAX;
     let mut best_len = i64::MAX;
     for c in classes {
-        if edn::record::truthy(g(c, "foreign"))
-            || g(c, "shape").and_then(local_name) == Some("oval")
-        {
+        if flag(c, "foreign") || g(c, "shape").and_then(local_name) == Some("oval") {
             continue;
         }
         let class_id = local_name(g(c, "id").unwrap())
@@ -167,10 +165,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
             (2, -(class_id.len() as i64))
         } else if count == 1
             && Some(c) == root
-            && prefix
-                .map(|v| local_name(v).unwrap_or_default().to_owned())
-                .as_deref()
-                == Some(ns)
+            && prefix.map(crate::geom::name).as_deref() == Some(ns)
         {
             (3, 0)
         } else {
@@ -202,7 +197,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         for e in metrics.crap.get(ns).into_iter().flatten() {
             entries.push(e.clone());
             if let Some(n) = g(e, "name").cloned() {
-                by_name.insert(local_name(&n).unwrap_or_default().to_owned(), e.clone());
+                by_name.insert(crate::geom::name(&n), e.clone());
             }
         }
         if let Some(data) = metrics.mutate.get(ns) {
@@ -230,7 +225,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         (Vec::new(), Vec::new(), Ordered::default());
     for op in seq(g(c, "ops")) {
         if let Some(n) = g(op, "name") {
-            let n = local_name(n).unwrap_or_default().to_owned();
+            let n = crate::geom::name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n.clone());
@@ -242,7 +237,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
     }
     for e in &entries {
         if let Some(n) = g(e, "name") {
-            let n = local_name(n).unwrap_or_default().to_owned();
+            let n = crate::geom::name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n);
@@ -414,7 +409,7 @@ pub fn apply_metrics(doc: &Value, metrics: &Metrics) -> Value {
             paint(c, nss, metrics);
         }
     };
-    if edn::record::flag(&doc, "hierarchical") {
+    if flag(&doc, "hierarchical") {
         let classes = seq(g(&doc, "classes")).to_vec();
         let mut painted = Vec::with_capacity(classes.len());
         for mut c in classes.into_iter() {

@@ -7,7 +7,7 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_space};
-use crate::value::{getd as get, kw};
+use crate::value::get_truthy as get;
 use edn::record::{record, seq};
 
 fn is_rust_ident_start(c: u8) -> bool {
@@ -729,8 +729,10 @@ impl Scanner for RustScanner {
         let mut edges: Vec<Value> = Vec::new();
         let mut foreigns: Vec<Value> = Vec::new();
         let mut commands_map: Vec<(Value, Value)> = Vec::new();
-        let project_ids: HashSet<String> =
-            metas.iter().map(|m| crate::value::key_of(&m.3)).collect();
+        let project_ids: HashSet<String> = metas
+            .iter()
+            .map(|m| crate::value::encode_key(&m.3))
+            .collect();
         for m in &metas {
             let s = surface(&m.0, &mut surfaces, &by_path);
             let ops: Vec<Value> = seq(get(&s, "ops"))
@@ -744,7 +746,7 @@ impl Scanner for RustScanner {
                     "name",
                     Value::String(graph::file_base(&m.0).unwrap_or_default()),
                 ),
-                ("lang", kw("rust")),
+                ("lang", Value::keyword("rust")),
                 ("file", Value::String(graph::relative_path(&m.0, cwd))),
             ]);
             if !ops.is_empty() {
@@ -779,7 +781,7 @@ impl Scanner for RustScanner {
                             && head_text != "super"
                             && Some(head) != name.as_ref()
                         {
-                            let foreign = kw(&head_text);
+                            let foreign = Value::keyword(&head_text);
                             if !externs.contains(&foreign) {
                                 externs.push(foreign.clone());
                             }
@@ -857,7 +859,7 @@ impl Scanner for RustScanner {
                         let e = record(vec![
                             ("from", m.3.clone()),
                             ("to", to.clone()),
-                            ("kind", kw(kind)),
+                            ("kind", Value::keyword(kind)),
                         ]);
                         if !edges.contains(&e) {
                             edges.push(e);
@@ -871,7 +873,7 @@ impl Scanner for RustScanner {
             }
         }
         for id in foreigns {
-            if !project_ids.contains(&crate::value::key_of(&id)) {
+            if !project_ids.contains(&crate::value::encode_key(&id)) {
                 classes.push(graph::foreign_class(&id));
             }
         }

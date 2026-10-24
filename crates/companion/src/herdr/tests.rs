@@ -797,7 +797,7 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
         .unwrap();
     assert_eq!(
         original,
-        record::string_vec(record::get_vec(&identity, "command"))
+        record::string_vec(edn::record::seq(edn::record::get(&identity, "command")))
     );
     assert_eq!(None, edn::record::get(&identity, "provisional"));
     assert_eq!(
@@ -808,7 +808,7 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
     let before_run = checkpoints
         .borrow()
         .iter()
-        .any(|record| record::get_bool(record, "provisional") == Some(true));
+        .any(|record| edn::record::is_true(record, "provisional"));
     assert!(before_run);
     for entry in checkpoints.borrow().iter() {
         if edn::record::get(entry, "pane").is_some()

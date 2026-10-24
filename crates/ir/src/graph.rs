@@ -9,8 +9,8 @@ use edn::Value;
 use crate::files::{Adapter, SourceFile};
 use crate::scan;
 use crate::text;
-use crate::value::{id_name, key_of, kw};
-use edn::record::{get, record};
+use crate::value::{encode_key, id_name};
+use edn::record::{flag, get, record};
 
 /// A language scanner: file selection plus the project scan.
 pub trait Scanner {
@@ -71,15 +71,15 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
     let mut owners: HashMap<String, Value> = HashMap::new();
     for scan in scans {
         for c in edn::record::seq(get(scan, "classes")) {
-            let key = key_of(get(c, "id").unwrap_or(&Value::Nil));
+            let key = encode_key(get(c, "id").unwrap_or(&Value::Nil));
             match by_id.get(&key) {
                 None => {
                     classes.push(c.clone());
                     by_id.insert(key, classes.len() - 1);
                 }
                 Some(&at) => {
-                    if !edn::record::truthy(get(c, "foreign")) {
-                        if !edn::record::truthy(get(&classes[at], "foreign")) {
+                    if !flag(c, "foreign") {
+                        if !flag(&classes[at], "foreign") {
                             return Err(format!("duplicate class id: {key}"));
                         }
                         classes[at] = c.clone();
@@ -90,7 +90,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
         if let Some(Value::Map(entries)) = get(scan, "commands") {
             for (id, cmds) in entries {
                 for cmd in edn::record::seq(Some(cmds)) {
-                    owners.insert(key_of(cmd), id.clone());
+                    owners.insert(encode_key(cmd), id.clone());
                 }
             }
         }
@@ -110,7 +110,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
         if let Some(Value::Map(entries)) = get(scan, "invokes") {
             for (from, commands) in entries {
                 for command in edn::record::seq(Some(commands)) {
-                    if let Some(to) = owners.get(&key_of(command))
+                    if let Some(to) = owners.get(&encode_key(command))
                         && to != from
                     {
                         add(
@@ -118,7 +118,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
                             record(vec![
                                 ("from", from.clone()),
                                 ("to", to.clone()),
-                                ("kind", kw("dependency")),
+                                ("kind", Value::keyword("dependency")),
                             ]),
                         );
                     }
@@ -159,7 +159,7 @@ pub fn id_of(ns: &str, prefix: Option<&Value>) -> Value {
             ns = ns[prefix.len() + 1..].to_owned();
         }
     }
-    kw(&ns)
+    Value::keyword(&ns)
 }
 
 /// `module_name(cid)`: the display name from the last dotted segment.

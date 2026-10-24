@@ -6,18 +6,24 @@
 use edn::Value;
 use edn::record::{get, num};
 
-/// Drop the entries whose keyword names are listed (Lua `drop`).
+/// Drop the entries whose keyword names are listed (Lua `drop`); a non-map
+/// drops to the empty map.
 pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
-    match m {
-        Value::Map(entries) => Value::Map(
-            entries
-                .iter()
-                .filter(|(k, _)| !matches!(k, Value::Keyword(n) if keys.contains(&n.as_str())))
-                .cloned()
-                .collect(),
-        ),
+    let mut out = match m {
+        Value::Map(_) => m.clone(),
         _ => Value::Map(vec![]),
+    };
+    for key in keys {
+        edn::record::remove(&mut out, key);
     }
+    out
+}
+
+/// The lenient id name (`geom.lua` `name` used as a string): the
+/// [`edn::record::local_name`] of a string, keyword or symbol, and `""` for
+/// every other value.
+pub fn name(v: &Value) -> String {
+    edn::record::local_name(v).unwrap_or_default().to_owned()
 }
 
 pub fn vec2(v: &Value) -> Option<[f64; 2]> {
@@ -66,11 +72,11 @@ impl Rect {
     }
 
     pub fn to_value(self) -> Value {
-        Value::Map(vec![
-            (Value::keyword("x"), numval(self.x)),
-            (Value::keyword("y"), numval(self.y)),
-            (Value::keyword("w"), numval(self.w)),
-            (Value::keyword("h"), numval(self.h)),
+        edn::record::record(vec![
+            ("x", numval(self.x)),
+            ("y", numval(self.y)),
+            ("w", numval(self.w)),
+            ("h", numval(self.h)),
         ])
     }
 

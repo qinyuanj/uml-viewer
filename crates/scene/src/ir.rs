@@ -3,7 +3,7 @@
 
 use crate::geom::numval;
 use edn::Value;
-use edn::record::{local_name, seq};
+use edn::record::{flag, local_name, seq};
 use std::collections::HashSet;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
@@ -110,7 +110,7 @@ fn member(x: &Value) -> Result<Value> {
         None => {
             let mut text = match g(x, "name") {
                 Some(Value::String(s)) => s.clone(),
-                Some(other) => local_name(other).unwrap_or_default().to_owned(),
+                Some(other) => crate::geom::name(other),
                 None => String::new(),
             };
             if let Some(Value::Vector(args)) = g(x, "args")
@@ -120,7 +120,7 @@ fn member(x: &Value) -> Result<Value> {
                     .iter()
                     .map(|a| match a {
                         Value::String(s) => s.clone(),
-                        other => local_name(other).unwrap_or_default().to_owned(),
+                        other => crate::geom::name(other),
                     })
                     .collect();
                 text = format!("{}({})", text, parts.join(", "));
@@ -131,7 +131,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match t {
                         Value::String(s) => s.clone(),
-                        other => local_name(other).unwrap_or_default().to_owned(),
+                        other => crate::geom::name(other),
                     }
                 );
             }
@@ -141,7 +141,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match r {
                         Value::String(s) => s.clone(),
-                        other => local_name(other).unwrap_or_default().to_owned(),
+                        other => crate::geom::name(other),
                     }
                 );
             }
@@ -177,19 +177,16 @@ fn member(x: &Value) -> Result<Value> {
 }
 
 fn class(c: &Value) -> Result<Value> {
-    // `name or local_name(id).unwrap_or_default().to_owned()`; a missing :name falls back to the id's last segment.
+    // `name or G.name(id)`; a missing :name falls back to the id's last segment.
     let label = match g(c, "name") {
         Some(v) => v.clone(),
         None => match g(c, "id") {
-            Some(v) if !matches!(v, Value::Nil) => {
-                Value::String(local_name(v).unwrap_or_default().to_owned())
-            }
+            Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
             _ => return Err("class needs :name or :id".into()),
         },
     };
     let idv = id(g(c, "id").unwrap_or(&label))?;
-    let oval =
-        edn::record::truthy(g(c, "foreign")) || g(c, "shape").and_then(local_name) == Some("oval");
+    let oval = flag(c, "foreign") || g(c, "shape").and_then(local_name) == Some("oval");
     let mut r = Value::Map(vec![
         (Value::keyword("id"), idv),
         (Value::keyword("name"), label),
@@ -245,9 +242,7 @@ pub fn normalize(raw: &Value) -> Result<Value> {
         let label = match g(p, "label") {
             Some(v) => v.clone(),
             None => match g(p, "id") {
-                Some(v) if !matches!(v, Value::Nil) => {
-                    Value::String(local_name(v).unwrap_or_default().to_owned())
-                }
+                Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
                 _ => return Err("package needs :label or :id".into()),
             },
         };
@@ -324,7 +319,7 @@ pub fn read_document(text: &str) -> Result<Value> {
     if !matches!(raw, Value::Map(_)) {
         return Err("document must be an EDN map".into());
     }
-    if edn::record::flag(&raw, "hierarchical") {
+    if flag(&raw, "hierarchical") {
         return Ok(raw);
     }
     let mut ds = Vec::new();

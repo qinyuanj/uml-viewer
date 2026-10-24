@@ -11,11 +11,14 @@ use edn::Value;
 /// one-element queue, anything else is empty.
 pub fn normalize(raw: Option<&Value>) -> Value {
     if let Some(raw) = raw {
-        if let Some(queue) = record::get_vec(raw, "queue") {
+        if let Some(Value::Vector(queue)) = edn::record::get(raw, "queue") {
             let next = edn::record::get(raw, "next-id")
                 .cloned()
                 .unwrap_or(Value::Integer(1));
-            return edn::record::record(vec![("next-id", next), ("queue", Value::Vector(queue))]);
+            return edn::record::record(vec![
+                ("next-id", next),
+                ("queue", Value::Vector(queue.clone())),
+            ]);
         }
         if edn::record::get(raw, "op").is_some() {
             let id = record::get_i64(raw, "id").unwrap_or(0);
@@ -32,7 +35,7 @@ pub fn normalize(raw: Option<&Value>) -> Value {
 }
 
 pub fn queue(boxed: &Value) -> Vec<Value> {
-    record::get_vec(boxed, "queue").unwrap_or_default()
+    edn::record::seq(edn::record::get(boxed, "queue")).to_vec()
 }
 
 /// Pop the head of `:queue` whenever one exists, whatever its id. The stored

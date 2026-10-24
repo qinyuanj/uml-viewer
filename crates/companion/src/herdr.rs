@@ -522,10 +522,11 @@ impl Herdr {
                     .unwrap_or(Value::Nil),
             )?
             .ok_or_else(|| Failure::new("Herdr process creation identity changed"))?;
-        let command: Vec<String> = record::string_vec(
-            record::get_vec(record, "recovery-command")
-                .or_else(|| record::get_vec(record, "command")),
-        );
+        // A `:recovery-command` vector wins, even an empty one.
+        let command = record::string_vec(match edn::record::get(record, "recovery-command") {
+            Some(Value::Vector(items)) => items,
+            _ => edn::record::seq(edn::record::get(record, "command")),
+        });
         let argv = self.runner_command(record, &command)?;
         self.pane_run(&session, &pane, &domain::pane_command(&argv, &shell.name)?)
     }

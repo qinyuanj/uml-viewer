@@ -5,7 +5,7 @@ use crate::config;
 use crate::geom;
 use crate::policy;
 use edn::Value;
-use edn::record::{get, local_name, seq};
+use edn::record::{flag, get, local_name, seq};
 use std::collections::HashMap;
 
 fn id(x: &Value) -> Value {
@@ -26,17 +26,11 @@ fn path_parts(x: &Value) -> Vec<String> {
 }
 
 fn path_name(path: &[Value]) -> String {
-    path.iter()
-        .map(|v| local_name(v).unwrap_or_default().to_owned())
-        .collect::<Vec<_>>()
-        .join(".")
+    path.iter().map(geom::name).collect::<Vec<_>>().join(".")
 }
 
 fn under(x: &Value, parent: &Value) -> bool {
-    let (x, parent) = (
-        local_name(x).unwrap_or_default().to_owned(),
-        local_name(parent).unwrap_or_default().to_owned(),
-    );
+    let (x, parent) = (geom::name(x), geom::name(parent));
     x == parent || x.starts_with(&format!("{parent}."))
 }
 
@@ -61,7 +55,7 @@ fn child(x: &Value, path: &[Value]) -> Option<Value> {
 /// Display label: CamelCase of the last dot segment, preserving existing
 /// capitals (byte-level ASCII case ops, as in Lua).
 fn label(x: &Value) -> String {
-    let last = local_name(x).unwrap_or_default().to_owned();
+    let last = geom::name(x);
     let last = last.rsplit('.').next().unwrap_or("");
     let mut out = String::new();
     for part in last.split('-').filter(|s| !s.is_empty()) {
@@ -80,9 +74,9 @@ fn label(x: &Value) -> String {
 }
 
 fn module_name(c: &Value) -> String {
-    if edn::record::flag(c, "proposal-group?") {
+    if flag(c, "proposal-group?") {
         return match get(c, "name") {
-            Some(v @ Value::String(_)) => local_name(v).unwrap_or_default().to_owned(),
+            Some(v @ Value::String(_)) => geom::name(v),
             _ => label(get(c, "id").unwrap()),
         };
     }
@@ -136,7 +130,7 @@ fn descendants(cid: &Value, classes: &[Value]) -> bool {
 pub fn nodes_at(classes: &[Value], path: &[Value]) -> Vec<Value> {
     let mut out = Vec::new();
     for c in classes {
-        if edn::record::truthy(get(c, "foreign")) {
+        if flag(c, "foreign") {
             continue;
         }
         if let Some(x) = child(get(c, "id").unwrap(), path)
@@ -155,7 +149,7 @@ fn contents(
     idx: &HashMap<String, &Value>,
 ) -> Option<Vec<Value>> {
     let mut next_path: Vec<Value> = path.to_vec();
-    let last = local_name(cid).unwrap_or_default().to_owned();
+    let last = geom::name(cid);
     let last = last.rsplit('.').next().unwrap_or("");
     next_path.push(Value::keyword(last));
     let kids = nodes_at(classes, &next_path);
@@ -271,15 +265,15 @@ fn view_class(
 fn external(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Option<Value> {
     let c = idx.get(local_name(cid).unwrap_or_default()).copied();
     if let Some(c) = c
-        && edn::record::truthy(get(c, "foreign"))
+        && flag(c, "foreign")
     {
         return Some(Value::Map(vec![
             (Value::keyword("id"), cid.clone()),
             (
                 Value::keyword("name"),
-                get(c, "name").cloned().unwrap_or(Value::String(
-                    local_name(cid).unwrap_or_default().to_owned(),
-                )),
+                get(c, "name")
+                    .cloned()
+                    .unwrap_or(Value::String(geom::name(cid))),
             ),
             (Value::keyword("foreign"), Value::Bool(true)),
         ]));
@@ -299,7 +293,7 @@ fn external(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Optio
 
 fn collapse(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Option<Value> {
     if let Some(c) = idx.get(local_name(cid).unwrap_or_default())
-        && edn::record::truthy(get(c, "foreign"))
+        && flag(c, "foreign")
     {
         return Some(cid.clone());
     }
@@ -307,9 +301,7 @@ fn collapse(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Optio
 }
 
 fn port(ports: &mut HashMap<String, Vec<Value>>, cid: &Value, dep: &Value) {
-    let entry = ports
-        .entry(local_name(cid).unwrap_or_default().to_owned())
-        .or_default();
+    let entry = ports.entry(geom::name(cid)).or_default();
     let dep_id = get(dep, "id");
     if entry.iter().any(|p| get(p, "id") == dep_id) {
         return;
@@ -349,7 +341,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
     };
     let mut ranks: HashMap<String, usize> = HashMap::new();
     for (i, x) in seq(order).iter().enumerate() {
-        ranks.insert(local_name(x).unwrap_or_default().to_owned(), i + 1);
+        ranks.insert(geom::name(x), i + 1);
     }
     nodes.sort_by(|a, b| {
         let ar = ranks
@@ -395,11 +387,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             edn::record::put(&mut out, "from", f.unwrap());
             edn::record::put(&mut out, "to", t.unwrap());
             internal.push(out);
-        } else if fh
-            && te
-                .as_ref()
-                .is_some_and(|te| edn::record::truthy(get(te, "foreign")))
-        {
+        } else if fh && te.as_ref().is_some_and(|te| flag(te, "foreign")) {
             let te = te.unwrap();
             let fid = get(&te, "id").cloned().unwrap();
             let mut out = e.clone();
@@ -419,11 +407,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             }
         } else if fh && let Some(te) = te {
             port(&mut outgoing, &f.unwrap(), &te);
-        } else if th
-            && fe
-                .as_ref()
-                .is_some_and(|fe| edn::record::truthy(get(fe, "foreign")))
-        {
+        } else if th && fe.as_ref().is_some_and(|fe| flag(fe, "foreign")) {
             let fe = fe.unwrap();
             let fid = get(&fe, "id").cloned().unwrap();
             let mut out = e.clone();
@@ -634,7 +618,7 @@ pub fn proposal_view(doc: &Value, which: Option<&Value>) -> Value {
     let leaves: Vec<Value> = seq(get(doc, "classes"))
         .iter()
         .filter(|c| {
-            !edn::record::truthy(get(c, "foreign"))
+            !flag(c, "foreign")
                 && !policy::omitted_id(get(c, "id").unwrap(), Some(&Value::Vector(omit.clone())))
         })
         .cloned()
@@ -649,10 +633,7 @@ pub fn proposal_view(doc: &Value, which: Option<&Value>) -> Value {
         for x in seq(nses) {
             if matches!(x, Value::Map(_)) {
                 for cid in policy::nse_ids(get(x, "nses")) {
-                    owners.insert(
-                        local_name(&cid).unwrap_or_default().to_owned(),
-                        get(x, "id").cloned().unwrap(),
-                    );
+                    owners.insert(geom::name(&cid), get(x, "id").cloned().unwrap());
                 }
                 register(get(x, "nses"), owners);
             }
@@ -792,9 +773,9 @@ pub fn layer_view(doc: &Value, which: Option<&Value>, pkg_id: &Value) -> Value {
     let root_packages = seq(get(&root, "packages")).to_vec();
     for p in &root_packages {
         if get(p, "id") == Some(pkg_id) {
-            let title = get(p, "label").cloned().unwrap_or(Value::String(
-                local_name(pkg_id).unwrap_or_default().to_owned(),
-            ));
+            let title = get(p, "label")
+                .cloned()
+                .unwrap_or(Value::String(geom::name(pkg_id)));
             edn::record::put(&mut root, "title", title);
             edn::record::put(&mut root, "packages", Value::Vector(vec![p.clone()]));
             return root;
@@ -803,13 +784,13 @@ pub fn layer_view(doc: &Value, which: Option<&Value>, pkg_id: &Value) -> Value {
     for p in &root_packages {
         for c in seq(get(p, "classes")) {
             if get(c, "id") == Some(pkg_id)
-                && edn::record::flag(c, "proposal-group?")
+                && flag(c, "proposal-group?")
                 && !seq(get(c, "members")).is_empty()
             {
                 let cs = seq(get(c, "members")).to_vec();
-                let title = get(c, "name").cloned().unwrap_or(Value::String(
-                    local_name(pkg_id).unwrap_or_default().to_owned(),
-                ));
+                let title = get(c, "name")
+                    .cloned()
+                    .unwrap_or(Value::String(geom::name(pkg_id)));
                 let (proposal, _) = chosen(doc, which);
                 let layers = seq(proposal.as_ref().and_then(|p| get(p, "layers"))).to_vec();
                 edn::record::put(&mut root, "title", title.clone());
@@ -948,10 +929,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
         } else {
             ot.clone()
         };
-        if !known.contains(&local_name(&f).unwrap_or_default().to_owned())
-            || !known.contains(&local_name(&t).unwrap_or_default().to_owned())
-            || f == t
-        {
+        if !known.contains(&geom::name(&f)) || !known.contains(&geom::name(&t)) || f == t {
             continue;
         }
         let gi = groups
@@ -979,7 +957,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
         let mut via: Vec<Value> = Vec::new();
         let mut deps: Vec<Value> = Vec::new();
         for e in &g.edges {
-            if edn::record::flag(e, "violating") && !viol {
+            if flag(e, "violating") && !viol {
                 best = Some(e);
                 viol = true;
             } else if !viol
@@ -1052,7 +1030,7 @@ pub fn hide_classes(view: &Value) -> Value {
         let mut real: Vec<Value> = Vec::new();
         let mut endpoint: Option<Value> = None;
         for c in seq(get(&p, "classes")) {
-            if edn::record::flag(c, "dummy?") {
+            if flag(c, "dummy?") {
                 if endpoint.is_none() {
                     endpoint = Some(c.clone());
                 }
@@ -1089,9 +1067,7 @@ pub fn hide_classes(view: &Value) -> Value {
 
 /// Apply a declutter mode to a view; unknown modes are "full".
 pub fn apply_declutter(view: &Value, mode: Option<&Value>) -> Value {
-    let mut mode = mode
-        .map(|v| local_name(v).unwrap_or_default().to_owned())
-        .unwrap_or_else(|| "full".into());
+    let mut mode = mode.map(geom::name).unwrap_or_else(|| "full".into());
     if mode == "methods" {
         mode = "elements".into();
     }

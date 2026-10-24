@@ -22,7 +22,7 @@ use edn::Value;
 
 use edn::record::{put, seq};
 use files::Adapter;
-use value::{getd as get, kw};
+use value::get_truthy as get;
 
 /// The emit framing from `application/ir_generator.lua`: header, one-line
 /// EDN, trailing newline.
@@ -59,12 +59,12 @@ fn scan_policy(p: &Value, filenames: &[String], adapter: &Adapter) -> Result<Val
             let prefix = get(p, "prefix")
                 .cloned()
                 .unwrap_or(Value::String("uml-viewer".into()));
-            let mut opts = Value::Map(vec![(kw("prefix"), prefix.clone())]);
+            let mut opts = Value::Map(vec![(Value::keyword("prefix"), prefix.clone())]);
             let ns_prefix = get(s, "prefix").or_else(|| get(p, "prefix"));
             if let Some(ns_prefix) = ns_prefix {
-                opts.assoc(kw("ns-prefix"), ns_prefix.clone());
+                opts.assoc(Value::keyword("ns-prefix"), ns_prefix.clone());
             }
-            opts.assoc(kw("lang"), lang.clone());
+            opts.assoc(Value::keyword("lang"), lang.clone());
             let mut exclude: Vec<Value> = Vec::new();
             for xs in [get(p, "exclude"), get(s, "exclude")] {
                 for x in seq(xs) {
@@ -74,7 +74,7 @@ fn scan_policy(p: &Value, filenames: &[String], adapter: &Adapter) -> Result<Val
                 }
             }
             if !exclude.is_empty() {
-                opts.assoc(kw("exclude"), Value::Vector(exclude));
+                opts.assoc(Value::keyword("exclude"), Value::Vector(exclude));
             }
             let root = get(s, "root")
                 .or_else(|| get(s, "src"))
@@ -90,14 +90,14 @@ fn scan_policy(p: &Value, filenames: &[String], adapter: &Adapter) -> Result<Val
         return graph::merge_scans(&scans);
     }
     let mut opts = Value::Map(vec![(
-        kw("prefix"),
+        Value::keyword("prefix"),
         get(p, "prefix")
             .cloned()
             .unwrap_or(Value::String("uml-viewer".into())),
     )]);
     let exclude: Vec<Value> = seq(get(p, "exclude")).to_vec();
     if !exclude.is_empty() {
-        opts.assoc(kw("exclude"), Value::Vector(exclude));
+        opts.assoc(Value::keyword("exclude"), Value::Vector(exclude));
     }
     let src = match get(p, "src") {
         Some(Value::String(path)) => path.clone(),
@@ -112,7 +112,7 @@ fn scan_policy(p: &Value, filenames: &[String], adapter: &Adapter) -> Result<Val
 fn generate(path: &str, out: Option<String>, adapter: &Adapter) -> Result<String, String> {
     let p = read_policy(path, adapter)?;
     let mut filenames = Vec::new();
-    if value::getd(&p, "lang").is_none() && value::getd(&p, "sources").is_none() {
+    if value::get_truthy(&p, "lang").is_none() && value::get_truthy(&p, "sources").is_none() {
         filenames = adapter.filenames()?;
     }
     let graph = scan_policy(&p, &filenames, adapter)?;
@@ -190,7 +190,7 @@ fn run_result(args: &[OsString]) -> Result<String, String> {
         .clone()
         .unwrap_or_else(|| "examples/uml-viewer.policy.edn".into());
     let policy = read_policy(&path, &adapter)?;
-    let default_out = value::getd(&policy, "out")
+    let default_out = value::get_truthy(&policy, "out")
         .and_then(|v| match v {
             Value::String(s) => Some(s.clone()),
             _ => None,

@@ -709,15 +709,10 @@ mod tests {
             .filter(|event| record::get_name(event, "operation").as_deref() == Some("stop"))
             .count();
         assert_eq!(1, cancels);
-        assert_eq!(
-            Some(false),
-            record::get_bool(
-                &edn::record::get(journal.events.borrow().last().unwrap(), "extra")
-                    .cloned()
-                    .unwrap(),
-                "keep"
-            )
-        );
+        let extra = edn::record::get(journal.events.borrow().last().unwrap(), "extra")
+            .cloned()
+            .unwrap();
+        assert_eq!(Some(&Value::Bool(false)), edn::record::get(&extra, "keep"));
     }
 
     #[test]

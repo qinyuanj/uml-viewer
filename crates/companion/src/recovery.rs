@@ -391,10 +391,11 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
     let exit_path = PathBuf::from(format!("{runner_state}.exit.json"));
     let _ = std::fs::remove_file(&started_path);
     let _ = std::fs::remove_file(&exit_path);
-    let command: Vec<std::ffi::OsString> = record::string_vec(record::get_vec(identity, "command"))
-        .into_iter()
-        .map(std::ffi::OsString::from)
-        .collect();
+    let command: Vec<std::ffi::OsString> =
+        record::string_vec(edn::record::seq(edn::record::get(identity, "command")))
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect();
     if command.is_empty() {
         posix::release(generation_lock);
         return Err(Failure::new("Runner manifest has no command"));

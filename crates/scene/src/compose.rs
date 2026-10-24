@@ -236,13 +236,7 @@ pub fn compile_diagram(diagram: &Value) -> Value {
 /// Rename a scene's ids with a diagram prefix, so several diagrams can share
 /// one merged scene without id collisions.
 fn prefix_ids(scene: &mut Value, prefix: &str) {
-    let q = |id: &Value| {
-        Value::keyword(&format!(
-            "{}{}",
-            prefix,
-            edn::record::local_name(id).unwrap_or_default().to_owned()
-        ))
-    };
+    let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, geom::name(id)));
     for key in ["packages", "classes"] {
         if let Some(Value::Vector(items)) = get(scene, key).cloned() {
             let mut renamed = Vec::with_capacity(items.len());

@@ -239,8 +239,8 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
         )
     };
     let graph = Value::Map(vec![
-        (crate::value::kw("classes"), Value::Vector(classes.clone())),
-        (crate::value::kw("edges"), Value::Vector(edges.clone())),
+        (Value::keyword("classes"), Value::Vector(classes.clone())),
+        (Value::keyword("edges"), Value::Vector(edges.clone())),
     ]);
     let doc = policy::apply_policy(&parse("{}"), &graph);
     assert_same(
@@ -249,8 +249,8 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
     );
     add("h", &mut classes, &mut edges);
     let graph = Value::Map(vec![
-        (crate::value::kw("classes"), Value::Vector(classes)),
-        (crate::value::kw("edges"), Value::Vector(edges)),
+        (Value::keyword("classes"), Value::Vector(classes)),
+        (Value::keyword("edges"), Value::Vector(edges)),
     ]);
     let doc = policy::apply_policy(&parse("{}"), &graph);
     assert_same(

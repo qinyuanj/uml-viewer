@@ -379,12 +379,15 @@ mod tests {
         );
         assert_eq!(
             vec!["claude", "--resume", "u"],
-            record::string_vec(record::get_vec(&base, "recovery-command"))
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
+            record::string_vec(edn::record::seq(edn::record::get(
+                &base,
+                "recovery-command"
+            )))
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
         );
-        assert_eq!(Some(true), record::get_bool(&base, "provisional"));
+        assert!(edn::record::is_true(&base, "provisional"));
     }
 
     #[test]
@@ -395,7 +398,7 @@ mod tests {
         ]);
         let owned = committed(&base);
         assert_eq!(None, edn::record::get(&owned, "provisional"));
-        assert_eq!(Some(true), record::get_bool(&base, "provisional"));
+        assert!(edn::record::is_true(&base, "provisional"));
     }
 
     #[test]

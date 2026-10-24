@@ -7,8 +7,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_space, is_ts_ident};
-use crate::value::{getd as get, kw};
-use edn::record::{record, seq, truthy};
+use crate::value::get_truthy as get;
+use edn::record::{flag, record, seq};
 
 fn ident(c: Option<u8>) -> bool {
     c.is_some_and(is_ts_ident)
@@ -699,7 +699,7 @@ impl Scanner for TypeScriptScanner {
                 Some(&Value::String(prefix.clone())),
             );
             by_path.insert(f.path.clone(), cid.clone());
-            project.insert(crate::value::key_of(&cid));
+            project.insert(crate::value::encode_key(&cid));
         }
         let resolve = |file: &str, spec: &Value| -> Option<Value> {
             let spec = match spec {
@@ -778,8 +778,8 @@ impl Scanner for TypeScriptScanner {
                 {
                     impls.push(to.clone());
                 }
-                interface = interface || truthy(get(exp, "interface"));
-                value = value || truthy(get(exp, "value"));
+                interface = interface || flag(exp, "interface");
+                value = value || flag(exp, "value");
             }
             let mut c = record(vec![
                 ("id", cid.clone()),
@@ -788,14 +788,14 @@ impl Scanner for TypeScriptScanner {
                     "ns",
                     Value::String(graph::ns_join(&ns_prefix, &module_relative(&f.path, root))),
                 ),
-                ("lang", kw("typescript")),
+                ("lang", Value::keyword("typescript")),
                 ("file", Value::String(graph::relative_path(&f.path, cwd))),
             ]);
             if !ops.is_empty() {
                 edn::record::put(&mut c, "ops", Value::Vector(ops));
             }
             if interface && !value {
-                edn::record::put(&mut c, "stereotype", kw("interface"));
+                edn::record::put(&mut c, "stereotype", Value::keyword("interface"));
             }
             classes.push(c);
             let mut requires: Vec<Value> = Vec::new();
@@ -818,11 +818,13 @@ impl Scanner for TypeScriptScanner {
                         requires.push(to);
                     }
                 } else if !spec_text.starts_with('.') {
-                    let foreign = kw(&spec_text
-                        .strip_prefix('@')
-                        .map(|s| format!("at.{s}"))
-                        .unwrap_or(spec_text.clone())
-                        .replace([':', '/'], "."));
+                    let foreign = Value::keyword(
+                        &spec_text
+                            .strip_prefix('@')
+                            .map(|s| format!("at.{s}"))
+                            .unwrap_or(spec_text.clone())
+                            .replace([':', '/'], "."),
+                    );
                     if !external.contains(&foreign) {
                         external.push(foreign.clone());
                     }
@@ -841,7 +843,7 @@ impl Scanner for TypeScriptScanner {
                         let e = record(vec![
                             ("from", cid.clone()),
                             ("to", to.clone()),
-                            ("kind", kw(kind)),
+                            ("kind", Value::keyword(kind)),
                         ]);
                         if !edges.contains(&e) {
                             edges.push(e);
@@ -855,7 +857,7 @@ impl Scanner for TypeScriptScanner {
             }
         }
         for cid in foreigns {
-            if !project.contains(&crate::value::key_of(&cid)) {
+            if !project.contains(&crate::value::encode_key(&cid)) {
                 classes.push(graph::foreign_class(&cid));
             }
         }

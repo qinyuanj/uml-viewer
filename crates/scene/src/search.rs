@@ -14,10 +14,6 @@ pub struct Match {
 }
 
 /// ASCII-only lowercase, leaving non-ASCII bytes untouched (Lua `:lower()`).
-fn geom_name(v: &Value) -> String {
-    edn::record::local_name(v).unwrap_or_default().to_owned()
-}
-
 fn ascii_lower(s: &str) -> String {
     s.bytes()
         .map(|b| b.to_ascii_lowercase())
@@ -38,11 +34,11 @@ pub fn search(doc: &Value, query: &str) -> Vec<Match> {
         let Some(id) = get(c, "id") else { return };
         let class_name = match get(c, "name") {
             Some(Value::String(s)) => s.clone(),
-            _ => geom_name(id),
+            _ => crate::geom::name(id),
         };
         let ns = match get(c, "ns") {
             Some(Value::String(s)) => s.clone(),
-            _ => geom_name(id),
+            _ => crate::geom::name(id),
         };
         if ascii_lower(&class_name).contains(&query) || ascii_lower(&ns).contains(&query) {
             out.push(Match {
