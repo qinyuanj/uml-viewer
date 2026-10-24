@@ -26,6 +26,13 @@ pub fn flag(m: &Value, key: &str) -> bool {
     truthy(get_raw(m, key))
 }
 
+/// Strictly the boolean `true` (Lua `g(x,'k')==true`), for the readers the
+/// Lua core wrote as a value comparison rather than a flag test: `1` and
+/// `:yes` are not `true` here. Prefer [`flag`] unless the Lua compared.
+pub fn is_true(m: &Value, key: &str) -> bool {
+    matches!(get(m, key), Some(Value::Bool(true)))
+}
+
 /// [`flag`] over an already looked-up value.
 pub fn truthy(v: Option<&Value>) -> bool {
     !matches!(v, None | Some(Value::Nil) | Some(Value::Bool(false)))

@@ -4,7 +4,7 @@
 
 use edn::Value;
 use edn::record::{
-    flag, get, get_raw, local_name, num, num_or, put, record, remove, seq, text, truthy,
+    flag, get, get_raw, is_true, local_name, num, num_or, put, record, remove, seq, text, truthy,
 };
 
 fn read(text: &str) -> Value {
@@ -48,6 +48,17 @@ fn flag_follows_lua_truthiness() {
         );
     }
     assert!(!flag(&read("[:t true]"), "t"), "non-maps have no flags");
+}
+
+#[test]
+fn is_true_is_the_lua_strict_comparison_with_true() {
+    // Lua `g(x,'k')==true`: only the boolean itself, unlike `flag`.
+    let m = read(r#"{:t true :f false :n nil :one 1 :yes :yes}"#);
+    assert!(is_true(&m, "t"));
+    for key in ["f", "n", "missing", "one", "yes"] {
+        assert!(!is_true(&m, key), ":{key} is not strictly true");
+    }
+    assert!(!is_true(&read("[:t true]"), "t"));
 }
 
 #[test]
