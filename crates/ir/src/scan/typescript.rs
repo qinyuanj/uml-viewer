@@ -7,7 +7,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_space, is_ts_ident};
-use crate::value::{getd as get, kw, record, seq, truthy};
+use crate::value::{getd as get, kw};
+use edn::record::{record, seq, truthy};
 
 fn ident(c: Option<u8>) -> bool {
     c.is_some_and(is_ts_ident)
@@ -791,10 +792,10 @@ impl Scanner for TypeScriptScanner {
                 ("file", Value::String(graph::relative_path(&f.path, cwd))),
             ]);
             if !ops.is_empty() {
-                c = crate::value::put(&c, "ops", Value::Vector(ops));
+                edn::record::put(&mut c, "ops", Value::Vector(ops));
             }
             if interface && !value {
-                c = crate::value::put(&c, "stereotype", kw("interface"));
+                edn::record::put(&mut c, "stereotype", kw("interface"));
             }
             classes.push(c);
             let mut requires: Vec<Value> = Vec::new();

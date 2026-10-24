@@ -7,7 +7,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_space};
-use crate::value::{getd as get, kw, record, seq};
+use crate::value::{getd as get, kw};
+use edn::record::{record, seq};
 
 fn is_rust_ident_start(c: u8) -> bool {
     c.is_ascii_alphabetic() || c == b'_'
@@ -747,7 +748,7 @@ impl Scanner for RustScanner {
                 ("file", Value::String(graph::relative_path(&m.0, cwd))),
             ]);
             if !ops.is_empty() {
-                c = crate::value::put(&c, "ops", Value::Vector(ops));
+                edn::record::put(&mut c, "ops", Value::Vector(ops));
             }
             classes.push(c);
             let mut requires: Vec<Value> = Vec::new();

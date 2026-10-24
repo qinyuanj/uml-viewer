@@ -20,8 +20,9 @@ use std::process::ExitCode;
 
 use edn::Value;
 
+use edn::record::{put, seq};
 use files::Adapter;
-use value::{getd as get, kw, put, seq};
+use value::{getd as get, kw};
 
 /// The emit framing from `application/ir_generator.lua`: header, one-line
 /// EDN, trailing newline.
@@ -127,7 +128,7 @@ fn generate(path: &str, out: Option<String>, adapter: &Adapter) -> Result<String
         eprintln!("Unassigned namespaces: {}", names.join(", "));
     }
     let mut doc = policy::apply_policy(&p, &graph);
-    doc = put(&doc, "policy-file", Value::String(path.to_owned()));
+    put(&mut doc, "policy-file", Value::String(path.to_owned()));
     let out = out
         .or_else(|| {
             get(&p, "out").and_then(|v| match v {

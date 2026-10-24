@@ -6,7 +6,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
-use crate::value::{getd as get, kw, record, seq, truthy};
+use crate::value::{getd as get, kw};
+use edn::record::{record, seq, truthy};
 
 const SKIP_DIRS: &[&str] = &[
     "lua_modules",

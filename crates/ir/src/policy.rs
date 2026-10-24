@@ -4,15 +4,13 @@
 
 use std::collections::HashMap;
 
-use crate::value::{
-    as_f64, contains, copy_map, drop_key, get, id, ids, key_of, kw, name, or, put, record, seq,
-    truthy,
-};
+use crate::value::{contains, copy_map, id, id_name, ids, key_of, kw, or};
 use edn::Value;
 use edn::pair_order;
+use edn::record::{get, num, put, record, remove, seq, truthy};
 
 fn matches_prefix(x: &Value, p: &Value) -> bool {
-    let (x, p) = (name(x), name(p));
+    let (x, p) = (id_name(x), id_name(p));
     x == p || x.starts_with(&format!("{p}."))
 }
 
@@ -44,12 +42,12 @@ pub fn unassigned(p: &Value, g: &Value) -> Vec<Value> {
             r.push(c.clone());
         }
     }
-    r.sort_by_key(|a| name(get(a, "id").unwrap()));
+    r.sort_by_key(|a| id_name(get(a, "id").unwrap()));
     r
 }
 
 fn kind_rank(k: Option<&Value>) -> i64 {
-    match k.map(name) {
+    match k.map(id_name) {
         Some(n) if n == "implements" || n == "inheritance" => 4,
         Some(n) if n == "composition" => 3,
         Some(n) if n == "aggregation" => 2,
@@ -62,7 +60,7 @@ fn kind_rank(k: Option<&Value>) -> i64 {
 fn pair_names(pair: &Value) -> (String, String) {
     let raw = |v: &Value| match v {
         Value::Keyword(n) | Value::Symbol(n) | Value::String(n) => n.clone(),
-        other => name(other),
+        other => id_name(other),
     };
     match pair {
         Value::Vector(items) if items.len() == 2 => (raw(&items[0]), raw(&items[1])),
@@ -102,9 +100,10 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         if better {
             group.best = Some(e.clone());
         }
-        let mut best = drop_key(group.best.as_ref().unwrap(), "violating");
+        let mut best = copy_map(group.best.as_ref().unwrap());
+        remove(&mut best, "violating");
         if get(&best, "kind") == Some(&kw("dependency")) && group.violating {
-            best = put(&best, "violating", Value::Bool(true));
+            put(&mut best, "violating", Value::Bool(true));
         }
         out[group.index] = best;
     }
@@ -133,14 +132,14 @@ pub fn collapse_graph(p: &Value, g: &Value) -> Value {
                 if matches_prefix(&cid, &prefix)
                     && best
                         .as_ref()
-                        .is_none_or(|b| name(&prefix).len() > name(b).len())
+                        .is_none_or(|b| id_name(&prefix).len() > id_name(b).len())
                 {
                     best = Some(prefix);
                 }
             }
             if let Some(best) = best {
                 remap.insert(key_of(&cid), best.clone());
-                foreigns.insert(name(&best), best);
+                foreigns.insert(id_name(&best), best);
             }
         } else {
             classes.push(c.clone());
@@ -168,7 +167,10 @@ pub fn collapse_graph(p: &Value, g: &Value) -> Value {
         let from = remap.get(&key_of(&from)).cloned().unwrap_or(from);
         let to = remap.get(&key_of(&to)).cloned().unwrap_or(to);
         if present.contains(&key_of(&from)) && present.contains(&key_of(&to)) && from != to {
-            edges.push(put(&put(&copy_map(e), "from", from), "to", to));
+            let mut c = copy_map(e);
+            put(&mut c, "from", from);
+            put(&mut c, "to", to);
+            edges.push(c);
         }
     }
     record(vec![
@@ -186,13 +188,13 @@ fn nse_entry(x: &Value) -> Value {
     let cid = id(or(get(x, "id"), or(get(x, "label"), &Value::Nil)));
     let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
     let mut out = copy_map(x);
-    out = put(&out, "id", cid.clone());
-    out = put(
-        &out,
+    put(&mut out, "id", cid.clone());
+    put(
+        &mut out,
         "label",
-        or(get(x, "label"), &Value::String(name(&cid))).clone(),
+        or(get(x, "label"), &Value::String(id_name(&cid))).clone(),
     );
-    out = put(&out, "nses", Value::Vector(nses));
+    put(&mut out, "nses", Value::Vector(nses));
     out
 }
 
@@ -216,13 +218,13 @@ fn layers_from(xs: &[Value]) -> Vec<Value> {
             let cid = id(or(get(x, "id"), or(get(x, "label"), &fallback)));
             let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
             let mut out = copy_map(x);
-            out = put(&out, "id", cid.clone());
-            out = put(
-                &out,
+            put(&mut out, "id", cid.clone());
+            put(
+                &mut out,
                 "label",
-                or(get(x, "label"), &Value::String(name(&cid))).clone(),
+                or(get(x, "label"), &Value::String(id_name(&cid))).clone(),
             );
-            out = put(&out, "nses", Value::Vector(nses));
+            put(&mut out, "nses", Value::Vector(nses));
             r.push(out);
         }
     }
@@ -248,7 +250,7 @@ pub fn normalize_proposal(p: &Value) -> Option<Value> {
         ("layers", Value::Vector(layers)),
     ]);
     if matches!(p, Value::Map(_)) {
-        r = put(&r, "omit", Value::Vector(ids(seq(get(p, "omit")))));
+        put(&mut r, "omit", Value::Vector(ids(seq(get(p, "omit")))));
     }
     Some(r)
 }
@@ -260,15 +262,15 @@ fn named(p: &Value, i: usize) -> Option<Value> {
     let cid = id(or(get(p, "id"), &kw(&format!("proposal-{i}"))));
     let normalized = normalize_proposal(p);
     let mut out = copy_map(p);
-    out = put(&out, "id", cid.clone());
-    let fallback = name(or(get(p, "label"), &cid));
-    out = put(
-        &out,
+    put(&mut out, "id", cid.clone());
+    let fallback = id_name(or(get(p, "label"), &cid));
+    put(
+        &mut out,
         "name",
         or(get(p, "name"), &Value::String(fallback)).clone(),
     );
-    out = put(
-        &out,
+    put(
+        &mut out,
         "layers",
         normalized
             .as_ref()
@@ -276,9 +278,9 @@ fn named(p: &Value, i: usize) -> Option<Value> {
             .cloned()
             .unwrap_or(Value::Vector(Vec::new())),
     );
-    out = put(&out, "omit", Value::Vector(ids(seq(get(p, "omit")))));
-    out = put(
-        &out,
+    put(&mut out, "omit", Value::Vector(ids(seq(get(p, "omit")))));
+    put(
+        &mut out,
         "notice",
         or(get(p, "notice"), &Value::String(PROPOSAL_NOTICE.to_owned())).clone(),
     );
@@ -355,7 +357,7 @@ pub fn level_ranks(p: &Value) -> Value {
 }
 
 pub fn rank_of<'a>(x: &Value, ranks: &'a Value) -> Option<&'a Value> {
-    let mut n = Some(name(x));
+    let mut n = Some(id_name(x));
     while let Some(current) = n {
         if let Some(rank) = ranks.get(&kw(&current))
             && !matches!(rank, Value::Nil | Value::Bool(false))
@@ -376,7 +378,7 @@ fn violating_dependency(e: &Value, ranks: &Value) -> bool {
     let f = rank_of(get(e, "from").unwrap(), ranks);
     let t = rank_of(get(e, "to").unwrap(), ranks);
     match (f, t) {
-        (Some(a), Some(b)) => as_f64(a).zip(as_f64(b)).is_some_and(|(a, b)| a < b),
+        (Some(a), Some(b)) => num(a).zip(num(b)).is_some_and(|(a, b)| a < b),
         _ => false,
     }
 }
@@ -384,9 +386,10 @@ fn violating_dependency(e: &Value, ranks: &Value) -> bool {
 pub fn mark_violations(edges: &[Value], ranks: &Value) -> Vec<Value> {
     let mut r = Vec::new();
     for e in edges {
-        let mut c = drop_key(e, "violating");
+        let mut c = copy_map(e);
+        remove(&mut c, "violating");
         if violating_dependency(e, ranks) {
-            c = put(&c, "violating", Value::Bool(true));
+            put(&mut c, "violating", Value::Bool(true));
         }
         r.push(c);
     }
@@ -397,7 +400,11 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
     let mut r = Vec::new();
     for c in classes {
         let mut out = if clear {
-            drop_key(c, "level")
+            {
+                let mut m = copy_map(c);
+                remove(&mut m, "level");
+                m
+            }
         } else {
             copy_map(c)
         };
@@ -407,7 +414,7 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
             None
         };
         if let Some(rank) = rank {
-            out = put(&out, "level", rank.clone());
+            put(&mut out, "level", rank.clone());
         }
         r.push(out);
     }
@@ -433,10 +440,10 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: &Value, omit: &[Value]) -> Vec<V
         if let Some(k) = kinds.get(&pair)
             && !matches!(k, Value::Nil | Value::Bool(false))
         {
-            c = put(&c, "kind", k.clone());
+            put(&mut c, "kind", k.clone());
         }
         if get(&c, "kind") != Some(&kw("dependency")) {
-            c = drop_key(&c, "violating");
+            remove(&mut c, "violating");
         }
         r.push(c);
     }
@@ -452,13 +459,15 @@ fn ir_class(c: &Value, hide: bool) -> Value {
         if let Some(v) = get(c, key)
             && *v != Value::Bool(false)
         {
-            r = put(&r, key, v.clone());
+            put(&mut r, key, v.clone());
         }
     }
     if truthy(get(c, "foreign")) {
-        put(&r, "shape", kw("oval"))
+        put(&mut r, "shape", kw("oval"));
+        r
     } else if hide {
-        put(&r, "hide-members", Value::Bool(true))
+        put(&mut r, "hide-members", Value::Bool(true));
+        r
     } else {
         r
     }
@@ -518,7 +527,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
                 .unwrap_or_else(|| {
                     panic!(
                         "diagram package not in policy: {}",
-                        name(get(d, "package").unwrap())
+                        id_name(get(d, "package").unwrap())
                     )
                 });
             home = ids(seq(get(pkg, "nses")));
@@ -561,7 +570,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
                 wanted.push(target.clone());
             }
         }
-        wanted.sort_by_key(name);
+        wanted.sort_by_key(id_name);
         for cid in &wanted {
             foreign.push(ir_class(lookup(cid).unwrap(), false));
             all.push(cid.clone());
@@ -601,7 +610,7 @@ fn packaged_document(p: &Value, g: &Value) -> Value {
             ),
         ]);
         if !foreign.is_empty() {
-            diagram = put(&diagram, "foreign", Value::Vector(foreign));
+            put(&mut diagram, "foreign", Value::Vector(foreign));
         }
         diagrams.push(diagram);
     }
@@ -656,10 +665,10 @@ pub fn apply_policy(p: &Value, g: &Value) -> Value {
         ("edges", get(&g, "edges").cloned().unwrap_or(Value::Nil)),
     ]);
     if !proposals.is_empty() {
-        doc = put(&doc, "proposals", Value::Vector(proposals));
+        put(&mut doc, "proposals", Value::Vector(proposals));
     }
     if let Some(proposal) = proposal {
-        doc = put(&doc, "proposal", proposal);
+        put(&mut doc, "proposal", proposal);
     }
     doc
 }

@@ -8,7 +8,7 @@
 use edn::Value;
 
 use crate::policy;
-use crate::value::get;
+use edn::record::get;
 
 fn parse(text: &str) -> Value {
     edn::parse(text).unwrap()
@@ -227,7 +227,7 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
     ));
     let pairs = |doc: &Value| -> Value {
         Value::Vector(
-            crate::value::seq(get(doc, "edges"))
+            edn::record::seq(get(doc, "edges"))
                 .iter()
                 .map(|e| {
                     Value::Vector(vec![

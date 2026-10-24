@@ -5,7 +5,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
-use crate::value::{getd as get, kw, record, seq};
+use crate::value::{getd as get, kw};
+use edn::record::{record, seq};
 
 fn ident(c: Option<u8>) -> bool {
     c.is_some_and(is_word)
@@ -809,10 +810,10 @@ impl Scanner for PythonScanner {
                 ),
             ]);
             if !ops.is_empty() {
-                c = crate::value::put(&c, "ops", Value::Vector(ops));
+                edn::record::put(&mut c, "ops", Value::Vector(ops));
             }
             if class_count > 0 && interface {
-                c = crate::value::put(&c, "stereotype", kw("interface"));
+                edn::record::put(&mut c, "stereotype", kw("interface"));
             }
             classes.push(c);
             for (group, kind) in [
