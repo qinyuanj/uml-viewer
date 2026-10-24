@@ -843,7 +843,12 @@ become `calc` (`:calc`) and `calc.util` (`:calc.util`). It skips
 foreign (`lfs` stays `:lfs`). Comments, strings, and long brackets are
 masked, so a `require` inside them is ignored. Top-level functions that
 are not `local` are `:ops`, named as written in the source (`M.clamp`,
-`Account:deposit`). A function declared inside another is not an op.
+`Account:deposit`). A function declared inside another, or inside a table
+constructor (`M.t = { f = function() end }`), is not an op; one in a
+top-level `if` or `do` block is, as crapper counts entries.
+`require(name)` cannot be resolved statically: it draws no edge, and
+`uml ir` prints `Unresolved dynamic require: <file>:<line>` to stderr
+(same-line calls only).
 A top-level `setmetatable(t, {__index = Base})` or
 `setmetatable(t, Base)`, where `local Base = require("app.base")` names a
 project module, is `:inheritance` on that module. This is a pattern match,

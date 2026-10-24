@@ -274,7 +274,81 @@ fn match_binding_at(t: &[u8], i: usize) -> Option<(usize, Vec<u8>, Vec<u8>)> {
     Some((p, binding, module))
 }
 
+/// A `require` call at `i`: a literal module name, or a call whose argument
+/// is an expression (`require(name)`) and so cannot be resolved statically.
+enum Require {
+    Module(Vec<u8>),
+    Dynamic,
+}
+
+fn require_at(text: &[u8], i: usize) -> Option<Require> {
+    if !keyword(text, i, b"require") {
+        return None;
+    }
+    let after = space_tab_skip(text::sub(text, (i + 7) as i64, text.len() as i64));
+    let mut tail = rest_of_line(after);
+    let call = tail.first() == Some(&b'(');
+    if call {
+        tail = rest_of_line(space_tab_skip(&tail[1..]));
+    }
+    match tail.first() {
+        Some(b'"' | b'\'') => {
+            let s = &tail[1..];
+            if !s.first().is_some_and(|&c| is_alpha_(c)) {
+                return None;
+            }
+            let len = s.iter().take_while(|&&c| is_word(c) || c == b'.').count();
+            Some(Require::Module(s[..len].to_vec()))
+        }
+        Some(&c) if call && is_alpha_(c) && !matches!(at(text, i - 1), Some(b'.' | b':')) => {
+            Some(Require::Dynamic)
+        }
+        _ => None,
+    }
+}
+
+/// 1-based line of position `i`.
+fn line_of(text: &[u8], i: usize) -> i64 {
+    text[..i - 1].iter().filter(|&&c| c == b'\n').count() as i64 + 1
+}
+
+/// Table-constructor depth after the byte `c`.
+fn track_brace(braces: usize, c: Option<u8>) -> usize {
+    match c {
+        Some(b'{') => braces + 1,
+        Some(b'}') => braces.saturating_sub(1),
+        _ => braces,
+    }
+}
+
+/// Opens or closes a block for the keyword; `true` marks a function body.
+fn track_block(blocks: &mut Vec<bool>, kw: Option<&str>) {
+    match kw {
+        Some("function") => blocks.push(true),
+        Some("if" | "do" | "repeat") => blocks.push(false),
+        Some("end" | "until") => {
+            blocks.pop();
+        }
+        _ => {}
+    }
+}
+
+/// The stderr line for a file's unresolved `require(name)` calls, if any.
+fn dynamic_require_warning(file: &str, lines: &[Value]) -> Option<String> {
+    let at: Vec<String> = lines
+        .iter()
+        .filter_map(|l| match l {
+            Value::Integer(n) => Some(format!("{file}:{n}")),
+            _ => None,
+        })
+        .collect();
+    (!at.is_empty()).then(|| format!("Unresolved dynamic require: {}", at.join(", ")))
+}
+
 /// `read_module(source)`: requires, definitions and setmetatable bases.
+/// A definition is nested inside a function body or a table constructor,
+/// as crapper counts entries; a top-level `if`/`do` block does not nest.
+/// `require(name)` cannot be resolved statically; its line is reported.
 pub fn read_module(source: &[u8]) -> Value {
     let (text, holes) = mask(source);
     let mut requires = Vec::new();
@@ -282,28 +356,21 @@ pub fn read_module(source: &[u8]) -> Value {
     let mut bases: Vec<Value> = Vec::new();
     let mut bindings: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
     let mut base_names: Vec<Vec<u8>> = Vec::new();
-    let mut depth: i64 = 0;
+    let mut dynamic_requires = Vec::new();
+    // Open blocks, innermost last: `true` for a function body.
+    let mut blocks: Vec<bool> = Vec::new();
+    let mut braces: usize = 0;
     for i in 1..=text.len() {
         if in_hole(&holes, i) {
             continue;
         }
-        if keyword(&text, i, b"require") {
-            let after = text::sub(&text, (i + 7) as i64, text.len() as i64);
-            let after = space_tab_skip(after);
-            let mut tail = rest_of_line(after);
-            if tail.first() == Some(&b'(') {
-                tail = rest_of_line(space_tab_skip(&tail[1..]));
-            }
-            let quote = tail.first().copied();
-            if quote == Some(b'"') || quote == Some(b'\'') {
-                let s = &tail[1..];
-                if s.first().is_some_and(|&c| is_alpha_(c)) {
-                    let len = s.iter().take_while(|&&c| is_word(c) || c == b'.').count();
-                    requires.push(Value::String(text::text(&s[..len])));
-                }
-            }
+        match require_at(&text, i) {
+            Some(Require::Module(m)) => requires.push(Value::String(text::text(&m))),
+            Some(Require::Dynamic) => dynamic_requires.push(Value::Integer(line_of(&text, i))),
+            None => {}
         }
         let c = at(&text, i);
+        braces = track_brace(braces, c);
         let prev = at(&text, i.wrapping_sub(1));
         if ident(c) && !ident(prev) && prev != Some(b'.') && prev != Some(b':') {
             let mut kw_found = None;
@@ -320,11 +387,11 @@ pub fn read_module(source: &[u8]) -> Value {
                     defns.push(record(vec![
                         ("name", Value::String(text::text(&n))),
                         ("local", Value::Bool(loc)),
-                        ("nested", Value::Bool(depth > 0)),
+                        ("nested", Value::Bool(braces > 0 || blocks.contains(&true))),
                     ]));
                 }
             }
-            if depth == 0 && keyword(&text, i, b"setmetatable") {
+            if blocks.is_empty() && keyword(&text, i, b"setmetatable") {
                 let rest = text::sub(&text, i as i64, text.len() as i64);
                 if let Some(tail) = match_setmetatable(rest)
                     && let Some(base) = match_base(&tail)
@@ -332,13 +399,7 @@ pub fn read_module(source: &[u8]) -> Value {
                     base_names.push(base);
                 }
             }
-            depth = (depth
-                + match kw_found {
-                    Some("function") | Some("if") | Some("do") | Some("repeat") => 1,
-                    Some("end") | Some("until") => -1,
-                    _ => 0,
-                })
-            .max(0);
+            track_block(&mut blocks, kw_found);
         }
     }
     let mut pos = 1;
@@ -360,6 +421,7 @@ pub fn read_module(source: &[u8]) -> Value {
         ("requires", Value::Vector(requires)),
         ("defns", Value::Vector(defns)),
         ("bases", Value::Vector(bases)),
+        ("dynamic-requires", Value::Vector(dynamic_requires)),
     ])
 }
 
@@ -529,6 +591,12 @@ impl Scanner for LuaScanner {
         let mut foreigns: Vec<Value> = Vec::new();
         for (f, _, ns, cid) in &metas {
             let surface = read_module(&f.source);
+            let file = graph::relative_path(&f.path, cwd);
+            if let Some(warning) =
+                dynamic_require_warning(&file, seq(get(&surface, "dynamic-requires")))
+            {
+                eprintln!("{warning}");
+            }
             let mut ops = Vec::new();
             for d in seq(get(&surface, "defns")) {
                 if !truthy(get(d, "local")) && !truthy(get(d, "nested")) {
@@ -598,5 +666,67 @@ impl Scanner for LuaScanner {
             ("classes", Value::Vector(classes)),
             ("edges", Value::Vector(edges)),
         ]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The names `scan` turns into `:ops`: neither local nor nested.
+    fn ops(source: &str) -> Vec<String> {
+        let surface = read_module(source.as_bytes());
+        seq(get(&surface, "defns"))
+            .iter()
+            .filter(|d| !truthy(get(d, "local")) && !truthy(get(d, "nested")))
+            .filter_map(|d| match get(d, "name") {
+                Some(Value::String(n)) => Some(n.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn functions_in_a_table_constructor_are_not_operations() {
+        let source = "local M = {}\nM.t = { f = function() end }\nfunction M.a() end\nreturn M\n";
+        assert_eq!(vec!["M.a"], ops(source));
+    }
+
+    #[test]
+    fn functions_in_top_level_blocks_are_operations_like_crapper() {
+        let source = "local M = {}\n\
+                      if jit then\n  function M.fast() end\nelse\n  M.slow = function() end\nend\n\
+                      do function M.d() end end\n\
+                      function M.outer()\n  function M.inner() end\nend\n\
+                      return M\n";
+        assert_eq!(vec!["M.fast", "M.slow", "M.d", "M.outer"], ops(source));
+    }
+
+    #[test]
+    fn a_warning_names_each_dynamic_require_by_file_and_line() {
+        assert_eq!(None, dynamic_require_warning("a.lua", &[]));
+        assert_eq!(
+            Some("Unresolved dynamic require: a.lua:3, a.lua:9".to_owned()),
+            dynamic_require_warning("a.lua", &[Value::Integer(3), Value::Integer(9)])
+        );
+    }
+
+    #[test]
+    fn dynamic_requires_are_reported_with_their_lines() {
+        let source = "local a = require \"x.y\"\n\
+                      local name = 'z'\n\
+                      local b = require(name)\n\
+                      local c = pkg.require(other)\n\
+                      -- require(nope)\n\
+                      local d = require([[long]])\n";
+        let surface = read_module(source.as_bytes());
+        assert_eq!(
+            &[Value::String("x.y".into())][..],
+            seq(get(&surface, "requires"))
+        );
+        assert_eq!(
+            &[Value::Integer(3)][..],
+            seq(get(&surface, "dynamic-requires"))
+        );
     }
 }

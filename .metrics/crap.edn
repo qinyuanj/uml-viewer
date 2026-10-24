@@ -56,7 +56,6 @@
   {:name "scan", :namespace "ir::scan::typescript::TypeScriptScanner", :complexity 49, :coverage 93.4911, :crap 49.6621}
   {:name "shutdown", :namespace "companion::lifecycle", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "start", :namespace "companion::worker", :complexity 6, :coverage 0.0, :crap 42.0}
-  {:name "long_end", :namespace "ir::scan::lua", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "apply_proposal_op", :namespace "scene::events", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "quit_for_restart", :namespace "viewer::app::Viewer", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "settle_normal_quit", :namespace "viewer::app::Viewer", :complexity 6, :coverage 0.0, :crap 42.0}
@@ -66,14 +65,13 @@
   {:name "check_view", :namespace "viewer::driver", :complexity 31, :coverage 77.9221, :crap 41.3418}
   {:name "paint", :namespace "scene::overlay", :complexity 41, :coverage 95.3488, :crap 41.1691}
   {:name "place", :namespace "scene::layout", :complexity 40, :coverage 98.0892, :crap 40.0112}
+  {:name "scan", :namespace "ir::scan::lua::LuaScanner", :complexity 28, :coverage 75.6757, :crap 39.2833}
   {:name "kind", :namespace "viewer::commands::Command", :complexity 19, :coverage 61.9048, :crap 38.958}
   {:name "route", :namespace "scene::route", :complexity 37, :coverage 97.4194, :crap 37.0235}
   {:name "read_module", :namespace "ir::scan::typescript", :complexity 36, :coverage 91.6667, :crap 36.75}
   {:name "merge_scans", :namespace "ir::graph", :complexity 18, :coverage 61.4035, :crap 36.629}
   {:name "restore_session", :namespace "scene::document", :complexity 22, :coverage 68.9655, :crap 36.467}
   {:name "regex_end", :namespace "ir::scan::typescript", :complexity 20, :coverage 65.7895, :crap 36.0154}
-  {:name "scan", :namespace "ir::scan::lua::LuaScanner", :complexity 27, :coverage 77.1429, :crap 35.7054}
-  {:name "read_module", :namespace "ir::scan::lua", :complexity 29, :coverage 82.716, :crap 33.3424}
   {:name "view_at", :namespace "scene::hierarchy", :complexity 31, :coverage 87.8378, :crap 32.7289}
   {:name "chrome", :namespace "viewer::commands", :complexity 19, :coverage 67.0455, :crap 31.9197}
   {:name "candidates", :namespace "scene::route", :complexity 31, :coverage 94.0678, :crap 31.2006}
@@ -91,6 +89,7 @@
   {:name "write_value", :namespace "edn", :complexity 27, :coverage 96.7742, :crap 27.0245}
   {:name "controller", :namespace "companion::role", :complexity 7, :coverage 26.4706, :crap 26.4796}
   {:name "balanced_parens", :namespace "ir::scan::rust", :complexity 7, :coverage 26.6667, :crap 26.3241}
+  {:name "read_module", :namespace "ir::scan::lua", :complexity 23, :coverage 82.0896, :crap 26.0393}
   {:name "packaged_document", :namespace "ir::policy", :complexity 25, :coverage 95.2756, :crap 25.0659}
   {:name "zoom_dir", :namespace "scene::events", :complexity 25, :coverage 100.0, :crap 25.0}
   {:name "rows", :namespace "viewer::detail", :complexity 24, :coverage 98.4375, :crap 24.0022}
@@ -157,14 +156,13 @@
   {:name "mask", :namespace "ir::scan::rust", :complexity 12, :coverage 78.3784, :crap 13.4555}
   {:name "lib_name", :namespace "ir::scan::rust", :complexity 13, :coverage 87.5, :crap 13.3301}
   {:name "run_child", :namespace "companion::recovery", :complexity 13, :coverage 88.8889, :crap 13.2318}
-  {:name "match_binding_at", :namespace "ir::scan::lua", :complexity 13, :coverage 91.6667, :crap 13.0978}
   {:name "pool_mutants", :namespace "scene::config", :complexity 13, :coverage 92.5, :crap 13.0713}
+  {:name "match_binding_at", :namespace "ir::scan::lua", :complexity 13, :coverage 93.75, :crap 13.0413}
   {:name "named_proposals", :namespace "scene::policy", :complexity 12, :coverage 81.25, :crap 12.9492}
   {:name "search", :namespace "scene::search", :complexity 12, :coverage 82.0513, :crap 12.8326}
   {:name "bounds", :namespace "viewer::commands::Command", :complexity 6, :coverage 44.0, :crap 12.3222}
   {:name "spawn_detached", :namespace "companion::posix", :complexity 12, :coverage 87.234, :crap 12.2996}
   {:name "read_dispatch", :namespace "edn::Parser", :complexity 12, :coverage 88.8889, :crap 12.1975}
-  {:name "load", :namespace "companion::lifecycle", :complexity 6, :coverage 44.4444, :crap 12.1729}
   {:name "dep_indicators", :namespace "scene::hit", :complexity 12, :coverage 95.122, :crap 12.0167}
   {:name "observe", :namespace "companion::herdr::Herdr", :complexity 12, :coverage 97.0588, :crap 12.0037}
   {:name "wake", :namespace "companion::herdr::Herdr", :complexity 12, :coverage 98.2456, :crap 12.0008}
@@ -201,6 +199,7 @@
   {:name "snapshot", :namespace "viewer::session", :complexity 12, :coverage 100.0, :crap 12.0}
   {:name "title", :namespace "viewer::source::FileSource", :complexity 3, :coverage 0.0, :crap 12.0}
   {:name "write_string", :namespace "edn", :complexity 11, :coverage 80.0, :crap 11.968}
+  {:name "load", :namespace "companion::lifecycle", :complexity 6, :coverage 47.0588, :crap 11.3418}
   {:name "paths", :namespace "ir::scan::rust", :complexity 11, :coverage 87.8788, :crap 11.2155}
   {:name "load", :namespace "scene::overlay", :complexity 11, :coverage 91.4286, :crap 11.0762}
   {:name "read_map", :namespace "edn::Parser", :complexity 11, :coverage 94.7368, :crap 11.0176}
@@ -209,14 +208,15 @@
   {:name "json_to_edn", :namespace "companion::herdr", :complexity 9, :coverage 71.4286, :crap 10.8892}
   {:name "key_name", :namespace "scene::events", :complexity 7, :coverage 57.1429, :crap 10.8571}
   {:name "accepts", :namespace "ir::scan::lua::LuaScanner", :complexity 9, :coverage 73.6842, :crap 10.4762}
-  {:name "mask", :namespace "ir::scan::lua", :complexity 10, :coverage 84.375, :crap 10.3815}
   {:name "flags", :namespace "ir::scan::python", :complexity 10, :coverage 89.4737, :crap 10.1166}
-  {:name "hidden_sidebar", :namespace "companion::lifecycle", :complexity 10, :coverage 90.0, :crap 10.1}
   {:name "verify", :namespace "companion::recovery", :complexity 10, :coverage 92.8571, :crap 10.0364}
   {:name "prefix_ids", :namespace "scene::compose", :complexity 10, :coverage 92.8571, :crap 10.0364}
+  {:name "require_at", :namespace "ir::scan::lua", :complexity 10, :coverage 95.2381, :crap 10.0108}
   {:name "relaunch", :namespace "companion::herdr::Herdr", :complexity 10, :coverage 95.6522, :crap 10.0082}
   {:name "cone", :namespace "scene::curve", :complexity 10, :coverage 96.4286, :crap 10.0046}
   {:name "compile_document", :namespace "scene::compose", :complexity 10, :coverage 98.3607, :crap 10.0004}
+  {:name "hidden_sidebar", :namespace "companion::lifecycle", :complexity 10, :coverage 100.0, :crap 10.0}
+  {:name "mask", :namespace "ir::scan::lua", :complexity 10, :coverage 100.0, :crap 10.0}
   {:name "apply_declutter", :namespace "scene::hierarchy", :complexity 10, :coverage 100.0, :crap 10.0}
   {:name "class_lines", :namespace "scene::layout", :complexity 10, :coverage 100.0, :crap 10.0}
   {:name "hits", :namespace "scene::route", :complexity 10, :coverage 100.0, :crap 10.0}
@@ -279,7 +279,6 @@
   {:name "edge_style", :namespace "viewer::commands", :complexity 7, :coverage 89.4737, :crap 7.0572}
   {:name "layer_id", :namespace "scene::events", :complexity 7, :coverage 90.0, :crap 7.049}
   {:name "edge_at", :namespace "scene::hit", :complexity 7, :coverage 91.6667, :crap 7.0284}
-  {:name "session_name", :namespace "companion::lifecycle", :complexity 7, :coverage 92.3077, :crap 7.0223}
   {:name "match_command_attribute", :namespace "ir::scan::rust", :complexity 7, :coverage 92.8571, :crap 7.0179}
   {:name "path_bounds", :namespace "scene::curve", :complexity 7, :coverage 92.8571, :crap 7.0179}
   {:name "gap_polyline", :namespace "scene::geom", :complexity 7, :coverage 93.3333, :crap 7.0145}
@@ -290,6 +289,7 @@
   {:name "basis_path", :namespace "scene::curve", :complexity 7, :coverage 97.2222, :crap 7.0011}
   {:name "diagram_projection", :namespace "scene::cli", :complexity 7, :coverage 97.3684, :crap 7.0009}
   {:name "runner_state", :namespace "companion::herdr::Herdr", :complexity 7, :coverage 100.0, :crap 7.0}
+  {:name "session_name", :namespace "companion::lifecycle", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "read_items", :namespace "edn::Parser", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "snapshot", :namespace "ir::files::Adapter", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "kind_rank", :namespace "ir::policy", :complexity 7, :coverage 100.0, :crap 7.0}
@@ -300,6 +300,7 @@
   {:name "newest_event", :namespace "viewer::mail_watch", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "restore", :namespace "viewer::session", :complexity 7, :coverage 100.0, :crap 7.0}
   {:name "number", :namespace "scene::ir", :complexity 6, :coverage 75.0, :crap 6.5625}
+  {:name "long_end", :namespace "ir::scan::lua", :complexity 6, :coverage 80.0, :crap 6.288}
   {:name "match_as_name", :namespace "ir::scan::typescript", :complexity 6, :coverage 82.3529, :crap 6.1978}
   {:name "frame", :namespace "viewer::render_cache::RenderCache", :complexity 6, :coverage 85.3659, :crap 6.1128}
   {:name "match_local_function", :namespace "ir::scan::lua", :complexity 6, :coverage 85.7143, :crap 6.105}
@@ -413,6 +414,7 @@
   {:name "ir_class", :namespace "ir::policy", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "unassigned", :namespace "ir::policy", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "declaration", :namespace "ir::scan::lua", :complexity 5, :coverage 100.0, :crap 5.0}
+  {:name "track_block", :namespace "ir::scan::lua", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "accepts_directory", :namespace "ir::scan::python", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "bounds", :namespace "scene::compose", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "crap_band", :namespace "scene::config", :complexity 5, :coverage 100.0, :crap 5.0}
@@ -492,6 +494,7 @@
   {:name "violating_dependency", :namespace "ir::policy", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "capture_dotted", :namespace "ir::scan::lua", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "match_function", :namespace "ir::scan::lua", :complexity 4, :coverage 100.0, :crap 4.0}
+  {:name "track_brace", :namespace "ir::scan::lua", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "mask", :namespace "ir::scan::python", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "along", :namespace "scene::config", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "combined_grade", :namespace "scene::config", :complexity 4, :coverage 100.0, :crap 4.0}
@@ -571,6 +574,7 @@
   {:name "string_vec", :namespace "companion::record", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "read_manifest", :namespace "companion::role", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "id_of", :namespace "ir::graph", :complexity 3, :coverage 90.0, :crap 3.009}
+  {:name "dynamic_require_warning", :namespace "ir::scan::lua", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "find_plain", :namespace "ir::text", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "drop_key", :namespace "ir::value", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "drop_keys", :namespace "scene::geom", :complexity 3, :coverage 90.0, :crap 3.009}
@@ -687,7 +691,6 @@
   {:name "match_export_type_star", :namespace "ir::scan::typescript", :complexity 2, :coverage 90.9091, :crap 2.003}
   {:name "module_relative", :namespace "ir::scan::typescript", :complexity 2, :coverage 91.6667, :crap 2.0023}
   {:name "port", :namespace "scene::hierarchy", :complexity 2, :coverage 92.8571, :crap 2.0015}
-  {:name "attach_env", :namespace "companion::lifecycle", :complexity 2, :coverage 94.1176, :crap 2.0008}
   {:name "finish_locate", :namespace "scene::events", :complexity 2, :coverage 94.1176, :crap 2.0008}
   {:name "named", :namespace "ir::policy", :complexity 2, :coverage 96.4286, :crap 2.0002}
   {:name "run_controller", :namespace "companion", :complexity 1, :coverage 0.0, :crap 2.0}
@@ -702,6 +705,7 @@
   {:name "at", :namespace "companion::json::Decoder", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "literal", :namespace "companion::json::Decoder", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "fmt", :namespace "companion::json::JsonError", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "attach_env", :namespace "companion::lifecycle", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "backend", :namespace "companion::lifecycle", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "on_path", :namespace "companion::lifecycle", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "select", :namespace "companion::lifecycle", :complexity 1, :coverage 0.0, :crap 2.0}
@@ -897,7 +901,6 @@
   {:name "performance", :namespace "viewer::strings", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "with_alpha", :namespace "viewer::theme::Rgb", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "poll", :namespace "viewer::watch::Wake", :complexity 2, :coverage 100.0, :crap 2.0}
-  {:name "table_name", :namespace "companion::lifecycle", :complexity 1, :coverage 83.3333, :crap 1.0046}
   {:name "center", :namespace "scene::events", :complexity 1, :coverage 83.3333, :crap 1.0046}
   {:name "strings", :namespace "companion::herdr", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "cli", :namespace "companion::herdr::Herdr", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -914,6 +917,7 @@
   {:name "config_root_in", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "current_exe", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "role_launcher", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "table_name", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "user_config_path", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "queue", :namespace "companion::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "acknowledged", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -974,6 +978,7 @@
   {:name "metadata_paths", :namespace "ir::graph", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ends_with_local", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ident", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "line_of", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "rest_of_line", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "strip_spaces", :namespace "ir::scan::lua", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "accepts_directory", :namespace "ir::scan::lua::LuaScanner", :complexity 1, :coverage 100.0, :crap 1.0}
