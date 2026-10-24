@@ -1,5 +1,5 @@
 //! POSIX boundary (port of `love/uml/adapters/posix_process.lua`,
-//! `posix_lock.lua`, `posix_path.lua`, `posix_watch.lua`, `atomic_file.lua`,
+//! `posix_lock.lua`, `posix_path.lua`, `atomic_file.lua`,
 //! `clock.lua`, `platform.lua`). argv is passed literally to `posix_spawn`:
 //! no shell is ever involved. Every spawn passes an explicit environment
 //! built from `/proc/self/environ` — `envp = NULL` under glibc is not
@@ -40,45 +40,6 @@ mod sys {
     pub const FILE_ACTIONS_BYTES: usize = 1024;
     pub const ATTR_BYTES: usize = 1024;
 
-    #[repr(C)]
-    pub struct StatxTimestamp {
-        pub tv_sec: i64,
-        pub tv_nsec: u32,
-        pub reserved: i32,
-    }
-
-    #[repr(C)]
-    pub struct Statx {
-        pub mask: u32,
-        pub blksize: u32,
-        pub attributes: u64,
-        pub nlink: u32,
-        pub uid: u32,
-        pub gid: u32,
-        pub mode: u16,
-        pub spare0: u16,
-        pub ino: u64,
-        pub size: u64,
-        pub blocks: u64,
-        pub attributes_mask: u64,
-        pub atime: StatxTimestamp,
-        pub btime: StatxTimestamp,
-        pub ctime: StatxTimestamp,
-        pub mtime: StatxTimestamp,
-        pub rdev_major: u32,
-        pub rdev_minor: u32,
-        pub dev_major: u32,
-        pub dev_minor: u32,
-        pub mnt_id: u64,
-        pub dio_mem_align: u32,
-        pub dio_offset_align: u32,
-        pub spare3: [u64; 12],
-    }
-
-    pub const AT_FDCWD: i32 = -100;
-    pub const STATX_MTIME: u32 = 0x40;
-    pub const STATX_SIZE: u32 = 0x200;
-
     unsafe extern "C" {
         pub fn posix_spawn_file_actions_init(actions: *mut u8) -> i32;
         pub fn posix_spawn_file_actions_addopen(
@@ -109,13 +70,6 @@ mod sys {
         pub fn nanosleep(req: *const Timespec, rem: *mut Timespec) -> i32;
         pub fn clock_gettime(clockid: i32, tp: *mut Timespec) -> i32;
         pub fn flock(fd: i32, operation: i32) -> i32;
-        pub fn statx(
-            dirfd: i32,
-            pathname: *const std::ffi::c_char,
-            flags: i32,
-            mask: u32,
-            buf: *mut Statx,
-        ) -> i32;
     }
 }
 
@@ -665,74 +619,6 @@ pub fn canonical(path: &str) -> Result<String> {
     Ok(resolved.to_string_lossy().into_owned())
 }
 
-/// Nanosecond mtime + size stamp via statx (port of posix_watch.mtime). The
-/// stamp is opaque: consumers compare it for equality, never parse it.
-/// Only its own test calls it (the viewer watches files with `watch::mtime`);
-/// crate privacy merely surfaced that, so the dead-code lint is allowed here.
-#[allow(dead_code)]
-pub fn mtime_stamp(path: &Path) -> Result<String> {
-    let c_path = cstring(path.as_os_str())?;
-    let mut buffer = sys::Statx {
-        mask: 0,
-        blksize: 0,
-        attributes: 0,
-        nlink: 0,
-        uid: 0,
-        gid: 0,
-        mode: 0,
-        spare0: 0,
-        ino: 0,
-        size: 0,
-        blocks: 0,
-        attributes_mask: 0,
-        atime: sys::StatxTimestamp {
-            tv_sec: 0,
-            tv_nsec: 0,
-            reserved: 0,
-        },
-        btime: sys::StatxTimestamp {
-            tv_sec: 0,
-            tv_nsec: 0,
-            reserved: 0,
-        },
-        ctime: sys::StatxTimestamp {
-            tv_sec: 0,
-            tv_nsec: 0,
-            reserved: 0,
-        },
-        mtime: sys::StatxTimestamp {
-            tv_sec: 0,
-            tv_nsec: 0,
-            reserved: 0,
-        },
-        rdev_major: 0,
-        rdev_minor: 0,
-        dev_major: 0,
-        dev_minor: 0,
-        mnt_id: 0,
-        dio_mem_align: 0,
-        dio_offset_align: 0,
-        spare3: [0; 12],
-    };
-    // SAFETY: buffer is a valid Statx out struct matching glibc's layout.
-    let rc = unsafe {
-        sys::statx(
-            sys::AT_FDCWD,
-            c_path.as_ptr(),
-            0,
-            sys::STATX_MTIME | sys::STATX_SIZE,
-            &mut buffer,
-        )
-    };
-    if rc != 0 {
-        return Err(Failure::new(format!("cannot stat {}", path.display())));
-    }
-    Ok(format!(
-        "{}:{}:{}",
-        buffer.mtime.tv_sec, buffer.mtime.tv_nsec, buffer.size
-    ))
-}
-
 /// POSIX `rename` atomically replaces an existing file on the same volume.
 /// Never delete the destination first: a failure must leave the old contents
 /// intact (port of atomic_file.lua).
@@ -1034,18 +920,6 @@ mod tests {
         assert!(!resolved.contains("/./"));
         let _ = std::fs::remove_dir(&directory);
         assert!(canonical("/definitely/missing-uml-path").is_err());
-    }
-
-    #[test]
-    fn statx_stamp_changes_with_the_file() {
-        let path = temp_path("watch");
-        std::fs::write(&path, "one").unwrap();
-        let first = mtime_stamp(&path).unwrap();
-        std::fs::write(&path, "two!!").unwrap();
-        let second = mtime_stamp(&path).unwrap();
-        assert_ne!(first, second);
-        let _ = std::fs::remove_file(&path);
-        assert!(mtime_stamp(&path).is_err());
     }
 
     #[test]
