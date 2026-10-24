@@ -440,12 +440,6 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
     }
 }
 
-/// The viewer-side start of the worker helper (Lua `W.start`): one request
-/// file, then a native child with inherited stdio.
-pub fn start_worker(root: &str, restart: bool) -> Result<crate::worker::Worker> {
-    crate::worker::start(root, restart)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,8 +4,6 @@
 //! supplies PATH candidates, executable probing, ownership bytes and commands.
 
 use crate::domain::{self, Probe, Selected};
-use crate::herdr::Herdr;
-use crate::lifecycle;
 use crate::ownership;
 use crate::posix;
 use crate::vocab::{Result, RunOut};
@@ -78,20 +76,6 @@ pub fn run(args: &[std::ffi::OsString]) -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
-}
-
-/// Unused by the role itself; kept for the viewer-side bind path so the same
-/// selected Herdr serves every call in one launch.
-pub fn backend(root: &str, restart: bool) -> Result<Herdr> {
-    let selected = select(root, &["--backend".to_owned(), "herdr".to_owned()], restart)?;
-    let mut options = crate::herdr::Options::real();
-    options.selected = Some(selected);
-    Ok(Herdr::new(None, options))
-}
-
-/// Keeps the lifecycle import used by the viewer-side caller in one place.
-pub fn session_name(root: &str, uuid: &str) -> Result<String> {
-    lifecycle::session_name(root, uuid, None)
 }
 
 #[cfg(test)]
