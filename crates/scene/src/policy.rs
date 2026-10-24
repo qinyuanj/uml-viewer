@@ -180,7 +180,7 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
             } else {
                 c.clone()
             };
-            if get(c, "foreign").is_none()
+            if !geom::truthy(get(c, "foreign"))
                 && let Some(rank) = rank_of(get(c, "id").unwrap(), ranks)
             {
                 geom::put(&mut out, "level", geom::numval(rank));

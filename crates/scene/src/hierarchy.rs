@@ -132,7 +132,7 @@ fn descendants(cid: &Value, classes: &[Value]) -> bool {
 pub fn nodes_at(classes: &[Value], path: &[Value]) -> Vec<Value> {
     let mut out = Vec::new();
     for c in classes {
-        if get(c, "foreign").is_some() {
+        if geom::truthy(get(c, "foreign")) {
             continue;
         }
         if let Some(x) = child(get(c, "id").unwrap(), path)
@@ -263,7 +263,7 @@ fn view_class(
 fn external(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Option<Value> {
     let c = idx.get(&name(cid)).copied();
     if let Some(c) = c
-        && get(c, "foreign").is_some()
+        && geom::truthy(get(c, "foreign"))
     {
         return Some(Value::Map(vec![
             (Value::keyword("id"), cid.clone()),
@@ -289,7 +289,7 @@ fn external(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Optio
 
 fn collapse(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Option<Value> {
     if let Some(c) = idx.get(&name(cid))
-        && get(c, "foreign").is_some()
+        && geom::truthy(get(c, "foreign"))
     {
         return Some(cid.clone());
     }
@@ -375,7 +375,11 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             geom::put(&mut out, "from", f.unwrap());
             geom::put(&mut out, "to", t.unwrap());
             internal.push(out);
-        } else if fh && te.as_ref().is_some_and(|te| get(te, "foreign").is_some()) {
+        } else if fh
+            && te
+                .as_ref()
+                .is_some_and(|te| geom::truthy(get(te, "foreign")))
+        {
             let te = te.unwrap();
             let fid = get(&te, "id").cloned().unwrap();
             let mut out = e.clone();
@@ -395,7 +399,11 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             }
         } else if fh && let Some(te) = te {
             port(&mut outgoing, &f.unwrap(), &te);
-        } else if th && fe.as_ref().is_some_and(|fe| get(fe, "foreign").is_some()) {
+        } else if th
+            && fe
+                .as_ref()
+                .is_some_and(|fe| geom::truthy(get(fe, "foreign")))
+        {
             let fe = fe.unwrap();
             let fid = get(&fe, "id").cloned().unwrap();
             let mut out = e.clone();
@@ -601,7 +609,7 @@ pub fn proposal_view(doc: &Value, which: Option<&Value>) -> Value {
     let leaves: Vec<Value> = seq(get(doc, "classes"))
         .iter()
         .filter(|c| {
-            get(c, "foreign").is_none()
+            !geom::truthy(get(c, "foreign"))
                 && !policy::omitted_id(get(c, "id").unwrap(), Some(&Value::Vector(omit.clone())))
         })
         .cloned()

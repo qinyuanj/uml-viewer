@@ -140,7 +140,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut count = 0;
     for c in classes {
         if g(c, "lang").map(name).as_deref() == Some("rust")
-            && g(c, "foreign").is_none()
+            && !geom::truthy(g(c, "foreign"))
             && !name(g(c, "id").unwrap()).contains('.')
         {
             root = Some(c);
@@ -151,7 +151,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut best_rank = i64::MAX;
     let mut best_len = i64::MAX;
     for c in classes {
-        if g(c, "foreign").is_some() || g(c, "shape").map(name).as_deref() == Some("oval") {
+        if geom::truthy(g(c, "foreign")) || g(c, "shape").map(name).as_deref() == Some("oval") {
             continue;
         }
         let class_id = name(g(c, "id").unwrap());

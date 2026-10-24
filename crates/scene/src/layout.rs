@@ -99,7 +99,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
             for kind in ["fields", "ops"] {
                 let shown: Vec<&Value> = seq(get(c, kind))
                     .iter()
-                    .filter(|x| kind != "ops" || get(x, "private").is_none())
+                    .filter(|x| kind != "ops" || !geom::truthy(get(x, "private")))
                     .collect();
                 if !shown.is_empty() {
                     lines.push(line("rule", None, vec![]));

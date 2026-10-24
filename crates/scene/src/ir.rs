@@ -192,7 +192,7 @@ fn class(c: &Value) -> Result<Value> {
         },
     };
     let idv = id(g(c, "id").unwrap_or(&label))?;
-    let oval = g(c, "foreign").is_some() || g(c, "shape").map(name).as_deref() == Some("oval");
+    let oval = geom::truthy(g(c, "foreign")) || g(c, "shape").map(name).as_deref() == Some("oval");
     let mut r = Value::Map(vec![
         (Value::keyword("id"), idv),
         (Value::keyword("name"), label),

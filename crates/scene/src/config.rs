@@ -2,7 +2,7 @@
 //! `love/uml/domain/config.lua`). The band boundaries, the grade ramps and
 //! the pooling rules are golden-protected behaviour: unchanged from the JVM.
 
-use crate::geom::{get, num, numval};
+use crate::geom::{get, num, numval, truthy};
 use edn::Value;
 
 pub const GRADE_BEST: f64 = 10.0;
@@ -145,7 +145,7 @@ pub fn summarize_scores(scores: &[Value]) -> Option<Value> {
 
 /// Modules only: no foreign classes, no oval stubs.
 fn module(c: &Value) -> bool {
-    get(c, "foreign").is_none() && get(c, "shape") != Some(&Value::keyword("oval"))
+    !truthy(get(c, "foreign")) && get(c, "shape") != Some(&Value::keyword("oval"))
 }
 
 fn score(x: &Value) -> Option<f64> {

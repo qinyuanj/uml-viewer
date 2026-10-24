@@ -12,6 +12,12 @@ pub fn get<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
     }
 }
 
+/// Lua truthiness of a looked-up flag: absent, `nil` and `false` are false
+/// (`get(..).is_some()` would count an authored `false` as set).
+pub fn truthy(v: Option<&Value>) -> bool {
+    !matches!(v, None | Some(Value::Nil) | Some(Value::Bool(false)))
+}
+
 /// Map lookup that keeps an explicit `nil` (Lua `E.get` found-flag use).
 pub fn get_raw<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
     m.get(&Value::keyword(key))
