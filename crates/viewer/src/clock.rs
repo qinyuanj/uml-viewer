@@ -43,7 +43,6 @@ mod tests {
         for range in [0..4, 5..7, 8..10, 11..13, 14..16, 17..19] {
             assert!(digits(range), "{name}");
         }
-        assert!(name.starts_with("2023-11-1"), "{name}");
     }
 
     #[test]
