@@ -208,22 +208,6 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: Option<&Value>, omit: Option<&Va
     Value::Vector(out)
 }
 
-/// `os.date('%Y-%m-%d %H:%M:%S', epoch)` in local time (POSIX delivery).
-pub fn timestamp_name(epoch: i64) -> String {
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let time: libc::time_t = epoch;
-    unsafe { libc::localtime_r(&time, &mut tm) };
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec
-    )
-}
-
 /// Flatten an nse tree into its leaf/class ids, in encounter order.
 pub fn nse_ids(nses: Option<&Value>) -> Vec<Value> {
     let mut out = Vec::new();

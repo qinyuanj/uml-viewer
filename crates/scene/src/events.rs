@@ -119,18 +119,17 @@ fn persist(s: ViewState, doc: Value, boundary: Option<&dyn Boundary>) -> ViewSta
     rebuild(n)
 }
 
-/// Create a proposal. Only this path default-names one, with a local
-/// timestamp; `now` keeps headless callers deterministic.
-pub fn add_proposal(s: &ViewState, now: Option<i64>, boundary: Option<&dyn Boundary>) -> ViewState {
+/// Create a proposal with id `p-<now>[-n]` and the caller's `name`. The
+/// front end reads the clock and formats the default local-time name.
+pub fn add_proposal(
+    s: &ViewState,
+    now: i64,
+    name: &str,
+    boundary: Option<&dyn Boundary>,
+) -> ViewState {
     let Some(doc) = s.document.clone() else {
         return s.clone();
     };
-    let now = now.unwrap_or_else(|| {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0)
-    });
     let base = format!("p-{now}");
     let mut id = Value::keyword(&base);
     let mut n = 0;
@@ -141,10 +140,7 @@ pub fn add_proposal(s: &ViewState, now: Option<i64>, boundary: Option<&dyn Bound
     let mut proposals: Vec<Value> = H::named_proposals(&doc);
     proposals.push(Value::Map(vec![
         (Value::keyword("id"), id.clone()),
-        (
-            Value::keyword("name"),
-            Value::String(crate::policy::timestamp_name(now)),
-        ),
+        (Value::keyword("name"), Value::String(name.to_owned())),
         (Value::keyword("layers"), Value::Vector(vec![])),
         (
             Value::keyword("notice"),

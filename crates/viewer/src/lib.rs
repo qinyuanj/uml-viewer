@@ -7,6 +7,7 @@
 pub mod app;
 pub mod bench;
 pub mod cli;
+pub mod clock;
 pub mod commands;
 pub mod detail;
 pub mod driver;

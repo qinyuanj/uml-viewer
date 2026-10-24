@@ -7,4 +7,3 @@ publish.workspace = true
 
 [dependencies]
 edn = { path = "../edn" }
-libc = "0.2"

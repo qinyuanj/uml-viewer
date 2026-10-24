@@ -27,7 +27,7 @@ use crate::{
     cli::Options, fonts, identity, inspector, mail, mail_watch, mailbox, metrics, paint,
     project_files, session, signal, strings,
 };
-use crate::{source, theme, watch};
+use crate::{clock, source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
 /// Default window in points (the LOVE viewer's 1500x920 view units); egui
@@ -846,8 +846,13 @@ impl Viewer {
                     self.state.discussion_context = Some(choice.context);
                 }
                 Action::NewProposal => {
-                    self.state =
-                        events::add_proposal(&self.state, None, Some(&project_files::Files));
+                    let now = clock::now();
+                    self.state = events::add_proposal(
+                        &self.state,
+                        now,
+                        &clock::proposal_name(now),
+                        Some(&project_files::Files),
+                    );
                     self.gui.invalidate();
                 }
                 Action::Declutter => self.state = events::cycle_declutter(&self.state),

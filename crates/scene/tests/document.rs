@@ -2,7 +2,7 @@
 //! proposal_spec.lua and viewer_spec.lua oracle. Expected file contents are
 //! checked structurally against literals from the spec.
 
-use edn::record::{get, local_name};
+use edn::record::get;
 use edn::{Value, parse};
 use scene::document::{self, Boundary, MemoryBoundary, ViewState};
 use scene::overlay::Snapshot;
@@ -133,20 +133,33 @@ fn adds_renames_and_deletes_a_proposal_without_touching_the_ir_path() {
         .lock()
         .unwrap()
         .insert("probe".into(), "x".into());
-    let added = scene::events::add_proposal(&state, Some(1_700_000_000), Some(&boundary));
+    let added = scene::events::add_proposal(&state, 1_700_000_000, "Fixed", Some(&boundary));
     let id = get(&added.extra, "proposal-id").cloned().unwrap();
+    assert_eq!(Value::keyword("p-1700000000"), id);
     assert_eq!(Some(&Value::Bool(true)), get(&added.extra, "proposal"));
     assert_eq!(2, seq(added.document.as_ref().unwrap(), "proposals").len());
     let records = seq(added.document.as_ref().unwrap(), "proposals");
-    let stamp = match get(&records[1], "name").unwrap() {
-        Value::String(s) => s.clone(),
-        _ => panic!(),
-    };
-    // `%Y-%m-%d %H:%M:%S` local time, from a fixed epoch.
-    assert_eq!(19, stamp.len(), "{stamp}");
+    assert_eq!(Some(&id), get(&records[1], "id"));
     assert_eq!(
-        local_name(&id).unwrap_or_default().to_owned(),
-        stamp_second_part(&records[1])
+        Some(&Value::String("Fixed".into())),
+        get(&records[1], "name")
+    );
+    // The same epoch again takes the next de-duplication suffix.
+    let again = scene::events::add_proposal(&added, 1_700_000_000, "Again", None);
+    let records = seq(again.document.as_ref().unwrap(), "proposals");
+    assert_eq!(3, records.len());
+    assert_eq!(
+        Some(&Value::keyword("p-1700000000-1")),
+        get(&records[2], "id")
+    );
+    assert_eq!(
+        Some(&Value::String("Again".into())),
+        get(&records[2], "name")
+    );
+    let third = scene::events::add_proposal(&again, 1_700_000_000, "Third", None);
+    assert_eq!(
+        Some(&Value::keyword("p-1700000000-2")),
+        get(&seq(third.document.as_ref().unwrap(), "proposals")[3], "id")
     );
     let renamed = scene::events::rename_proposal(&added, Some(&id), "Named", None);
     assert!(proposal_named(renamed.document.as_ref().unwrap(), "Named").is_some());
@@ -176,14 +189,6 @@ fn adds_renames_and_deletes_a_proposal_without_touching_the_ir_path() {
     );
 }
 
-fn stamp_second_part(record: &Value) -> String {
-    // The proposal id is `p-<epoch>[-n]`; the name is its timestamp.
-    match get(record, "id").unwrap() {
-        Value::Keyword(k) => k.clone(),
-        _ => panic!(),
-    }
-}
-
 #[test]
 fn persists_add_rename_delete_through_the_sibling_policy_boundary() {
     let b = MemoryBoundary::default();
@@ -203,7 +208,7 @@ fn persists_add_rename_delete_through_the_sibling_policy_boundary() {
         None,
     );
     state.path = Some(edn.into());
-    let added = scene::events::add_proposal(&state, Some(1_700_000_000), Some(&b));
+    let added = scene::events::add_proposal(&state, 1_700_000_000, "Fixed", Some(&b));
     assert!(b.exists(edn));
     assert!(b.read(edn).unwrap().starts_with(";; Generated"));
     let ir = parse(&b.read(edn).unwrap()).unwrap();
@@ -250,7 +255,7 @@ fn write_proposals_preserves_omissions_and_authored_grouping_state() {
         None,
     );
     state.path = Some(edn.into());
-    let state = scene::events::add_proposal(&state, Some(1_700_000_000), Some(&b));
+    let state = scene::events::add_proposal(&state, 1_700_000_000, "Fixed", Some(&b));
     let persisted = parse(&b.read(policy).unwrap()).unwrap();
     for record in [
         seq(&persisted, "proposals")[0].clone(),

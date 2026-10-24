@@ -17,6 +17,7 @@ eframe = { version = "0.37", default-features = false, features = [
     "system_fonts",
 ] }
 egui = { version = "0.37" }
+libc = "0.2"
 image = { version = "0.25", default-features = false, features = ["png"] }
 winit = { version = "0.30", features = ["x11", "wayland"] }
 
