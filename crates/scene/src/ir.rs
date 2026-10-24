@@ -167,7 +167,7 @@ fn member(x: &Value) -> Result<Value> {
             edn::record::put(&mut r, k, v);
         }
     }
-    if g(x, "private") == Some(&Value::Bool(true)) {
+    if edn::record::is_true(x, "private") {
         edn::record::put(&mut r, "private", Value::Bool(true));
     }
     if let Some(n) = g(x, "name") {
@@ -208,7 +208,7 @@ fn class(c: &Value) -> Result<Value> {
         (Value::keyword("crap"), crap(g(c, "crap"))?),
         (
             Value::keyword("hide-members"),
-            Value::Bool(g(c, "hide-members") == Some(&Value::Bool(true))),
+            Value::Bool(edn::record::is_true(c, "hide-members")),
         ),
     ]);
     for k in ["coverage", "cc", "killed", "survived", "uncovered", "sites"] {
@@ -289,7 +289,7 @@ pub fn normalize(raw: &Value) -> Result<Value> {
                 g(e, "label").cloned().unwrap_or(Value::Nil),
             ),
         ]);
-        if g(e, "violating") == Some(&Value::Bool(true)) {
+        if edn::record::is_true(e, "violating") {
             edn::record::put(&mut x, "violating", Value::Bool(true));
         }
         es.push(x);
@@ -313,8 +313,8 @@ pub fn normalize(raw: &Value) -> Result<Value> {
 
 fn default_or<'a>(v: Option<&'a Value>, d: &'a Value) -> &'a Value {
     match v {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => d,
-        Some(v) => v,
+        Some(x) if edn::record::truthy(v) => x,
+        _ => d,
     }
 }
 
@@ -324,7 +324,7 @@ pub fn read_document(text: &str) -> Result<Value> {
     if !matches!(raw, Value::Map(_)) {
         return Err("document must be an EDN map".into());
     }
-    if g(&raw, "hierarchical") == Some(&Value::Bool(true)) {
+    if edn::record::flag(&raw, "hierarchical") {
         return Ok(raw);
     }
     let mut ds = Vec::new();

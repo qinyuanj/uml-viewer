@@ -20,7 +20,7 @@ pub fn deps_of(e: &Value) -> Option<Value> {
             (Value::keyword("to"), to.clone()),
             (
                 Value::keyword("violating"),
-                Value::Bool(edn::record::get(e, "violating") == Some(&Value::Bool(true))),
+                Value::Bool(edn::record::flag(e, "violating")),
             ),
         ])]));
     }
@@ -87,9 +87,7 @@ pub fn dep_indicators(scene: &Value) -> Value {
             } else {
                 vec![[x - 6.0, b], [x + 6.0, b], [x, b + h]]
             };
-            let violating = deps
-                .iter()
-                .any(|dep| edn::record::get(dep, "violating") == Some(&Value::Bool(true)));
+            let violating = deps.iter().any(|dep| edn::record::flag(dep, "violating"));
             out.push(Value::Map(vec![
                 (Value::keyword("id"), id.clone()),
                 (Value::keyword("dir"), Value::keyword(dir)),
@@ -187,9 +185,9 @@ pub fn at(scene: &Value, x: f64, y: f64) -> Option<Value> {
         return Some(ind);
     }
     let cs = seq(edn::record::get(scene, "classes"));
-    let visible = cs.iter().any(|c| edn::record::get(c, "dummy?").is_none());
+    let visible = cs.iter().any(|c| !edn::record::flag(c, "dummy?"));
     for c in cs.iter().rev() {
-        if visible && edn::record::get(c, "dummy?").is_some() {
+        if visible && edn::record::flag(c, "dummy?") {
             continue;
         }
         for dir in ["in", "out"] {
@@ -241,12 +239,7 @@ pub fn at(scene: &Value, x: f64, y: f64) -> Option<Value> {
                             "parent",
                             edn::record::get(c, "id").cloned().unwrap_or(Value::Nil),
                         ),
-                        (
-                            "drill?",
-                            Value::Bool(
-                                edn::record::get(line, "drill?") == Some(&Value::Bool(true)),
-                            ),
-                        ),
+                        ("drill?", Value::Bool(edn::record::flag(line, "drill?"))),
                     ]));
                 }
                 ly += 18.0;
@@ -257,10 +250,7 @@ pub fn at(scene: &Value, x: f64, y: f64) -> Option<Value> {
                     "id",
                     edn::record::get(c, "id").cloned().unwrap_or(Value::Nil),
                 ),
-                (
-                    "drill?",
-                    Value::Bool(edn::record::get(c, "drill?") == Some(&Value::Bool(true))),
-                ),
+                ("drill?", Value::Bool(edn::record::flag(c, "drill?"))),
             ]));
         }
     }

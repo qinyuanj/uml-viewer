@@ -41,14 +41,14 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
     } else {
         overlay::apply(doc, snapshots)
     };
-    if get(&doc, "hierarchical") == Some(&Value::Bool(true)) {
+    if edn::record::flag(&doc, "hierarchical") {
         let ps = H::named_proposals(&doc);
         let pid = get(extra, "proposal-id")
             .filter(|p| !matches!(p, Value::Nil))
             .cloned()
             .or_else(|| {
-                let proposed = get(extra, "proposal") == Some(&Value::Bool(true))
-                    || matches!(extra, Value::Bool(true));
+                let proposed =
+                    edn::record::flag(extra, "proposal") || matches!(extra, Value::Bool(true));
                 if proposed {
                     ps.first().and_then(|p| get(p, "id").cloned())
                 } else {
@@ -328,7 +328,7 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
     };
     let mut s = state.clone();
     let mut focus = snap.focus.clone();
-    if get(&doc, "hierarchical") == Some(&Value::Bool(true)) && !focus.is_empty() {
+    if edn::record::flag(&doc, "hierarchical") && !focus.is_empty() {
         // Reduce the retained focus only while it has no visible boxes; the
         // root always stops the walk.
         loop {

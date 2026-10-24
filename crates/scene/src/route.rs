@@ -447,7 +447,7 @@ pub fn route(scene: &mut Value) {
                 rank: edn::record::get(c, "rank")
                     .and_then(edn::record::num)
                     .unwrap_or(0.0),
-                dummy: edn::record::get(c, "dummy?").is_some(),
+                dummy: edn::record::flag(c, "dummy?"),
             });
         }
     }

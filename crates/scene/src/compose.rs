@@ -34,7 +34,7 @@ impl ClassIndex {
                 continue;
             };
             index.rect_by_id.insert(edn::encode(id).unwrap(), rect);
-            let dummy = get(c, "dummy?").is_some();
+            let dummy = flag(c, "dummy?");
             let slot = index.obstacles.len();
             index.obstacles.push((id.clone(), rect, dummy));
             let (x0, y0) = (

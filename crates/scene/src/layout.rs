@@ -72,7 +72,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
     lines.push(line("name", get(c, "name").cloned(), vec![]));
     // Lua `not g(c,'hide-members')`: an explicit `false` (every normalized
     // IR class carries one) still shows members (#148).
-    if matches!(get(c, "hide-members"), None | Some(Value::Bool(false))) {
+    if !edn::record::flag(c, "hide-members") {
         let kids = seq(get(c, "contents"));
         if !kids.is_empty() {
             lines.push(line("rule", None, vec![]));
@@ -87,7 +87,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
                         ),
                         (
                             Value::keyword("drill?"),
-                            Value::Bool(get(ch, "drill?") == Some(&Value::Bool(true))),
+                            Value::Bool(edn::record::is_true(ch, "drill?")),
                         ),
                     ],
                 ));
@@ -457,7 +457,7 @@ pub fn layout(diagram: &Value) -> Value {
             let rank = num(get(c, "rank").unwrap()).unwrap();
             put(c, "rank", numval(i as f64 * stride + rank));
             ports(c);
-            if get(c, "dummy?").is_none() {
+            if !edn::record::flag(c, "dummy?") {
                 real.push(c.clone());
                 rects.push(Rect::from_value(get(c, "rect").unwrap()).unwrap());
                 for k in ["in-ports", "out-ports"] {
@@ -507,7 +507,7 @@ pub fn layout(diagram: &Value) -> Value {
         }
         pkgs.push(pkg);
         for c in inner.iter_mut() {
-            if get(c, "dummy?").is_some() {
+            if edn::record::flag(c, "dummy?") {
                 put(c, "rect", pr.to_value());
                 ports(c);
             }

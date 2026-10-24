@@ -109,7 +109,7 @@ pub fn load(files: &[Snapshot]) -> Metrics {
 }
 
 fn doc_classes(doc: &Value) -> Vec<Value> {
-    if g(doc, "hierarchical") == Some(&Value::Bool(true)) {
+    if edn::record::flag(doc, "hierarchical") {
         return seq(g(doc, "classes")).to_vec();
     }
     let mut cs = Vec::new();
@@ -414,7 +414,7 @@ pub fn apply_metrics(doc: &Value, metrics: &Metrics) -> Value {
             paint(c, nss, metrics);
         }
     };
-    if g(&doc, "hierarchical") == Some(&Value::Bool(true)) {
+    if edn::record::flag(&doc, "hierarchical") {
         let classes = seq(g(&doc, "classes")).to_vec();
         let mut painted = Vec::with_capacity(classes.len());
         for mut c in classes.into_iter() {

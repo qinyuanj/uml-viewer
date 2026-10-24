@@ -57,7 +57,7 @@ fn clamp_zoom(z: f64) -> f64 {
 
 fn rebuild(mut s: ViewState) -> ViewState {
     if let Some(doc) = s.document.clone()
-        && get(&doc, "hierarchical") == Some(&Value::Bool(true))
+        && edn::record::flag(&doc, "hierarchical")
     {
         s.scene = document::compile_view(&doc, &s.snapshots, &s.focus.clone(), &s.extra.clone());
         // Recompiling geometry is not navigation: keep camera/zoom and valid
@@ -524,9 +524,7 @@ pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
     let kind = get(hit_value, "kind").map(|v| local_name(v).unwrap_or_default().to_owned())?;
     match kind.as_str() {
-        "class" if get(hit_value, "drill?") == Some(&Value::Bool(true)) => {
-            get(hit_value, "id").cloned()
-        }
+        "class" if edn::record::flag(hit_value, "drill?") => get(hit_value, "id").cloned(),
         "child" => get(hit_value, "parent").cloned(),
         "package" if H::proposal_package_id(get(hit_value, "id")) => get(hit_value, "id").cloned(),
         _ => None,
@@ -747,7 +745,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
     let hierarchical = s
         .document
         .as_ref()
-        .is_some_and(|d| get(d, "hierarchical") == Some(&Value::Bool(true)));
+        .is_some_and(|d| edn::record::flag(d, "hierarchical"));
     if !present && !hierarchical {
         return s.clone();
     }
@@ -761,7 +759,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
         let parent: Vec<Value> = parts[..parts.len() - 1].iter().map(|p| kw(p)).collect();
         let candidate = document::compile_view(&doc, &s.snapshots, &parent, &Value::Map(vec![]));
         let found = hit::class_by_id(&candidate, id)
-            .map(|c| get(c, "drill?") == Some(&Value::Bool(true)))
+            .map(|c| edn::record::flag(c, "drill?"))
             .unwrap_or(false);
         if !found {
             return s.clone();
@@ -775,7 +773,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
         let doc = n.document.clone().unwrap();
         n.scene = document::compile_view(&doc, &n.snapshots, &n.focus.clone(), &n.extra.clone());
         hit::class_by_id(&n.scene, id)
-            .map(|c| get(c, "dummy?").is_none() && get(c, "proposal-group?").is_none())
+            .map(|c| !edn::record::flag(c, "dummy?") && !edn::record::flag(c, "proposal-group?"))
             .unwrap_or(false)
     };
     let pid = get(&n.extra, "proposal-id").cloned();

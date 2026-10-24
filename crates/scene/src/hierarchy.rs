@@ -80,7 +80,7 @@ fn label(x: &Value) -> String {
 }
 
 fn module_name(c: &Value) -> String {
-    if get(c, "proposal-group?").is_some() {
+    if edn::record::flag(c, "proposal-group?") {
         return match get(c, "name") {
             Some(v @ Value::String(_)) => local_name(v).unwrap_or_default().to_owned(),
             _ => label(get(c, "id").unwrap()),
@@ -592,7 +592,7 @@ fn group_box(group: &Value, kids: &[Value]) -> Value {
                 (Value::keyword("name"), Value::String(module_name(c))),
                 (
                     Value::keyword("drill?"),
-                    Value::Bool(get(c, "drill?") == Some(&Value::Bool(true))),
+                    Value::Bool(edn::record::is_true(c, "drill?")),
                 ),
             ])
         })
@@ -803,7 +803,7 @@ pub fn layer_view(doc: &Value, which: Option<&Value>, pkg_id: &Value) -> Value {
     for p in &root_packages {
         for c in seq(get(p, "classes")) {
             if get(c, "id") == Some(pkg_id)
-                && get(c, "proposal-group?").is_some()
+                && edn::record::flag(c, "proposal-group?")
                 && !seq(get(c, "members")).is_empty()
             {
                 let cs = seq(get(c, "members")).to_vec();
@@ -979,7 +979,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
         let mut via: Vec<Value> = Vec::new();
         let mut deps: Vec<Value> = Vec::new();
         for e in &g.edges {
-            if get(e, "violating").is_some() && !viol {
+            if edn::record::flag(e, "violating") && !viol {
                 best = Some(e);
                 viol = true;
             } else if !viol
@@ -1010,7 +1010,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
                 ),
                 (
                     Value::keyword("violating"),
-                    Value::Bool(get(e, "violating") == Some(&Value::Bool(true))),
+                    Value::Bool(edn::record::is_true(e, "violating")),
                 ),
             ]));
         }
@@ -1052,7 +1052,7 @@ pub fn hide_classes(view: &Value) -> Value {
         let mut real: Vec<Value> = Vec::new();
         let mut endpoint: Option<Value> = None;
         for c in seq(get(&p, "classes")) {
-            if get(c, "dummy?").is_some() {
+            if edn::record::flag(c, "dummy?") {
                 if endpoint.is_none() {
                     endpoint = Some(c.clone());
                 }

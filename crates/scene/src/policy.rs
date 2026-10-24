@@ -10,8 +10,8 @@ pub const PROPOSAL_NOTICE: &str = "PROPOSAL — not instantiated in code";
 
 fn default<'a>(v: Option<&'a Value>, d: &'a Value) -> &'a Value {
     match v {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => d,
-        Some(v) => v,
+        Some(x) if edn::record::truthy(v) => x,
+        _ => d,
     }
 }
 
@@ -77,7 +77,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         let group = &mut groups[gi];
         // The first edge of a new pair seeded `best` above; still apply the
         // kind comparison so an equal-rank later edge wins, as in Lua.
-        group.violating = group.violating || get(e, "violating") == Some(&Value::Bool(true));
+        group.violating = group.violating || edn::record::is_true(e, "violating");
         if kind_rank(get(e, "kind")) >= kind_rank(get(&group.best, "kind")) {
             group.best = e.clone();
         }
@@ -130,7 +130,7 @@ pub fn rank_of(x: &Value, ranks: &Value) -> Option<f64> {
     let mut n = Some(local_name(x).unwrap_or_default().to_owned());
     while let Some(cur) = n {
         if let Some(v) = ranks.get(&Value::keyword(&cur))
-            && !matches!(v, Value::Nil | Value::Bool(false))
+            && edn::record::truthy(Some(v))
         {
             return edn::record::num(v);
         }
@@ -202,7 +202,7 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: Option<&Value>, omit: Option<&Va
         }
         let mut c = e.clone();
         if let Some(k) = kinds.get(&Value::Vector(pair.clone()))
-            && !matches!(k, Value::Nil | Value::Bool(false))
+            && edn::record::truthy(Some(k))
         {
             edn::record::put(&mut c, "kind", k.clone());
         }
