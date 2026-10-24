@@ -21,11 +21,13 @@ The diagram is already on screen.
   them when rewriting policy. Do not invent them on launch. The inspector
   lists them; **P** returns to the namespace tree. If instructed, add a
   named proposal (default name is a timestamp) and regenerate the IR.
-- After source or policy change: `./uml crap`, `./uml mutate` on changed
-  source files (differential), then `./uml ir`. Rust mutation recompiles
-  every mutant, so it is slow; that cost is accepted. Uncovered mutants are
-  coverage gaps: keep the snapshot; do not re-run the file or force a
-  full mutation because mutate exited non-zero.
+- After source or policy change: `./uml crap`, then `./uml ir`. Mutation
+  is run by the maintainer by hand: when you hand off, list the changed
+  source files so they can run a differential `./uml mutate`. Uncovered
+  mutants are coverage gaps: keep the snapshot.
+- In a git worktree of this repository, run `./uml` with
+  `UML_VIEWER_TOOL_ROOT` set to that worktree so it uses the tree under
+  change, not the clone in `.uml-viewer/uml-viewer/`.
 - Mail files are queues `{:next-id n :queue [cmd …]}`. Pop the head of
   `:queue` as you handle it (rewrite the file). Oldest first.
 - Right-click quality mail uses public `./uml crap` / `./uml mutate` dispatch
