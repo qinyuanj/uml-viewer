@@ -42,8 +42,7 @@
   {:name "cleanup", :namespace "companion::herdr::Herdr", :complexity 59, :coverage 89.2655, :crap 63.3058}
   {:name "commands", :namespace "viewer::commands", :complexity 38, :coverage 75.2381, :crap 59.924}
   {:name "string_value", :namespace "companion::json::Decoder", :complexity 29, :coverage 67.1642, :crap 58.7741}
-  {:name "locate", :namespace "scene::events", :complexity 25, :coverage 62.5, :crap 57.959}
-  {:name "scan", :namespace "ir::scan::rust::RustScanner", :complexity 56, :coverage 92.4051, :crap 57.3739}
+  {:name "scan", :namespace "ir::scan::rust::RustScanner", :complexity 56, :coverage 92.4686, :crap 57.3397}
   {:name "spawn_native", :namespace "companion::posix", :complexity 7, :coverage 0.0, :crap 56.0}
   {:name "draw_window_controls", :namespace "viewer::app::Viewer", :complexity 7, :coverage 0.0, :crap 56.0}
   {:name "gui_target", :namespace "viewer::app::Viewer", :complexity 7, :coverage 0.0, :crap 56.0}
@@ -52,8 +51,9 @@
   {:name "draw_text", :namespace "viewer::paint", :complexity 7, :coverage 0.0, :crap 56.0}
   {:name "fit_px", :namespace "viewer::paint", :complexity 7, :coverage 0.0, :crap 56.0}
   {:name "check_gui", :namespace "viewer::driver", :complexity 19, :coverage 53.3333, :crap 55.6884}
+  {:name "locate", :namespace "scene::events", :complexity 25, :coverage 63.6364, :crap 55.0525}
   {:name "run", :namespace "companion::worker", :complexity 16, :coverage 46.9697, :crap 54.1779}
-  {:name "scan", :namespace "ir::scan::typescript::TypeScriptScanner", :complexity 49, :coverage 93.4911, :crap 49.6621}
+  {:name "scan", :namespace "ir::scan::typescript::TypeScriptScanner", :complexity 49, :coverage 93.5294, :crap 49.6505}
   {:name "shutdown", :namespace "companion::lifecycle", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "start", :namespace "companion::worker", :complexity 6, :coverage 0.0, :crap 42.0}
   {:name "long_end", :namespace "ir::scan::lua", :complexity 6, :coverage 0.0, :crap 42.0}
@@ -67,14 +67,14 @@
   {:name "paint", :namespace "scene::overlay", :complexity 41, :coverage 95.3488, :crap 41.1691}
   {:name "place", :namespace "scene::layout", :complexity 40, :coverage 98.125, :crap 40.0105}
   {:name "kind", :namespace "viewer::commands::Command", :complexity 19, :coverage 61.9048, :crap 38.958}
-  {:name "route", :namespace "scene::route", :complexity 37, :coverage 97.5309, :crap 37.0206}
+  {:name "route", :namespace "scene::route", :complexity 37, :coverage 97.5, :crap 37.0214}
   {:name "read_module", :namespace "ir::scan::typescript", :complexity 36, :coverage 91.6667, :crap 36.75}
   {:name "merge_scans", :namespace "ir::graph", :complexity 18, :coverage 61.4035, :crap 36.629}
   {:name "restore_session", :namespace "scene::document", :complexity 22, :coverage 68.9655, :crap 36.467}
   {:name "regex_end", :namespace "ir::scan::typescript", :complexity 20, :coverage 65.7895, :crap 36.0154}
-  {:name "scan", :namespace "ir::scan::lua::LuaScanner", :complexity 27, :coverage 77.1429, :crap 35.7054}
+  {:name "scan", :namespace "ir::scan::lua::LuaScanner", :complexity 27, :coverage 77.7778, :crap 35.0}
   {:name "read_module", :namespace "ir::scan::lua", :complexity 29, :coverage 82.716, :crap 33.3424}
-  {:name "view_at", :namespace "scene::hierarchy", :complexity 31, :coverage 88.6076, :crap 32.4209}
+  {:name "view_at", :namespace "scene::hierarchy", :complexity 31, :coverage 88.1579, :crap 32.5959}
   {:name "candidates", :namespace "scene::route", :complexity 31, :coverage 94.0678, :crap 31.2006}
   {:name "read_module", :namespace "ir::scan::rust", :complexity 30, :coverage 90.0901, :crap 30.8759}
   {:name "open_window", :namespace "companion::lifecycle", :complexity 5, :coverage 0.0, :crap 30.0}
@@ -91,11 +91,11 @@
   {:name "write_value", :namespace "edn", :complexity 27, :coverage 96.7742, :crap 27.0245}
   {:name "controller", :namespace "companion::role", :complexity 7, :coverage 26.4706, :crap 26.4796}
   {:name "balanced_parens", :namespace "ir::scan::rust", :complexity 7, :coverage 26.6667, :crap 26.3241}
-  {:name "packaged_document", :namespace "ir::policy", :complexity 25, :coverage 95.2756, :crap 25.0659}
+  {:name "packaged_document", :namespace "ir::policy", :complexity 25, :coverage 95.6835, :crap 25.0503}
   {:name "zoom_dir", :namespace "scene::events", :complexity 25, :coverage 100.0, :crap 25.0}
   {:name "rows", :namespace "viewer::detail", :complexity 24, :coverage 98.4962, :crap 24.002}
   {:name "encode_string", :namespace "companion::json", :complexity 11, :coverage 53.3333, :crap 23.2972}
-  {:name "collapse_arrows", :namespace "scene::hierarchy", :complexity 23, :coverage 97.4138, :crap 23.0092}
+  {:name "collapse_arrows", :namespace "scene::hierarchy", :complexity 23, :coverage 97.3684, :crap 23.0096}
   {:name "for_state", :namespace "viewer::detail", :complexity 22, :coverage 92.5926, :crap 22.1967}
   {:name "parse_part", :namespace "ir::scan::python", :complexity 9, :coverage 45.4545, :crap 22.145}
   {:name "member", :namespace "scene::ir", :complexity 20, :coverage 83.6066, :crap 21.7622}
@@ -106,7 +106,7 @@
   {:name "tokens", :namespace "viewer::source", :complexity 21, :coverage 98.1481, :crap 21.0028}
   {:name "layout", :namespace "scene::layout", :complexity 21, :coverage 98.3607, :crap 21.0019}
   {:name "read_module", :namespace "ir::scan::python", :complexity 21, :coverage 98.8764, :crap 21.0006}
-  {:name "normalize", :namespace "scene::ir", :complexity 20, :coverage 89.3939, :crap 20.4772}
+  {:name "normalize", :namespace "scene::ir", :complexity 20, :coverage 90.7692, :crap 20.3146}
   {:name "acquire", :namespace "companion::posix", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "indices", :namespace "edn::pair_order", :complexity 4, :coverage 0.0, :crap 20.0}
   {:name "statement_end", :namespace "ir::scan::typescript", :complexity 20, :coverage 100.0, :crap 20.0}
@@ -126,7 +126,7 @@
   {:name "select", :namespace "ir::detection", :complexity 19, :coverage 88.0952, :crap 19.6091}
   {:name "run_result", :namespace "ir", :complexity 19, :coverage 94.4444, :crap 19.0619}
   {:name "compile", :namespace "viewer::source", :complexity 19, :coverage 97.8261, :crap 19.0037}
-  {:name "owner", :namespace "scene::overlay", :complexity 19, :coverage 98.0392, :crap 19.0027}
+  {:name "owner", :namespace "scene::overlay", :complexity 19, :coverage 97.8723, :crap 19.0035}
   {:name "proposal_view", :namespace "scene::hierarchy", :complexity 19, :coverage 100.0, :crap 19.0}
   {:name "read_string", :namespace "edn::Parser", :complexity 15, :coverage 75.0, :crap 18.5156}
   {:name "export_fact", :namespace "ir::scan::typescript", :complexity 18, :coverage 89.0411, :crap 18.4264}
@@ -148,7 +148,7 @@
   {:name "frame", :namespace "viewer::bench::Bench", :complexity 15, :coverage 100.0, :crap 15.0}
   {:name "view", :namespace "viewer::detail", :complexity 15, :coverage 100.0, :crap 15.0}
   {:name "match_def_name", :namespace "ir::scan::python", :complexity 9, :coverage 59.2593, :crap 14.4773}
-  {:name "class", :namespace "scene::ir", :complexity 14, :coverage 97.4359, :crap 14.0033}
+  {:name "class", :namespace "scene::ir", :complexity 14, :coverage 97.2973, :crap 14.0039}
   {:name "pool_crap", :namespace "scene::config", :complexity 14, :coverage 98.2456, :crap 14.0011}
   {:name "view_class", :namespace "scene::hierarchy", :complexity 14, :coverage 98.3871, :crap 14.0008}
   {:name "poll", :namespace "companion::worker", :complexity 14, :coverage 100.0, :crap 14.0}
@@ -156,13 +156,14 @@
   {:name "mask", :namespace "ir::scan::rust", :complexity 12, :coverage 78.3784, :crap 13.4555}
   {:name "apply_mail", :namespace "scene::document", :complexity 13, :coverage 86.2069, :crap 13.4435}
   {:name "lib_name", :namespace "ir::scan::rust", :complexity 13, :coverage 87.5, :crap 13.3301}
-  {:name "run_child", :namespace "companion::recovery", :complexity 13, :coverage 88.8889, :crap 13.2318}
+  {:name "run_child", :namespace "companion::recovery", :complexity 13, :coverage 89.011, :crap 13.2243}
   {:name "match_binding_at", :namespace "ir::scan::lua", :complexity 13, :coverage 91.6667, :crap 13.0978}
   {:name "pool_mutants", :namespace "scene::config", :complexity 13, :coverage 92.5, :crap 13.0713}
   {:name "named_proposals", :namespace "scene::policy", :complexity 12, :coverage 81.25, :crap 12.9492}
   {:name "search", :namespace "scene::search", :complexity 12, :coverage 82.0513, :crap 12.8326}
   {:name "bounds", :namespace "viewer::commands::Command", :complexity 6, :coverage 44.0, :crap 12.3222}
   {:name "read_dispatch", :namespace "edn::Parser", :complexity 12, :coverage 88.8889, :crap 12.1975}
+  {:name "relaunch", :namespace "companion::herdr::Herdr", :complexity 12, :coverage 91.3043, :crap 12.0947}
   {:name "spawn_detached", :namespace "companion::posix", :complexity 12, :coverage 93.617, :crap 12.0374}
   {:name "dep_indicators", :namespace "scene::hit", :complexity 12, :coverage 94.8718, :crap 12.0194}
   {:name "observe", :namespace "companion::herdr::Herdr", :complexity 12, :coverage 97.0588, :crap 12.0037}
@@ -212,8 +213,7 @@
   {:name "mask", :namespace "ir::scan::lua", :complexity 10, :coverage 84.375, :crap 10.3815}
   {:name "flags", :namespace "ir::scan::python", :complexity 10, :coverage 89.4737, :crap 10.1166}
   {:name "verify", :namespace "companion::recovery", :complexity 10, :coverage 92.8571, :crap 10.0364}
-  {:name "prefix_ids", :namespace "scene::compose", :complexity 10, :coverage 94.1176, :crap 10.0204}
-  {:name "relaunch", :namespace "companion::herdr::Herdr", :complexity 10, :coverage 95.6522, :crap 10.0082}
+  {:name "prefix_ids", :namespace "scene::compose", :complexity 10, :coverage 92.8571, :crap 10.0364}
   {:name "cone", :namespace "scene::curve", :complexity 10, :coverage 96.4286, :crap 10.0046}
   {:name "compile_document", :namespace "scene::compose", :complexity 10, :coverage 98.3607, :crap 10.0004}
   {:name "hidden_sidebar", :namespace "companion::lifecycle", :complexity 10, :coverage 100.0, :crap 10.0}
@@ -330,6 +330,7 @@
   {:name "backend_options", :namespace "companion::role", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "fmt", :namespace "edn::Error", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "entries", :namespace "ir::files", :complexity 6, :coverage 100.0, :crap 6.0}
+  {:name "apply_edge_kinds", :namespace "ir::policy", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "normalize_proposal", :namespace "ir::policy", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "accepts", :namespace "ir::scan::python", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "word_positions", :namespace "ir::scan::rust", :complexity 6, :coverage 100.0, :crap 6.0}
@@ -366,6 +367,7 @@
   {:name "captures", :namespace "viewer::gui::Gui", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "card_hovered", :namespace "viewer::gui::Gui", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "open_source", :namespace "viewer::gui::Gui", :complexity 2, :coverage 0.0, :crap 6.0}
+  {:name "target", :namespace "viewer::mailbox", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "root", :namespace "viewer::metrics", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "add_quad", :namespace "viewer::paint", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "corner", :namespace "viewer::paint", :complexity 2, :coverage 0.0, :crap 6.0}
@@ -389,12 +391,12 @@
   {:name "project", :namespace "scene::cli", :complexity 5, :coverage 83.3333, :crap 5.1157}
   {:name "apply_edge_kinds", :namespace "scene::policy", :complexity 5, :coverage 83.3333, :crap 5.1157}
   {:name "match_use", :namespace "ir::scan::rust", :complexity 5, :coverage 85.7143, :crap 5.0729}
+  {:name "box_id", :namespace "scene::highlight", :complexity 5, :coverage 85.7143, :crap 5.0729}
   {:name "escape_class", :namespace "viewer::source", :complexity 5, :coverage 85.7143, :crap 5.0729}
   {:name "coverage", :namespace "viewer::theme", :complexity 5, :coverage 85.7143, :crap 5.0729}
   {:name "read_policy", :namespace "ir", :complexity 5, :coverage 88.8889, :crap 5.0343}
   {:name "match_mod", :namespace "ir::scan::rust", :complexity 5, :coverage 88.8889, :crap 5.0343}
   {:name "match_bare_import", :namespace "ir::scan::typescript", :complexity 5, :coverage 88.8889, :crap 5.0343}
-  {:name "box_id", :namespace "scene::highlight", :complexity 5, :coverage 88.8889, :crap 5.0343}
   {:name "status", :namespace "companion::herdr::Herdr", :complexity 5, :coverage 90.9091, :crap 5.0188}
   {:name "stat_start", :namespace "companion::posix", :complexity 5, :coverage 90.9091, :crap 5.0188}
   {:name "match_assign_function", :namespace "ir::scan::lua", :complexity 5, :coverage 91.6667, :crap 5.0145}
@@ -408,7 +410,6 @@
   {:name "launch_server", :namespace "companion::herdr::Herdr", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "wake_arguments", :namespace "companion::herdr_domain", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "new_token", :namespace "companion::recovery", :complexity 5, :coverage 100.0, :crap 5.0}
-  {:name "apply_edge_kinds", :namespace "ir::policy", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "ir_class", :namespace "ir::policy", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "unassigned", :namespace "ir::policy", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "declaration", :namespace "ir::scan::lua", :complexity 5, :coverage 100.0, :crap 5.0}
@@ -429,7 +430,6 @@
   {:name "port", :namespace "scene::route", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "worst_band", :namespace "viewer::commands", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "pair", :namespace "viewer::driver", :complexity 5, :coverage 100.0, :crap 5.0}
-  {:name "target", :namespace "viewer::mailbox", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "platform_support", :namespace "companion::posix", :complexity 3, :coverage 40.0, :crap 4.944}
   {:name "as_str", :namespace "ir::graph", :complexity 4, :coverage 66.6667, :crap 4.5926}
   {:name "number_text", :namespace "viewer::detail", :complexity 4, :coverage 66.6667, :crap 4.5926}
@@ -442,6 +442,7 @@
   {:name "get_i64", :namespace "companion::record", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "child_present", :namespace "companion::recovery_domain", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "module_relative", :namespace "ir::scan::lua", :complexity 4, :coverage 83.3333, :crap 4.0741}
+  {:name "detail_id_for", :namespace "scene::events", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "strings", :namespace "viewer::driver", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "stamp_tree", :namespace "viewer::watch", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "await_exit", :namespace "companion::posix", :complexity 4, :coverage 84.6154, :crap 4.0583}
@@ -451,10 +452,10 @@
   {:name "spec_capture", :namespace "ir::scan::typescript", :complexity 4, :coverage 85.7143, :crap 4.0466}
   {:name "poll", :namespace "companion::herdr::Herdr", :complexity 4, :coverage 87.5, :crap 4.0312}
   {:name "blank", :namespace "ir::graph", :complexity 4, :coverage 87.5, :crap 4.0312}
-  {:name "detail_id_for", :namespace "scene::events", :complexity 4, :coverage 87.5, :crap 4.0312}
   {:name "module_name", :namespace "scene::hierarchy", :complexity 4, :coverage 87.5, :crap 4.0312}
   {:name "write_atomic", :namespace "viewer::identity", :complexity 4, :coverage 87.5, :crap 4.0312}
   {:name "write_atomic", :namespace "viewer::project_files", :complexity 4, :coverage 87.5, :crap 4.0312}
+  {:name "drop_keys", :namespace "scene::geom", :complexity 4, :coverage 88.8889, :crap 4.0219}
   {:name "sub", :namespace "ir::text", :complexity 4, :coverage 90.0, :crap 4.016}
   {:name "match_class_bases", :namespace "ir::scan::python", :complexity 4, :coverage 90.9091, :crap 4.012}
   {:name "find_anchored", :namespace "ir::scan::typescript", :complexity 4, :coverage 92.3077, :crap 4.0073}
@@ -537,7 +538,6 @@
   {:name "as_bool", :namespace "companion::json::Json", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "as_str", :namespace "companion::json::Json", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "get", :namespace "companion::json::Json", :complexity 3, :coverage 80.0, :crap 3.072}
-  {:name "get_bool", :namespace "companion::record", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "parent", :namespace "ir::scan::rust", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "match_prefix_brace", :namespace "ir::scan::typescript", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "copy_map", :namespace "ir::value", :complexity 3, :coverage 80.0, :crap 3.072}
@@ -558,22 +558,22 @@
   {:name "try_acquire", :namespace "companion::posix", :complexity 3, :coverage 87.5, :crap 3.0176}
   {:name "strip_prefix_word", :namespace "ir::scan::typescript", :complexity 3, :coverage 87.5, :crap 3.0176}
   {:name "path", :namespace "scene::compose", :complexity 3, :coverage 87.5, :crap 3.0176}
+  {:name "string_vec", :namespace "companion::record", :complexity 3, :coverage 88.8889, :crap 3.0123}
   {:name "worker", :namespace "companion::role", :complexity 3, :coverage 88.8889, :crap 3.0123}
   {:name "join", :namespace "ir::scan::python", :complexity 3, :coverage 88.8889, :crap 3.0123}
   {:name "on_leave", :namespace "scene::events", :complexity 3, :coverage 88.8889, :crap 3.0123}
   {:name "chrome", :namespace "viewer::session", :complexity 3, :coverage 88.8889, :crap 3.0123}
   {:name "deps_of", :namespace "scene::hit", :complexity 3, :coverage 89.4737, :crap 3.0105}
-  {:name "string_vec", :namespace "companion::record", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "read_manifest", :namespace "companion::role", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "id_of", :namespace "ir::graph", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "find_plain", :namespace "ir::text", :complexity 3, :coverage 90.0, :crap 3.009}
-  {:name "drop_keys", :namespace "scene::geom", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "proposal_by_id", :namespace "scene::policy", :complexity 3, :coverage 90.0, :crap 3.009}
   {:name "retire_completed", :namespace "companion::recovery", :complexity 3, :coverage 90.9091, :crap 3.0068}
   {:name "end_tangent", :namespace "scene::curve", :complexity 3, :coverage 90.9091, :crap 3.0068}
   {:name "step", :namespace "viewer::search_box::SearchBox", :complexity 3, :coverage 92.8571, :crap 3.0033}
   {:name "with_levels", :namespace "scene::policy", :complexity 3, :coverage 93.75, :crap 3.0022}
   {:name "layers_from", :namespace "scene::policy", :complexity 3, :coverage 95.2381, :crap 3.001}
+  {:name "layers_from", :namespace "ir::policy", :complexity 3, :coverage 95.4545, :crap 3.0008}
   {:name "terminal_reset", :namespace "companion::herdr::Herdr", :complexity 3, :coverage 95.8333, :crap 3.0007}
   {:name "on_left_press", :namespace "scene::events", :complexity 3, :coverage 96.1538, :crap 3.0005}
   {:name "rename_proposal", :namespace "scene::events", :complexity 3, :coverage 96.1538, :crap 3.0005}
@@ -591,7 +591,6 @@
   {:name "write", :namespace "companion::ownership", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "mtime_stamp", :namespace "companion::posix", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "new", :namespace "companion::posix::SpawnArgs", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "get_vec", :namespace "companion::record", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "real_write", :namespace "companion::recovery", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "initial", :namespace "companion::recovery_domain", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "is_symbol", :namespace "edn", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -604,7 +603,6 @@
   {:name "ns_join", :namespace "ir::graph", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "scan_project", :namespace "ir::graph", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "hierarchical", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "layers_from", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "level_ranks", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "mark_violations", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "nse_ids", :namespace "ir::policy", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -617,8 +615,6 @@
   {:name "module_relative", :namespace "ir::scan::rust", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "accepts", :namespace "ir::scan::rust::RustScanner", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "is_id_start", :namespace "ir::scan::typescript", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "getd", :namespace "ir::value", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "or", :namespace "ir::value", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "crap_grade", :namespace "scene::config", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "function_weight", :namespace "scene::config", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "group", :namespace "scene::config", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -671,9 +667,9 @@
   {:name "read_runner", :namespace "companion::recovery", :complexity 2, :coverage 90.9091, :crap 2.003}
   {:name "match_export_type_star", :namespace "ir::scan::typescript", :complexity 2, :coverage 90.9091, :crap 2.003}
   {:name "module_relative", :namespace "ir::scan::typescript", :complexity 2, :coverage 91.6667, :crap 2.0023}
-  {:name "port", :namespace "scene::hierarchy", :complexity 2, :coverage 93.75, :crap 2.001}
+  {:name "port", :namespace "scene::hierarchy", :complexity 2, :coverage 92.8571, :crap 2.0015}
   {:name "finish_locate", :namespace "scene::events", :complexity 2, :coverage 94.1176, :crap 2.0008}
-  {:name "named", :namespace "ir::policy", :complexity 2, :coverage 96.4286, :crap 2.0002}
+  {:name "named", :namespace "ir::policy", :complexity 2, :coverage 96.875, :crap 2.0001}
   {:name "run_controller", :namespace "companion", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "run_preflight", :namespace "companion", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "run_runner", :namespace "companion", :complexity 1, :coverage 0.0, :crap 2.0}
@@ -983,11 +979,11 @@
   {:name "text", :namespace "ir::text", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "trim", :namespace "ir::text", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "contains", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "encode_key", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "get_truthy", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "id", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "id_name", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ids", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "key_of", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "kw", :namespace "ir::value", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "section_projection", :namespace "scene::cli", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "fit", :namespace "scene::compose", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "size", :namespace "scene::compose", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -1011,7 +1007,6 @@
   {:name "clamp_zoom", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "cycle_declutter", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "fit", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "kw", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "navigate", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "on_move", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "parse_hit", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -1019,6 +1014,7 @@
   {:name "world_xy", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "zoom_at", :namespace "scene::events", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "lerp", :namespace "scene::geom", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "name", :namespace "scene::geom", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "near", :namespace "scene::geom", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "near_polyline", :namespace "scene::geom", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "point", :namespace "scene::geom", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -1066,7 +1062,6 @@
   {:name "rank_key", :namespace "scene::route", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "union_rect", :namespace "scene::route", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "ascii_lower", :namespace "scene::search", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "geom_name", :namespace "scene::search", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "window_controls", :namespace "viewer::app", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "passed", :namespace "viewer::bench::Bench", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "set_meta", :namespace "viewer::bench::Bench", :complexity 1, :coverage 100.0, :crap 1.0}
