@@ -2,31 +2,25 @@
 
 use crate::geom::{self, Rect};
 use edn::Value;
-
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
-}
+use edn::record::{record, seq};
 
 /// `{:from :to :violating}` records of an edge: its collapsed `:deps`, else a
 /// single leaf record built from the endpoints.
 pub fn deps_of(e: &Value) -> Option<Value> {
-    let deps = geom::get(e, "deps");
+    let deps = edn::record::get(e, "deps");
     if let Some(Value::Vector(items)) = deps
         && !items.is_empty()
     {
         return Some(Value::Vector(items.clone()));
     }
-    let (from, to) = (geom::get(e, "from"), geom::get(e, "to"));
+    let (from, to) = (edn::record::get(e, "from"), edn::record::get(e, "to"));
     if let (Some(from), Some(to)) = (from, to) {
         return Some(Value::Vector(vec![Value::Map(vec![
             (Value::keyword("from"), from.clone()),
             (Value::keyword("to"), to.clone()),
             (
                 Value::keyword("violating"),
-                Value::Bool(geom::get(e, "violating") == Some(&Value::Bool(true))),
+                Value::Bool(edn::record::get(e, "violating") == Some(&Value::Bool(true))),
             ),
         ])]));
     }
@@ -34,24 +28,26 @@ pub fn deps_of(e: &Value) -> Option<Value> {
 }
 
 pub fn class_by_id<'a>(scene: &'a Value, id: &Value) -> Option<&'a Value> {
-    seq(geom::get(scene, "classes"))
+    seq(edn::record::get(scene, "classes"))
         .iter()
-        .find(|&c| geom::get(c, "id") == Some(id))
+        .find(|&c| edn::record::get(c, "id") == Some(id))
         .map(|v| v as _)
 }
 
 pub fn package_by_id<'a>(scene: &'a Value, id: &Value) -> Option<&'a Value> {
-    seq(geom::get(scene, "packages"))
+    seq(edn::record::get(scene, "packages"))
         .iter()
-        .find(|&c| geom::get(c, "id") == Some(id))
+        .find(|&c| edn::record::get(c, "id") == Some(id))
         .map(|v| v as _)
 }
 
 /// Edges touching the class id, in scene order.
 pub fn connected_edges(scene: &Value, id: &Value) -> Vec<Value> {
-    seq(geom::get(scene, "edges"))
+    seq(edn::record::get(scene, "edges"))
         .iter()
-        .filter(|e| geom::get(e, "from") == Some(id) || geom::get(e, "to") == Some(id))
+        .filter(|e| {
+            edn::record::get(e, "from") == Some(id) || edn::record::get(e, "to") == Some(id)
+        })
         .cloned()
         .collect()
 }
@@ -59,22 +55,22 @@ pub fn connected_edges(scene: &Value, id: &Value) -> Vec<Value> {
 /// Collapsed dependency triangles above/below each class box.
 pub fn dep_indicators(scene: &Value) -> Value {
     let mut out: Vec<Value> = Vec::new();
-    let es = seq(geom::get(scene, "edges"));
-    for c in seq(geom::get(scene, "classes")) {
-        let Some(r) = geom::get(c, "rect").and_then(Rect::from_value) else {
+    let es = seq(edn::record::get(scene, "edges"));
+    for c in seq(edn::record::get(scene, "classes")) {
+        let Some(r) = edn::record::get(c, "rect").and_then(Rect::from_value) else {
             continue;
         };
         for dir in ["in", "out"] {
             let endpoint = if dir == "in" { "to" } else { "from" };
             let (mut bx, mut leaf): (Vec<Value>, Vec<Value>) = (Vec::new(), Vec::new());
-            let id = geom::get(c, "id").unwrap();
+            let id = edn::record::get(c, "id").unwrap();
             for e in es {
                 if let Some(Value::Vector(deps)) = deps_of(e) {
                     for dep in &deps {
-                        if geom::get(e, endpoint) == Some(id) {
+                        if edn::record::get(e, endpoint) == Some(id) {
                             bx.push(dep.clone());
                         }
-                        if geom::get(dep, endpoint) == Some(id) {
+                        if edn::record::get(dep, endpoint) == Some(id) {
                             leaf.push(dep.clone());
                         }
                     }
@@ -93,7 +89,7 @@ pub fn dep_indicators(scene: &Value) -> Value {
             };
             let violating = deps
                 .iter()
-                .any(|dep| geom::get(dep, "violating") == Some(&Value::Bool(true)));
+                .any(|dep| edn::record::get(dep, "violating") == Some(&Value::Bool(true)));
             out.push(Value::Map(vec![
                 (Value::keyword("id"), id.clone()),
                 (Value::keyword("dir"), Value::keyword(dir)),
@@ -109,32 +105,34 @@ pub fn dep_indicators(scene: &Value) -> Value {
     Value::Vector(out)
 }
 
-fn map(entries: Vec<(&str, Value)>) -> Value {
-    Value::Map(
-        entries
-            .into_iter()
-            .map(|(k, v)| (Value::keyword(k), v))
-            .collect(),
-    )
-}
-
 /// Topmost dependency indicator at the point, if any.
 pub fn indicator_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
-    let inds = seq(geom::get(scene, "dep-indicators"));
+    let inds = seq(edn::record::get(scene, "dep-indicators"));
     for a in inds.iter().rev() {
-        let tri: Vec<[f64; 2]> = seq(geom::get(a, "triangle"))
+        let tri: Vec<[f64; 2]> = seq(edn::record::get(a, "triangle"))
             .iter()
             .filter_map(geom::vec2)
             .collect();
         if tri.len() == 3 && geom::near_triangle([x, y], &[tri[0], tri[1], tri[2]], pad) {
-            return Some(map(vec![
+            return Some(record(vec![
                 ("kind", Value::keyword("dep")),
-                ("dir", geom::get(a, "dir").cloned().unwrap_or(Value::Nil)),
-                ("id", geom::get(a, "id").cloned().unwrap_or(Value::Nil)),
-                ("deps", geom::get(a, "deps").cloned().unwrap_or(Value::Nil)),
+                (
+                    "dir",
+                    edn::record::get(a, "dir").cloned().unwrap_or(Value::Nil),
+                ),
+                (
+                    "id",
+                    edn::record::get(a, "id").cloned().unwrap_or(Value::Nil),
+                ),
+                (
+                    "deps",
+                    edn::record::get(a, "deps").cloned().unwrap_or(Value::Nil),
+                ),
                 (
                     "violating",
-                    geom::get(a, "violating").cloned().unwrap_or(Value::Nil),
+                    edn::record::get(a, "violating")
+                        .cloned()
+                        .unwrap_or(Value::Nil),
                 ),
             ]));
         }
@@ -145,14 +143,14 @@ pub fn indicator_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
 /// Topmost edge at the point, tested against its clipped strokes (the hidden
 /// gap never hits), else its raw points.
 pub fn edge_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
-    let es = seq(geom::get(scene, "edges"));
+    let es = seq(edn::record::get(scene, "edges"));
     for e in es.iter().rev() {
-        let strokes = seq(geom::get(e, "strokes"));
+        let strokes = seq(edn::record::get(e, "strokes"));
         let fallback;
         let paths: &[Value] = if !strokes.is_empty() {
             strokes
         } else {
-            let ps = geom::get(e, "points");
+            let ps = edn::record::get(e, "points");
             fallback = match ps {
                 Some(Value::Vector(items)) if items.len() > 1 => {
                     vec![Value::Vector(items.clone())]
@@ -164,10 +162,16 @@ pub fn edge_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
         for path in paths {
             let pts: Vec<[f64; 2]> = seq(Some(path)).iter().filter_map(geom::vec2).collect();
             if geom::near_polyline([x, y], &pts, pad) {
-                return Some(map(vec![
+                return Some(record(vec![
                     ("kind", Value::keyword("edge")),
-                    ("from", geom::get(e, "from").cloned().unwrap_or(Value::Nil)),
-                    ("to", geom::get(e, "to").cloned().unwrap_or(Value::Nil)),
+                    (
+                        "from",
+                        edn::record::get(e, "from").cloned().unwrap_or(Value::Nil),
+                    ),
+                    (
+                        "to",
+                        edn::record::get(e, "to").cloned().unwrap_or(Value::Nil),
+                    ),
                     ("deps", deps_of(e).unwrap_or(Value::Vector(vec![]))),
                 ]));
             }
@@ -182,58 +186,80 @@ pub fn at(scene: &Value, x: f64, y: f64) -> Option<Value> {
     if let Some(ind) = indicator_at(scene, x, y, 5.0) {
         return Some(ind);
     }
-    let cs = seq(geom::get(scene, "classes"));
-    let visible = cs.iter().any(|c| geom::get(c, "dummy?").is_none());
+    let cs = seq(edn::record::get(scene, "classes"));
+    let visible = cs.iter().any(|c| edn::record::get(c, "dummy?").is_none());
     for c in cs.iter().rev() {
-        if visible && geom::get(c, "dummy?").is_some() {
+        if visible && edn::record::get(c, "dummy?").is_some() {
             continue;
         }
         for dir in ["in", "out"] {
-            for p in seq(geom::get(c, &format!("{dir}-ports"))) {
-                let hit = geom::get(p, "rect")
+            for p in seq(edn::record::get(c, &format!("{dir}-ports"))) {
+                let hit = edn::record::get(p, "rect")
                     .and_then(Rect::from_value)
                     .is_some_and(|r| r.contains(x, y));
                 if hit {
-                    return Some(map(vec![
+                    return Some(record(vec![
                         ("kind", Value::keyword("port")),
-                        ("id", geom::get(p, "id").cloned().unwrap_or(Value::Nil)),
-                        ("parent", geom::get(c, "id").cloned().unwrap_or(Value::Nil)),
+                        (
+                            "id",
+                            edn::record::get(p, "id").cloned().unwrap_or(Value::Nil),
+                        ),
+                        (
+                            "parent",
+                            edn::record::get(c, "id").cloned().unwrap_or(Value::Nil),
+                        ),
                         ("dir", Value::keyword(dir)),
                     ]));
                 }
             }
         }
-        if let Some(r) = geom::get(c, "rect").and_then(Rect::from_value)
+        if let Some(r) = edn::record::get(c, "rect").and_then(Rect::from_value)
             && r.contains(x, y)
         {
             let mut ly = r.y + 16.0;
-            for line in seq(geom::get(c, "lines")) {
-                if geom::name(geom::get(line, "kind").unwrap()) == "rule" {
+            for line in seq(edn::record::get(c, "lines")) {
+                if edn::record::local_name(edn::record::get(line, "kind").unwrap())
+                    .unwrap_or_default()
+                    == "rule"
+                {
                     ly += 12.0;
                     continue;
                 }
                 if y >= ly
                     && y <= ly + 17.0
-                    && geom::name(geom::get(line, "kind").unwrap()) == "child"
+                    && edn::record::local_name(edn::record::get(line, "kind").unwrap())
+                        .unwrap_or_default()
+                        == "child"
                 {
-                    return Some(map(vec![
+                    return Some(record(vec![
                         ("kind", Value::keyword("child")),
-                        ("id", geom::get(line, "id").cloned().unwrap_or(Value::Nil)),
-                        ("parent", geom::get(c, "id").cloned().unwrap_or(Value::Nil)),
+                        (
+                            "id",
+                            edn::record::get(line, "id").cloned().unwrap_or(Value::Nil),
+                        ),
+                        (
+                            "parent",
+                            edn::record::get(c, "id").cloned().unwrap_or(Value::Nil),
+                        ),
                         (
                             "drill?",
-                            Value::Bool(geom::get(line, "drill?") == Some(&Value::Bool(true))),
+                            Value::Bool(
+                                edn::record::get(line, "drill?") == Some(&Value::Bool(true)),
+                            ),
                         ),
                     ]));
                 }
                 ly += 18.0;
             }
-            return Some(map(vec![
+            return Some(record(vec![
                 ("kind", Value::keyword("class")),
-                ("id", geom::get(c, "id").cloned().unwrap_or(Value::Nil)),
+                (
+                    "id",
+                    edn::record::get(c, "id").cloned().unwrap_or(Value::Nil),
+                ),
                 (
                     "drill?",
-                    Value::Bool(geom::get(c, "drill?") == Some(&Value::Bool(true))),
+                    Value::Bool(edn::record::get(c, "drill?") == Some(&Value::Bool(true))),
                 ),
             ]));
         }
@@ -241,15 +267,18 @@ pub fn at(scene: &Value, x: f64, y: f64) -> Option<Value> {
     if let Some(edge) = edge_at(scene, x, y, 8.0) {
         return Some(edge);
     }
-    let ps = seq(geom::get(scene, "packages"));
+    let ps = seq(edn::record::get(scene, "packages"));
     for p in ps.iter().rev() {
-        let hit = geom::get(p, "rect")
+        let hit = edn::record::get(p, "rect")
             .and_then(Rect::from_value)
             .is_some_and(|r| r.contains(x, y));
         if hit {
-            return Some(map(vec![
+            return Some(record(vec![
                 ("kind", Value::keyword("package")),
-                ("id", geom::get(p, "id").cloned().unwrap_or(Value::Nil)),
+                (
+                    "id",
+                    edn::record::get(p, "id").cloned().unwrap_or(Value::Nil),
+                ),
             ]));
         }
     }

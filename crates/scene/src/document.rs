@@ -6,11 +6,12 @@
 //! [`Boundary`] so this module never touches the filesystem itself.
 
 use crate::compose;
-use crate::geom::{self, get, name};
+use crate::geom;
 use crate::hierarchy as H;
 use crate::ir;
 use crate::overlay::{self, Snapshot};
 use edn::Value;
+use edn::record::{get, local_name};
 use std::collections::HashMap;
 
 /// Filesystem capability for proposal write-back, supplied by the caller.
@@ -71,7 +72,7 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
             H::view_at(&doc, focus)
         };
         let mut mode = mode.cloned();
-        if layer.is_some() && mode.as_ref().map(name).as_deref() == Some("classes") {
+        if layer.is_some() && mode.as_ref().and_then(local_name) == Some("classes") {
             mode = Some(Value::keyword("elements"));
         }
         // Authored ids survive: the viewer selects, clicks and menus by them.
@@ -243,7 +244,7 @@ fn card_target(s: &ViewState, id: &Value) -> bool {
 }
 
 fn selected_target(s: &ViewState, sel: &Value) -> bool {
-    let Some(kind) = get(sel, "kind").map(name) else {
+    let Some(kind) = get(sel, "kind").map(|v| local_name(v).unwrap_or_default().to_owned()) else {
         // A bare id (or a record without :kind) is a card target itself.
         return card_target(s, sel);
     };
@@ -412,8 +413,11 @@ pub trait MailBoundary {
 /// omit) only advance the cursor: omit is an outbound companion request.
 pub fn apply_mail(state: &ViewState, cmd: &Value, boundary: &dyn MailBoundary) -> ViewState {
     let mut s = state.clone();
-    s.mail_seen = get(cmd, "id").and_then(geom::num).unwrap_or(0.0) as i64;
-    let op = get(cmd, "op").map(name).unwrap_or_default();
+    s.mail_seen = get(cmd, "id").and_then(edn::record::num).unwrap_or(0.0) as i64;
+    let op = get(cmd, "op")
+        .and_then(local_name)
+        .unwrap_or_default()
+        .to_owned();
     if op == "display"
         && let Some(Value::String(path)) = get(cmd, "path")
     {
@@ -453,7 +457,7 @@ pub fn apply_mail(state: &ViewState, cmd: &Value, boundary: &dyn MailBoundary) -
         }
         s.path = Some(path);
         s.project_root = state.project_root.clone();
-        s.mail_seen = get(cmd, "id").and_then(geom::num).unwrap_or(0.0) as i64;
+        s.mail_seen = get(cmd, "id").and_then(edn::record::num).unwrap_or(0.0) as i64;
         s.discussion_context = state.discussion_context.clone();
         s.waiting = false;
         if s.zoom == 0.0 {
@@ -463,7 +467,7 @@ pub fn apply_mail(state: &ViewState, cmd: &Value, boundary: &dyn MailBoundary) -
     } else if op == "context" {
         let mut ctx = Value::Map(vec![]);
         for key in ["context", "proposal-id", "name"] {
-            if let Some(v) = geom::get_raw(cmd, key) {
+            if let Some(v) = edn::record::get_raw(cmd, key) {
                 ctx.assoc(Value::keyword(key), v.clone());
             }
         }

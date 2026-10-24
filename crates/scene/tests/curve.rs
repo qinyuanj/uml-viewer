@@ -17,8 +17,8 @@ fn close(expected: &edn::Value, actual: &edn::Value, path: &str) {
     use edn::Value;
     match expected {
         Value::Integer(_) | Value::Float(_) => {
-            let a = geom::num(expected).unwrap();
-            let b = geom::num(actual).unwrap_or(f64::NAN);
+            let a = edn::record::num(expected).unwrap();
+            let b = edn::record::num(actual).unwrap_or(f64::NAN);
             assert!(b.is_finite(), "{path}: actual not finite");
             assert!((a - b).abs() <= 1e-6, "{path}: expected {a} actual {b}");
         }
@@ -122,14 +122,20 @@ fn constrain_ends_rotates_shallow_handles_onto_the_face_cone() {
         ))
         .unwrap();
         let constrained = constrain_ends(&raw, Some(r), None);
-        let ops = geom::get(&constrained, "ops").unwrap().as_vector().unwrap();
-        let handle = geom::vec2(geom::get(&ops[0], "c1").unwrap()).unwrap();
+        let ops = edn::record::get(&constrained, "ops")
+            .unwrap()
+            .as_vector()
+            .unwrap();
+        let handle = geom::vec2(edn::record::get(&ops[0], "c1").unwrap()).unwrap();
         let (dx, dy) = (handle[0] - p[0], handle[1] - p[1]);
         assert!((dx.abs() - dy.abs()).abs() < 1e-6, "{p:?} {q:?}");
         assert!((dx * dx + dy * dy - 3600.0).abs() < 1e-6, "{p:?} {q:?}");
         // The input path is not mutated.
-        let raw_ops = geom::get(&raw, "ops").unwrap().as_vector().unwrap();
-        assert_eq!(geom::vec2(geom::get(&raw_ops[0], "c1").unwrap()), Some(q));
+        let raw_ops = edn::record::get(&raw, "ops").unwrap().as_vector().unwrap();
+        assert_eq!(
+            geom::vec2(edn::record::get(&raw_ops[0], "c1").unwrap()),
+            Some(q)
+        );
     }
 }
 

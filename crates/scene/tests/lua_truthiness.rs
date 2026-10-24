@@ -5,7 +5,7 @@
 //! compiled once offline on these exact documents.
 
 use edn::Value;
-use scene::geom::{self, get};
+use edn::record::get;
 
 fn compiled(text: &str) -> Value {
     let doc = scene::ir::read_document(text).unwrap();
@@ -13,9 +13,14 @@ fn compiled(text: &str) -> Value {
 }
 
 fn class(scene: &Value, id: &str) -> Value {
-    geom::get_slice(get(scene, "classes"))
+    edn::record::seq(get(scene, "classes"))
         .iter()
-        .find(|c| get(c, "id").map(geom::name).as_deref() == Some(id))
+        .find(|c| {
+            get(c, "id")
+                .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
+                .as_deref()
+                == Some(id)
+        })
         .cloned()
         .unwrap_or_else(|| panic!("class {id}"))
 }

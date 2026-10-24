@@ -4,8 +4,8 @@
 //! (acceptance-evidence/142-mail-session-restart/love-session/).
 
 use edn::Value;
+use edn::record::get;
 use scene::document::{self, ViewState};
-use scene::geom::get;
 use viewer::session::{self, Chrome};
 
 const LOVE_SESSION: &str = r#"{:window-w 1100 :window-h 700 :inspector-width 340 :path "/tmp/uml142 love 项目/diagram.edn" :discussion-context {:context :proposal :proposal-id :plan :name "中文方案"} :mail-seen 2 :focus [] :cam-x 33 :cam-y 21 :zoom 1.7 :selected {:kind :class :id :a} :detail-id :a}"#;

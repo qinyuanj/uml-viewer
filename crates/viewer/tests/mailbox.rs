@@ -4,8 +4,8 @@
 //! the exact target shape the LOVE viewer wrote.
 
 use edn::Value;
+use edn::record::get;
 use scene::document;
-use scene::geom::get;
 use viewer::mailbox::{self, MENU_OPS, Mailbox};
 
 const QUEUE: &str = "{:next-id 3 :queue [{:id 1 :op :context :context :proposal :proposal-id :p :name \"中文\"} {:id 2 :op :display :path \"second.edn\"}]}";
@@ -48,7 +48,7 @@ fn a_cursor_beyond_the_queued_ids_never_hides_mail() {
     assert_eq!(2, mailbox::last_id(&boxed));
     let (head, rest) = mailbox::take(&boxed);
     let head = head.unwrap();
-    assert_eq!(Some(2.0), get(&head, "id").and_then(scene::geom::num));
+    assert_eq!(Some(2.0), get(&head, "id").and_then(edn::record::num));
     assert!(mailbox::queue(&rest).is_empty());
     assert_eq!(
         0,

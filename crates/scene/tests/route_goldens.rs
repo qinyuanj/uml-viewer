@@ -37,9 +37,10 @@
 mod common;
 
 use common::{assert_close, assert_golden_tolerance, items, read_edn};
+use edn::record::get;
 use edn::{Value, parse};
 use scene::events::{self, Dims};
-use scene::geom::{self, get};
+use scene::geom;
 use std::path::PathBuf;
 
 const SCENARIOS: [&str; 8] = [
@@ -176,8 +177,14 @@ fn edge(scene: &Value, from: &str, to: &str) -> Value {
     items(get(scene, "edges"))
         .into_iter()
         .find(|e| {
-            get(e, "from").map(geom::name).as_deref() == Some(from)
-                && get(e, "to").map(geom::name).as_deref() == Some(to)
+            get(e, "from")
+                .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
+                .as_deref()
+                == Some(from)
+                && get(e, "to")
+                    .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
+                    .as_deref()
+                    == Some(to)
         })
         .unwrap_or_else(|| panic!("edge {from} -> {to}"))
 }
@@ -185,7 +192,12 @@ fn edge(scene: &Value, from: &str, to: &str) -> Value {
 fn rect(scene: &Value, id: &str) -> geom::Rect {
     items(get(scene, "classes"))
         .into_iter()
-        .find(|c| get(c, "id").map(geom::name).as_deref() == Some(id))
+        .find(|c| {
+            get(c, "id")
+                .map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
+                .as_deref()
+                == Some(id)
+        })
         .and_then(|c| get(&c, "rect").and_then(geom::Rect::from_value))
         .unwrap_or_else(|| panic!("class {id}"))
 }
@@ -195,7 +207,10 @@ fn points(e: &Value) -> Vec<[f64; 2]> {
         .iter()
         .map(|p| {
             let p = items(Some(p));
-            [geom::num(&p[0]).unwrap(), geom::num(&p[1]).unwrap()]
+            [
+                edn::record::num(&p[0]).unwrap(),
+                edn::record::num(&p[1]).unwrap(),
+            ]
         })
         .collect()
 }
@@ -285,7 +300,7 @@ fn curved_corners_and_end_tangents_left_to_right_match_the_original() {
     assert!(
         items(get(&curve, "ops"))
             .iter()
-            .any(|op| get(op, "op").map(geom::name).as_deref() == Some("cubic")),
+            .any(|op| get(op, "op").and_then(edn::record::local_name) == Some("cubic")),
         "corners are curved"
     );
     let (tip, behind) = (point(get(&e, "tip")), point(get(&e, "behind")));
@@ -319,7 +334,9 @@ fn proposal_view_of_a_hierarchical_document_matches_the_original() {
     let scene = compiled("proposal");
     let ids: Vec<String> = items(get(&scene, "packages"))
         .iter()
-        .filter_map(|p| get(p, "id").map(geom::name))
+        .filter_map(|p| {
+            get(p, "id").map(|v| edn::record::local_name(v).unwrap_or_default().to_owned())
+        })
         .collect();
     assert_eq!(
         vec![
@@ -338,7 +355,10 @@ fn proposal_view_of_a_hierarchical_document_matches_the_original() {
 
 fn point(v: Option<&Value>) -> [f64; 2] {
     let p = items(v);
-    [geom::num(&p[0]).unwrap(), geom::num(&p[1]).unwrap()]
+    [
+        edn::record::num(&p[0]).unwrap(),
+        edn::record::num(&p[1]).unwrap(),
+    ]
 }
 
 #[test]

@@ -9,7 +9,7 @@
 //! supplies the timestamp of each painted frame and applies the camera.
 
 use edn::Value;
-use scene::geom::{get, num};
+use edn::record::{get, num};
 use std::path::PathBuf;
 use std::time::Instant;
 

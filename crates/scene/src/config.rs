@@ -2,8 +2,9 @@
 //! `love/uml/domain/config.lua`). The band boundaries, the grade ramps and
 //! the pooling rules are golden-protected behaviour: unchanged from the JVM.
 
-use crate::geom::{get, num, numval, truthy};
+use crate::geom::numval;
 use edn::Value;
+use edn::record::{get, num, truthy};
 
 pub const GRADE_BEST: f64 = 10.0;
 pub const GRADE_MID: f64 = 5.5;

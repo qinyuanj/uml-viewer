@@ -12,9 +12,10 @@
 
 use crate::curve;
 use crate::document::compile_view;
-use crate::geom::{self, get};
+use crate::geom;
 use crate::overlay::Snapshot;
 use edn::Value;
+use edn::record::get;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -55,7 +56,7 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
             Some((edn::encode(id).unwrap(), rect))
         })
         .collect();
-    let packages: Vec<Value> = geom::get_slice(get(scene, "packages"))
+    let packages: Vec<Value> = edn::record::seq(get(scene, "packages"))
         .iter()
         .map(|p| {
             Value::Map(vec![
@@ -70,13 +71,13 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
             ])
         })
         .collect();
-    let edges: Vec<Value> = geom::get_slice(get(scene, "edges"))
+    let edges: Vec<Value> = edn::record::seq(get(scene, "edges"))
         .iter()
         .map(|e| {
             let from = get(e, "from").cloned().unwrap_or(Value::Nil);
             let to = get(e, "to").cloned().unwrap_or(Value::Nil);
             let points = get(e, "points").cloned().unwrap_or(Value::Vector(vec![]));
-            let pts = geom::get_slice(get(e, "points")).to_vec();
+            let pts = edn::record::seq(get(e, "points")).to_vec();
             let path = curve::constrain_ends(
                 &curve::basis_path(&pts),
                 index.get(&edn::encode(&from).unwrap()).copied(),
@@ -116,7 +117,7 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
     ]);
     for k in ["foreign", "title", "proposal", "dep-indicators"] {
         if let Some(v) = get(scene, k) {
-            geom::put(&mut view, k, v.clone());
+            edn::record::put(&mut view, k, v.clone());
         }
     }
     view
@@ -126,11 +127,11 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
 /// with its own size, class rects and routed edges (clipping happens once on
 /// the stacked scene, so section edges carry `:points` but no `:strokes`).
 fn section_projection(scene: &Value, focus: &Value) -> Value {
-    let sections: Vec<Value> = geom::get_slice(get(scene, "sections"))
+    let sections: Vec<Value> = edn::record::seq(get(scene, "sections"))
         .iter()
         .map(|s| {
-            let classes: Vec<Value> = geom::get_slice(get(s, "classes")).to_vec();
-            let edges: Vec<Value> = geom::get_slice(get(s, "edges")).to_vec();
+            let classes: Vec<Value> = edn::record::seq(get(s, "classes")).to_vec();
+            let edges: Vec<Value> = edn::record::seq(get(s, "edges")).to_vec();
             Value::Map(vec![
                 (
                     Value::keyword("title"),

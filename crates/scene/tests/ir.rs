@@ -1,8 +1,8 @@
 //! IR normalization — validation cases from viewer_spec plus the member and
 //! package canonicalization rules.
 
+use edn::record::get;
 use edn::{Value, parse};
-use scene::geom::get;
 use scene::ir::{normalize, read_document};
 
 #[test]
@@ -26,8 +26,8 @@ fn golden_ir_files_load_without_loss_or_duplication() {
         let text = std::fs::read_to_string(&path).unwrap();
         let raw = parse(&text).unwrap();
         assert_eq!(raw, read_document(&text).unwrap(), "{lang}");
-        let classes = scene::geom::get_slice(get(&raw, "classes"));
-        let edges = scene::geom::get_slice(get(&raw, "edges"));
+        let classes = edn::record::seq(get(&raw, "classes"));
+        let edges = edn::record::seq(get(&raw, "edges"));
         assert!(!classes.is_empty() && !edges.is_empty(), "{lang}");
         // Re-encoding and reparsing must be structurally identical.
         let round = parse(&edn::encode(&raw).unwrap()).unwrap();

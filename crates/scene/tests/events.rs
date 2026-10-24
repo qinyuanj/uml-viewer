@@ -1,10 +1,10 @@
 //! Navigation and proposal transitions — the events_spec,
 //! canvas_navigation_spec and search_spec oracle.
 
+use edn::record::{get, local_name};
 use edn::{Value, parse};
 use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
-use scene::geom::{get, name};
 
 fn kw(s: &str) -> Value {
     Value::keyword(s)
@@ -26,7 +26,14 @@ fn tree() -> ViewState {
 
 fn ids(s: &ViewState) -> Vec<String> {
     match get(&s.scene, "classes") {
-        Some(Value::Vector(cs)) => cs.iter().map(|c| name(get(c, "id").unwrap())).collect(),
+        Some(Value::Vector(cs)) => cs
+            .iter()
+            .map(|c| {
+                local_name(get(c, "id").unwrap())
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect(),
         _ => vec![],
     }
 }
@@ -230,13 +237,20 @@ fn opens_existing_proposal_packages_and_nested_groups_then_returns() {
     );
     assert_eq!(
         "arrows",
-        name(get(&events::cycle_declutter(&s).extra, "declutter").unwrap())
+        local_name(get(&events::cycle_declutter(&s).extra, "declutter").unwrap())
+            .unwrap_or_default()
+            .to_owned()
     );
     let mut c = s.clone();
     for _ in 0..5 {
         c = events::cycle_declutter(&c);
     }
-    assert_eq!("full", name(get(&c.extra, "declutter").unwrap()));
+    assert_eq!(
+        "full",
+        local_name(get(&c.extra, "declutter").unwrap())
+            .unwrap_or_default()
+            .to_owned()
+    );
 }
 
 #[test]
@@ -278,10 +292,10 @@ fn fits_after_navigation_once_the_canvas_is_known_never_on_rebuilds() {
     let settled = events::settle(&entered, &dims());
     assert!(!settled.fit_pending);
     let size = get(&entered.scene, "size").unwrap();
-    let w = scene::geom::num(get(size, "w").unwrap()).unwrap();
-    let h = scene::geom::num(get(size, "h").unwrap()).unwrap();
-    let x0 = scene::geom::num(get(size, "min-x").unwrap()).unwrap();
-    let y0 = scene::geom::num(get(size, "min-y").unwrap()).unwrap();
+    let w = edn::record::num(get(size, "w").unwrap()).unwrap();
+    let h = edn::record::num(get(size, "h").unwrap()).unwrap();
+    let x0 = edn::record::num(get(size, "min-x").unwrap()).unwrap();
+    let y0 = edn::record::num(get(size, "min-y").unwrap()).unwrap();
     let want = (1220.0 / (w - x0)).min(900.0 / (h - y0)).min(1.0);
     assert!((settled.zoom - want).abs() < 1e-12);
     assert!(events::back(&settled).fit_pending);
@@ -581,7 +595,7 @@ fn highlight_marks_edges_and_connected_classes_and_dims_the_rest() {
     }
     assert!(h.dimmed(&kw("d")));
     assert!(!h.dimmed(&kw("b")));
-    let edges = scene::geom::get_slice(get(&scene, "edges"));
+    let edges = edn::record::seq(get(&scene, "edges"));
     let e = edges
         .iter()
         .find(|e| get(e, "from") == Some(&kw("a")) && get(e, "to") == Some(&kw("b")))

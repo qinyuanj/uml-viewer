@@ -1,15 +1,18 @@
 //! Relationship highlighting (port of `love/uml/application/highlight.lua`):
 //! hit maps and scene edges in, ids and predicates out.
 
-use crate::geom::{get, name};
 use edn::Value;
+use edn::record::{get, local_name};
 use std::collections::HashSet;
 
 /// The class a hit stands for: the class itself, or the parent of a child
 /// row or port. Packages, edges and dependency triangles focus no class.
 pub fn box_id(hit: Option<&Value>) -> Option<Value> {
     let hit = hit?;
-    match get(hit, "kind").map(name).as_deref() {
+    match get(hit, "kind")
+        .map(|v| local_name(v).unwrap_or_default().to_owned())
+        .as_deref()
+    {
         Some("class") => get(hit, "id").cloned(),
         Some("child") | Some("port") => get(hit, "parent").cloned(),
         _ => None,
@@ -33,7 +36,7 @@ fn same_edge(e: &Value, hit: Option<&Value>) -> bool {
     let Some(hit) = hit else {
         return false;
     };
-    get(hit, "kind").map(name).as_deref() == Some("edge")
+    get(hit, "kind").and_then(local_name) == Some("edge")
         && get(e, "from") == get(hit, "from")
         && get(e, "to") == get(hit, "to")
 }
@@ -56,7 +59,7 @@ impl Highlight {
         let hover = box_id(hover);
         let mut related = HashSet::new();
         if focus.is_some() {
-            for e in crate::geom::get_slice(get(scene, "edges")) {
+            for e in edn::record::seq(get(scene, "edges")) {
                 if touches(e, focus.as_ref()) {
                     if let Some(k) = key(get(e, "from")) {
                         related.insert(k);

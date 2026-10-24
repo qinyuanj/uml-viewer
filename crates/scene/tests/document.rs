@@ -2,9 +2,9 @@
 //! proposal_spec.lua and viewer_spec.lua oracle. Expected file contents are
 //! checked structurally against literals from the spec.
 
+use edn::record::{get, local_name};
 use edn::{Value, parse};
 use scene::document::{self, Boundary, MemoryBoundary, ViewState};
-use scene::geom::{get, name};
 use scene::overlay::Snapshot;
 
 fn kw(s: &str) -> Value {
@@ -144,7 +144,10 @@ fn adds_renames_and_deletes_a_proposal_without_touching_the_ir_path() {
     };
     // `%Y-%m-%d %H:%M:%S` local time, from a fixed epoch.
     assert_eq!(19, stamp.len(), "{stamp}");
-    assert_eq!(name(&id), stamp_second_part(&records[1]));
+    assert_eq!(
+        local_name(&id).unwrap_or_default().to_owned(),
+        stamp_second_part(&records[1])
+    );
     let renamed = scene::events::rename_proposal(&added, Some(&id), "Named", None);
     assert!(proposal_named(renamed.document.as_ref().unwrap(), "Named").is_some());
     assert_eq!(
@@ -377,7 +380,7 @@ fn metric_only_changes_reload_from_the_base_ir_and_retain_focus() {
     );
     assert_eq!(
         Some(1.0),
-        scene::geom::num(
+        edn::record::num(
             get(get(&seq(&state.scene, "classes")[0], "crap").unwrap(), "mu").unwrap()
         )
     );
@@ -398,7 +401,7 @@ fn metric_only_changes_reload_from_the_base_ir_and_retain_focus() {
     assert_eq!(state.focus, next.focus);
     assert_eq!(
         Some(9.0),
-        scene::geom::num(get(get(&seq(&next.scene, "classes")[0], "crap").unwrap(), "mu").unwrap())
+        edn::record::num(get(get(&seq(&next.scene, "classes")[0], "crap").unwrap(), "mu").unwrap())
     );
 }
 

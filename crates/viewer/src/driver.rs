@@ -549,7 +549,7 @@ pub struct Script {
 }
 
 fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    v.get(&Value::keyword(key))
+    edn::record::get_raw(v, key)
 }
 
 fn text(v: Option<&Value>) -> Option<String> {
@@ -563,11 +563,7 @@ fn text(v: Option<&Value>) -> Option<String> {
 }
 
 fn number(v: Option<&Value>) -> Option<f64> {
-    match v? {
-        Value::Integer(n) => Some(*n as f64),
-        Value::Float(x) => Some(*x),
-        _ => None,
-    }
+    v.and_then(edn::record::num)
 }
 
 fn flag(v: Option<&Value>) -> bool {

@@ -6,7 +6,7 @@ use scene::compose::{compile_diagram, compile_document};
 use scene::geom::{self, Rect};
 
 fn seq<'a>(v: &'a Value, key: &str) -> &'a [Value] {
-    match geom::get(v, key) {
+    match edn::record::get(v, key) {
         Some(Value::Vector(items)) => items,
         _ => &[],
     }
@@ -23,13 +23,14 @@ fn stacks_flat_diagrams_with_qualified_endpoints_and_prepared_strokes() {
     for (i, e) in edges.iter().enumerate() {
         let want_from = Value::keyword(&format!("d{i}-a"));
         let want_to = Value::keyword(&format!("d{i}-b"));
-        assert_eq!(Some(&want_from), geom::get(e, "from"));
-        assert_eq!(Some(&want_to), geom::get(e, "to"));
+        assert_eq!(Some(&want_from), edn::record::get(e, "from"));
+        assert_eq!(Some(&want_to), edn::record::get(e, "to"));
         assert!(!seq(e, "strokes").is_empty());
     }
-    let tip_y = |e: &Value| geom::vec2(geom::get(e, "tip").unwrap()).unwrap()[1];
+    let tip_y = |e: &Value| geom::vec2(edn::record::get(e, "tip").unwrap()).unwrap()[1];
     assert!(tip_y(&edges[1]) > tip_y(&edges[0]));
-    let h = geom::num(geom::get(geom::get(&s, "size").unwrap(), "h").unwrap()).unwrap();
+    let h = edn::record::num(edn::record::get(edn::record::get(&s, "size").unwrap(), "h").unwrap())
+        .unwrap();
     assert!(h > tip_y(&edges[1]));
 }
 
@@ -41,7 +42,7 @@ fn hide_edges_replaces_strokes_with_incoming_and_outgoing_indicators() {
     let indicators = seq(&s, "dep-indicators");
     assert_eq!(2, indicators.len());
     for ind in indicators {
-        assert_eq!(Some(&Value::Bool(true)), geom::get(ind, "violating"));
+        assert_eq!(Some(&Value::Bool(true)), edn::record::get(ind, "violating"));
     }
 }
 
@@ -58,9 +59,9 @@ fn prepare_scene_clips_strokes_around_a_wall() {
     assert!(!strokes.is_empty());
     let wall = seq(&s, "classes")
         .iter()
-        .find(|c| geom::get(c, "id") == Some(&Value::keyword("wall")))
+        .find(|c| edn::record::get(c, "id") == Some(&Value::keyword("wall")))
         .unwrap();
-    let wr = Rect::from_value(geom::get(wall, "rect").unwrap())
+    let wr = Rect::from_value(edn::record::get(wall, "rect").unwrap())
         .unwrap()
         .inflate(4.9);
     for stroke in strokes {
@@ -88,6 +89,6 @@ fn single_diagram_document_compiles_through_the_same_path() {
     assert_eq!(1, seq(&s, "classes").len());
     assert_eq!(
         Some(&Value::keyword("d0-a")),
-        geom::get(&seq(&s, "classes")[0], "id")
+        edn::record::get(&seq(&s, "classes")[0], "id")
     );
 }

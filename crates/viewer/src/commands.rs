@@ -5,10 +5,11 @@
 //! widths stay in points and scale with DPI at paint time, never with zoom.
 
 use edn::Value;
+use edn::record::{get, local_name, seq};
 use egui::Color32;
 use scene::config as C;
 use scene::document::ViewState;
-use scene::geom::{self, Rect, get, get_slice, name};
+use scene::geom::{self, Rect};
 use scene::highlight::Highlight;
 
 use crate::strings;
@@ -293,12 +294,20 @@ pub enum EdgeCommand {
 
 fn bands(c: &Value) -> (&'static str, &'static str) {
     (
-        match name(&C::crap_band(C::crap_risk(get(c, "crap")))).as_str() {
+        match local_name(&C::crap_band(C::crap_risk(get(c, "crap"))))
+            .unwrap_or_default()
+            .to_owned()
+            .as_str()
+        {
             "green" => "green",
             "yellow" => "yellow",
             _ => "red",
         },
-        match name(&C::mutation_band(C::mutation_ratio(c))).as_str() {
+        match local_name(&C::mutation_band(C::mutation_ratio(c)))
+            .unwrap_or_default()
+            .to_owned()
+            .as_str()
+        {
             "green" => "green",
             "yellow" => "yellow",
             _ => "red",
@@ -365,7 +374,9 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
     let mut run: Vec<usize> = Vec::new();
     let mut y = ry + 16.0;
     let mut run_top = ry + if get(c, "level").is_some() { 14.0 } else { 4.0 };
-    let stereo = name(get(c, "stereotype").unwrap_or(&Value::Nil));
+    let stereo = local_name(get(c, "stereotype").unwrap_or(&Value::Nil))
+        .unwrap_or_default()
+        .to_owned();
     let flush = |out: &mut Vec<Command>,
                  run: &mut Vec<usize>,
                  run_top: f64,
@@ -406,8 +417,10 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
         }
         run.clear();
     };
-    for line in get_slice(get(c, "lines")) {
-        let kind = name(get(line, "kind").unwrap_or(&Value::Nil));
+    for line in seq(get(c, "lines")) {
+        let kind = local_name(get(line, "kind").unwrap_or(&Value::Nil))
+            .unwrap_or_default()
+            .to_owned();
         if kind == "rule" {
             flush(&mut out, &mut run, run_top, y - 5.0, marker);
             out.push(Command::Rule {
@@ -463,7 +476,8 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
 
 fn marked(view_hit: Option<&Value>, kind: &str, id: Option<&Value>) -> bool {
     view_hit.is_some_and(|hit| {
-        name(get(hit, "kind").unwrap_or(&Value::Nil)) == kind && get(hit, "id") == id
+        local_name(get(hit, "kind").unwrap_or(&Value::Nil)).unwrap_or_default() == kind
+            && get(hit, "id") == id
     })
 }
 
@@ -473,7 +487,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
     let h = Highlight::new(scene, selected, hover);
     let hover_id = h.hover.clone();
     let mut out = Vec::new();
-    for p in get_slice(get(scene, "packages")) {
+    for p in seq(get(scene, "packages")) {
         let (cb, mb) = bands(p);
         let band = worst_band(cb, mb);
         let Some(pr) = Rect::from_value(get(p, "rect").unwrap_or(&Value::Nil)) else {
@@ -482,7 +496,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         // Pooled package CRAP substitutes mu=20 for unmeasured members, so
         // missing is counted from the member classes themselves.
         let mut count = 0i64;
-        for c in get_slice(get(scene, "classes")) {
+        for c in seq(get(scene, "classes")) {
             if get(c, "package") == get(p, "id") && missing(c) {
                 count += 1;
             }
@@ -493,7 +507,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             rect: pr,
             text: match get(p, "title").or_else(|| get(p, "label")) {
                 Some(Value::String(s)) => s.clone(),
-                Some(v) => name(v),
+                Some(v) => local_name(v).unwrap_or_default().to_owned(),
                 None => String::new(),
             },
             band,
@@ -509,7 +523,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         });
         quality(&mut out, p, "package");
     }
-    for c in get_slice(get(scene, "classes")) {
+    for c in seq(get(scene, "classes")) {
         let Some(r) = Rect::from_value(get(c, "rect").unwrap_or(&Value::Nil)) else {
             continue;
         };
@@ -587,7 +601,9 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         let mut class_commands = Vec::new();
         class_commands.push(Command::Class {
             rect: r,
-            shape: name(get(c, "shape").unwrap_or(&Value::Nil)),
+            shape: local_name(get(c, "shape").unwrap_or(&Value::Nil))
+                .unwrap_or_default()
+                .to_owned(),
             red: band == "red",
             band,
             id: id.clone(),
@@ -602,7 +618,9 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             dimmed: false,
         });
         quality(&mut class_commands, c, "class");
-        let stereo = name(get(c, "stereotype").unwrap_or(&Value::Nil));
+        let stereo = local_name(get(c, "stereotype").unwrap_or(&Value::Nil))
+            .unwrap_or_default()
+            .to_owned();
         let marker = stereo == "abstract" || stereo == "interface";
         if marker {
             class_commands.push(Command::Marker {
@@ -626,7 +644,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 text: match level {
                     Value::Integer(n) => n.to_string(),
                     Value::Float(x) => format!("{x}"),
-                    _ => name(level),
+                    _ => local_name(level).unwrap_or_default().to_owned(),
                 },
                 x: r.x + 4.0,
                 y: r.y + 3.0,
@@ -659,7 +677,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 break;
             }
         }
-        let lines = get_slice(get(c, "lines"));
+        let lines = seq(get(c, "lines"));
         for (i, mut line) in slots.drain(..).enumerate() {
             if let Command::Text {
                 role,
@@ -691,7 +709,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             class_commands.push(line);
         }
         for dir in ["in", "out"] {
-            for p in get_slice(get(c, &format!("{dir}-ports"))) {
+            for p in seq(get(c, &format!("{dir}-ports"))) {
                 let Some(pr) = Rect::from_value(get(p, "rect").unwrap_or(&Value::Nil)) else {
                     continue;
                 };
@@ -714,7 +732,9 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                     rect: pr,
                     text: match get(p, "name") {
                         Some(Value::String(s)) => s.clone(),
-                        _ => name(get(p, "id").unwrap_or(&Value::Nil)),
+                        _ => local_name(get(p, "id").unwrap_or(&Value::Nil))
+                            .unwrap_or_default()
+                            .to_owned(),
                     },
                     marked: marked(selected, "port", get(p, "id"))
                         || marked(hover, "port", get(p, "id")),
@@ -773,7 +793,7 @@ fn edge_style(violating: bool, hot: bool, warm: bool) -> (Rgb, f32) {
 }
 
 fn points_of(v: Option<&Value>) -> Vec<[f64; 2]> {
-    get_slice(v).iter().filter_map(geom::vec2).collect()
+    seq(v).iter().filter_map(geom::vec2).collect()
 }
 
 /// The edge strokes, arrowheads and collapsed dependency indicators.
@@ -786,7 +806,7 @@ pub fn edge_commands(
     let mut out = Vec::new();
     let hide = get(scene, "diagram").and_then(|d| get(d, "hide-edges")) == Some(&Value::Bool(true));
     if hide {
-        for ind in get_slice(get(scene, "dep-indicators")) {
+        for ind in seq(get(scene, "dep-indicators")) {
             let points = points_of(get(ind, "triangle"));
             if points.len() != 3 {
                 continue;
@@ -801,7 +821,7 @@ pub fn edge_commands(
         }
         return out;
     }
-    for e in get_slice(get(scene, "edges")) {
+    for e in seq(get(scene, "edges")) {
         let hot = h.hot(e, hover);
         let warm = !hot && h.warm(e);
         let dimmed = h.focus.is_some() && !hot;
@@ -809,7 +829,7 @@ pub fn edge_commands(
         let (color, width) = edge_style(violating, hot, warm);
         let from = get(e, "from").cloned();
         let to = get(e, "to").cloned();
-        for ps in get_slice(get(e, "strokes")) {
+        for ps in seq(get(e, "strokes")) {
             out.push(EdgeCommand::Stroke {
                 from: from.clone(),
                 to: to.clone(),
@@ -829,7 +849,7 @@ pub fn edge_commands(
             out.push(EdgeCommand::Head {
                 from,
                 to,
-                head: name(head),
+                head: local_name(head).unwrap_or_default().to_owned(),
                 tip,
                 behind,
                 color,
@@ -916,7 +936,9 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
                 if get(p, "id") == get(&state.extra, "proposal-id") {
                     proposal_name = Some(match get(p, "name") {
                         Some(Value::String(s)) => s.clone(),
-                        _ => name(get(p, "id").unwrap_or(&Value::Nil)),
+                        _ => local_name(get(p, "id").unwrap_or(&Value::Nil))
+                            .unwrap_or_default()
+                            .to_owned(),
                     });
                 }
             }
@@ -940,16 +962,24 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         });
     }
     if !state.focus.is_empty() || get(&state.extra, "open-layer").is_some() {
-        let parts: Vec<String> = state.focus.iter().map(name).collect();
+        let parts: Vec<String> = state
+            .focus
+            .iter()
+            .map(|v| local_name(v).unwrap_or_default().to_owned())
+            .collect();
         let scope = if !parts.is_empty() {
             parts.join(".")
         } else {
             title
                 .map(|t| match t {
                     Value::String(s) => s.clone(),
-                    other => name(other),
+                    other => local_name(other).unwrap_or_default().to_owned(),
                 })
-                .unwrap_or_else(|| name(get(&state.extra, "open-layer").unwrap_or(&Value::Nil)))
+                .unwrap_or_else(|| {
+                    local_name(get(&state.extra, "open-layer").unwrap_or(&Value::Nil))
+                        .unwrap_or_default()
+                        .to_owned()
+                })
         };
         out.push(Command::Back {
             text: format!("{} · {scope}", strings::BACK),
@@ -961,7 +991,11 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
     let hover_kind = state
         .hover
         .as_ref()
-        .map(|hv| name(get(hv, "kind").unwrap_or(&Value::Nil)))
+        .map(|hv| {
+            local_name(get(hv, "kind").unwrap_or(&Value::Nil))
+                .unwrap_or_default()
+                .to_owned()
+        })
         .unwrap_or_default();
     let deps = state.hover.as_ref().and_then(|hv| get(hv, "deps"));
     if (hover_kind == "edge" || hover_kind == "dep")
@@ -972,8 +1006,12 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         let mut rows: Vec<PopupRow> = deps
             .iter()
             .map(|d| {
-                let from = name(get(d, "from").unwrap_or(&Value::Nil));
-                let to = name(get(d, "to").unwrap_or(&Value::Nil));
+                let from = local_name(get(d, "from").unwrap_or(&Value::Nil))
+                    .unwrap_or_default()
+                    .to_owned();
+                let to = local_name(get(d, "to").unwrap_or(&Value::Nil))
+                    .unwrap_or_default()
+                    .to_owned();
                 let violating = get(d, "violating") == Some(&Value::Bool(true));
                 PopupRow {
                     text: format!("{from} -> {to}"),

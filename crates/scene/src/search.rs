@@ -1,8 +1,8 @@
 //! Inspector search (port of `application/inspector.lua` search): UTF-8
 //! substring over class names and namespaces, ASCII case-insensitive.
 
-use crate::geom::{self, get};
 use edn::Value;
+use edn::record::get;
 
 /// One search result row.
 #[derive(Debug, Clone, PartialEq)]
@@ -15,7 +15,7 @@ pub struct Match {
 
 /// ASCII-only lowercase, leaving non-ASCII bytes untouched (Lua `:lower()`).
 fn geom_name(v: &Value) -> String {
-    geom::name(v)
+    edn::record::local_name(v).unwrap_or_default().to_owned()
 }
 
 fn ascii_lower(s: &str) -> String {
@@ -53,11 +53,11 @@ pub fn search(doc: &Value, query: &str) -> Vec<Match> {
             });
         }
     };
-    for c in crate::geom::get_slice(get(doc, "classes")) {
+    for c in edn::record::seq(get(doc, "classes")) {
         add(c);
     }
-    for p in crate::geom::get_slice(get(doc, "packages")) {
-        for c in crate::geom::get_slice(get(p, "classes")) {
+    for p in edn::record::seq(get(doc, "packages")) {
+        for c in edn::record::seq(get(p, "classes")) {
             add(c);
         }
     }

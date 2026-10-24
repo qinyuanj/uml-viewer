@@ -136,18 +136,18 @@ pub fn basis_path(points: &[Value]) -> Value {
 }
 
 fn op_get<'a>(op: &'a Value, key: &str) -> Option<&'a Value> {
-    crate::geom::get(op, key)
+    edn::record::get(op, key)
 }
 
 fn op_put(op: &mut Value, key: &str, v: [f64; 2]) {
-    crate::geom::put(op, key, pt(v));
+    edn::record::put(op, key, pt(v));
 }
 
 /// Constrain the first and last control points so a path leaves/enters the
 /// endpoint rects through their face cones.
 pub fn constrain_ends(path: &Value, from: Option<Rect>, to: Option<Rect>) -> Value {
     let mut out = path.clone();
-    let s = v2(crate::geom::get(path, "start").unwrap());
+    let s = v2(edn::record::get(path, "start").unwrap());
     if let Value::Map(entries) = &mut out {
         for (k, v) in entries.iter_mut() {
             if *k == Value::keyword("ops")
@@ -186,9 +186,9 @@ pub fn constrain_ends(path: &Value, from: Option<Rect>, to: Option<Rect>) -> Val
 /// Control-hull bounds of a path (start + every op point).
 pub fn path_bounds(path: &Value) -> Option<Rect> {
     let mut rects = Vec::new();
-    let s = v2(crate::geom::get(path, "start")?);
+    let s = v2(edn::record::get(path, "start")?);
     rects.push(Some(Rect::new(s[0], s[1], 0.0, 0.0)));
-    if let Value::Vector(ops) = crate::geom::get(path, "ops")? {
+    if let Value::Vector(ops) = edn::record::get(path, "ops")? {
         for op in ops {
             for k in ["p", "c1", "c2"] {
                 if let Some(q) = op_get(op, k) {
@@ -203,9 +203,9 @@ pub fn path_bounds(path: &Value) -> Option<Rect> {
 
 /// `[behind tip]`: the final segment direction of the path.
 pub fn end_tangent(path: &Value) -> [Value; 2] {
-    let mut cur = v2(crate::geom::get(path, "start").unwrap());
+    let mut cur = v2(edn::record::get(path, "start").unwrap());
     let mut behind = cur;
-    if let Value::Vector(ops) = crate::geom::get(path, "ops").unwrap() {
+    if let Value::Vector(ops) = edn::record::get(path, "ops").unwrap() {
         for op in ops {
             behind = op_get(op, "c2").map(v2).unwrap_or(cur);
             cur = v2(op_get(op, "p").unwrap());
@@ -217,9 +217,9 @@ pub fn end_tangent(path: &Value) -> [Value; 2] {
 /// Sample the path into a polyline; `step` is the cubic parameter step.
 pub fn flatten_path(path: &Value, step: f64) -> Vec<[f64; 2]> {
     assert!(step > 0.0, "positive curve step required");
-    let mut cur = v2(crate::geom::get(path, "start").unwrap());
+    let mut cur = v2(edn::record::get(path, "start").unwrap());
     let mut out = vec![cur];
-    if let Value::Vector(ops) = crate::geom::get(path, "ops").unwrap() {
+    if let Value::Vector(ops) = edn::record::get(path, "ops").unwrap() {
         for op in ops {
             let p = v2(op_get(op, "p").unwrap());
             match (op_get(op, "c1"), op_get(op, "c2")) {

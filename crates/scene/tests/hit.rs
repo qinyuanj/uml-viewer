@@ -7,8 +7,8 @@ use scene::hit::{self, dep_indicators};
 fn close(expected: &Value, actual: &Value, path: &str) {
     match expected {
         Value::Integer(_) | Value::Float(_) => {
-            let a = geom::num(expected).unwrap();
-            let b = geom::num(actual).unwrap_or(f64::NAN);
+            let a = edn::record::num(expected).unwrap();
+            let b = edn::record::num(actual).unwrap_or(f64::NAN);
             assert!(b.is_finite(), "{path}: actual not finite");
             assert!((a - b).abs() <= 1e-6, "{path}: expected {a} actual {b}");
         }
@@ -59,11 +59,16 @@ fn collapsed_leaf_indicators_sit_above_classes_and_dummies_are_skipped() {
     )
     .unwrap();
     let indicators = dep_indicators(&s);
-    geom::put(&mut s, "dep-indicators", indicators);
+    edn::record::put(&mut s, "dep-indicators", indicators);
     let h = hit::at(&s, 30.0, 38.0).unwrap();
-    assert_eq!("dep", geom::name(geom::get(&h, "kind").unwrap()));
-    assert_eq!(Some(&Value::keyword("child")), geom::get(&h, "id"));
-    assert_eq!(Some(&Value::Bool(true)), geom::get(&h, "violating"));
+    assert_eq!(
+        "dep",
+        edn::record::local_name(edn::record::get(&h, "kind").unwrap())
+            .unwrap_or_default()
+            .to_owned()
+    );
+    assert_eq!(Some(&Value::keyword("child")), edn::record::get(&h, "id"));
+    assert_eq!(Some(&Value::Bool(true)), edn::record::get(&h, "violating"));
     assert!(hit::at(&s, 75.0, 75.0).is_none());
     assert_eq!(
         1,

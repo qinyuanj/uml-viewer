@@ -27,7 +27,7 @@ struct Key {
 }
 
 fn count(scene: &Value, key: &str) -> usize {
-    match scene::geom::get(scene, key) {
+    match edn::record::get(scene, key) {
         Some(Value::Vector(items)) => items.len(),
         _ => 0,
     }

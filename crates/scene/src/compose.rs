@@ -8,22 +8,8 @@
 use crate::curve;
 use crate::geom::{self, Rect};
 use edn::Value;
+use edn::record::{get, put, seq};
 use std::collections::HashMap;
-
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
-}
-
-fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    geom::get(v, key)
-}
-
-fn put(v: &mut Value, key: &str, value: Value) {
-    geom::put(v, key, value);
-}
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
 /// dummy boxes are tracked but never clip strokes.
@@ -250,7 +236,13 @@ pub fn compile_diagram(diagram: &Value) -> Value {
 /// Rename a scene's ids with a diagram prefix, so several diagrams can share
 /// one merged scene without id collisions.
 fn prefix_ids(scene: &mut Value, prefix: &str) {
-    let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, geom::name(id)));
+    let q = |id: &Value| {
+        Value::keyword(&format!(
+            "{}{}",
+            prefix,
+            edn::record::local_name(id).unwrap_or_default().to_owned()
+        ))
+    };
     for key in ["packages", "classes"] {
         if let Some(Value::Vector(items)) = get(scene, key).cloned() {
             let mut renamed = Vec::with_capacity(items.len());
@@ -297,7 +289,7 @@ pub fn compile_document(doc: &Value) -> Value {
         fit(&mut scene);
         let h = get(&scene, "size")
             .and_then(|s| get(s, "h"))
-            .and_then(geom::num)
+            .and_then(edn::record::num)
             .unwrap();
         let prefix = format!("d{}-", i);
         prefix_ids(&mut scene, &prefix);
@@ -342,7 +334,7 @@ pub fn compile_document(doc: &Value) -> Value {
         translate(&mut scene, dx, 0.0);
     }
     size(&mut scene);
-    if let Some(Value::Map(entries)) = geom::get_raw(&scene, "size").cloned() {
+    if let Some(Value::Map(entries)) = edn::record::get_raw(&scene, "size").cloned() {
         let mut sz = Value::Map(entries);
         sz.assoc(Value::keyword("h"), geom::numval(y));
         put(&mut scene, "size", sz);

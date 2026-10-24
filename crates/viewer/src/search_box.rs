@@ -6,7 +6,8 @@
 //! the box is open. egui draws it (`app.rs`); nothing here touches egui.
 
 use edn::Value;
-use scene::geom::{Rect, name};
+use edn::record::local_name;
+use scene::geom::Rect;
 use scene::search::{self, Match};
 
 use crate::driver::SearchRecord;
@@ -89,8 +90,14 @@ impl SearchBox {
         SearchRecord {
             active: self.active,
             query: self.query.clone(),
-            results: results.iter().map(|m| name(&m.id)).collect(),
-            selection: self.selection.as_ref().map(name),
+            results: results
+                .iter()
+                .map(|m| local_name(&m.id).unwrap_or_default().to_owned())
+                .collect(),
+            selection: self
+                .selection
+                .as_ref()
+                .map(|v| local_name(v).unwrap_or_default().to_owned()),
         }
     }
 }

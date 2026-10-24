@@ -1,32 +1,10 @@
 //! Geometry over the EDN value boundary (port of `love/uml/domain/geom.lua`).
 //! Rects are EDN maps `{:x :y :w :h}` and points are 2-vectors at the public
-//! boundary; internally the math runs on plain f64 pairs.
+//! boundary; internally the math runs on plain f64 pairs. Record reading
+//! lives in `edn::record`.
 
 use edn::Value;
-
-/// Map lookup by keyword; `nil` and absent both read as `None` (Lua `g`).
-pub fn get<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
-    match m.get(&Value::keyword(key)) {
-        Some(Value::Nil) | None => None,
-        some => some,
-    }
-}
-
-/// Lua truthiness of a looked-up flag: absent, `nil` and `false` are false
-/// (`get(..).is_some()` would count an authored `false` as set).
-pub fn truthy(v: Option<&Value>) -> bool {
-    !matches!(v, None | Some(Value::Nil) | Some(Value::Bool(false)))
-}
-
-/// Map lookup that keeps an explicit `nil` (Lua `E.get` found-flag use).
-pub fn get_raw<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
-    m.get(&Value::keyword(key))
-}
-
-/// Set `key` to `value` in place (Lua `G.put`); `Nil` values are kept.
-pub fn put(m: &mut Value, key: &str, value: Value) {
-    m.assoc(Value::keyword(key), value);
-}
+use edn::record::{get, num};
 
 /// Drop the entries whose keyword names are listed (Lua `drop`).
 pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
@@ -39,31 +17,6 @@ pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
                 .collect(),
         ),
         _ => Value::Map(vec![]),
-    }
-}
-
-/// Number coercion shared by the whole port: ints and floats are both f64.
-pub fn num(v: &Value) -> Option<f64> {
-    match v {
-        Value::Integer(n) => Some(*n as f64),
-        Value::Float(x) => Some(*x),
-        _ => None,
-    }
-}
-
-pub fn num_or(v: Option<&Value>, default: f64) -> f64 {
-    v.and_then(num).unwrap_or(default)
-}
-
-/// `G.name`: a string is itself; a keyword/symbol yields its trailing segment
-/// after the last `/`.
-pub fn name(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Keyword(n) | Value::Symbol(n) => {
-            n.rsplit('/').next().unwrap_or(n.as_str()).to_owned()
-        }
-        _ => String::new(),
     }
 }
 
@@ -309,12 +262,4 @@ pub fn gap_polyline(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 
         }
     }
     out
-}
-
-/// Sequence view over an optional EDN vector (`[]` for absent/non-vectors).
-pub fn get_slice(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
 }

@@ -23,7 +23,14 @@ fn down_and_up_select_explicitly_and_clamp_at_the_ends() {
     assert!(search.active && search.focus_request);
     search.query = "解析".into();
     let results = search.results(Some(&doc));
-    let ids: Vec<String> = results.iter().map(|m| scene::geom::name(&m.id)).collect();
+    let ids: Vec<String> = results
+        .iter()
+        .map(|m| {
+            edn::record::local_name(&m.id)
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
     assert_eq!(vec!["alpha.deep.parser", "beta.parser"], ids);
     // Nothing is selected until Down is pressed.
     assert_eq!(None, search.selection);
