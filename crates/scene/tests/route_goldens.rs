@@ -1,8 +1,9 @@
 //! Route geometry goldens (#149, Seam A): representative routing scenarios
 //! whose expected scene geometry in `fixtures/route-goldens/` is static data
 //! produced once by the pre-#144 Lua/LOVE scene core. Every number must
-//! match within 1e-6; edges are compared in order, with their strokes, so a
-//! hidden, faded or reordered edge fails.
+//! match within 1e-6 (the golden's `:absolute-tolerance`); edges are
+//! compared in order, with their heads and strokes, so a hidden, faded,
+//! re-headed or reordered edge fails.
 //!
 //! | scenario      | what it pins                                                  |
 //! |---------------|---------------------------------------------------------------|
@@ -16,25 +17,52 @@
 //! | `attachments` | several ends on one class face are spread along it           |
 //! | `curve-lr`    | left-to-right: curved corners, end tangents, inheritance     |
 //! |               | heads, three ends on one face                                 |
+//! | `route148`    | #148 regression: non-hierarchical classes keep their members |
+//! |               | (`:hide-members false`), so LoanService -> Loan stays direct  |
+//! | `proposal`    | hierarchical IR under `{:proposal true}`: layer packages,     |
+//! |               | Unassigned, a foreign oval, detours ranked by the layers      |
+//!
+//! `:curve` is not part of the compiled scene: `compose::prepare_scene`
+//! turns the constrained basis path into `:tip`/`:behind`/`:draw-bounds`/
+//! `:strokes` and does not keep it. The only public output that carries it
+//! is the diagram projection of `scene::cli::project` (the `uml-viewer
+//! scene` command, also the JVM golden seam), and the test compares that
+//! where it exists (`proposal`). Non-hierarchical documents compile to
+//! `:sections`, whose projection passes the scene edges through without a
+//! curve, so for them the test rebuilds it from `:points` with the same
+//! `curve::constrain_ends(curve::basis_path(..))` call `prepare_scene` makes.
+//! The strokes, tip, behind and draw bounds compared above are the scene's
+//! own output of that path.
 
+mod common;
+
+use common::{assert_close, assert_golden_tolerance, items, read_edn};
 use edn::{Value, parse};
 use scene::events::{self, Dims};
 use scene::geom::{self, get};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-const SCENARIOS: [&str; 6] = [
+const SCENARIOS: [&str; 8] = [
     "direct",
     "obstacle",
     "tie",
     "rank-hop",
     "attachments",
     "curve-lr",
+    "route148",
+    "proposal",
 ];
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/route-goldens")
-        .join(name)
+    common::fixture("route-goldens", name)
+}
+
+/// The view each golden was produced for (`compile_view`'s `extra`).
+fn extra(scenario: &str) -> Value {
+    match scenario {
+        "proposal" => parse("{:proposal true}").unwrap(),
+        _ => Value::Map(vec![]),
+    }
 }
 
 fn document(scenario: &str) -> Value {
@@ -43,62 +71,62 @@ fn document(scenario: &str) -> Value {
 }
 
 fn compiled(scenario: &str) -> Value {
-    scene::document::compile_view(&document(scenario), &[], &[], &Value::Map(vec![]))
+    scene::document::compile_view(&document(scenario), &[], &[], &extra(scenario))
+}
+
+/// Each edge's `:curve` (by edge index), from the projection when it
+/// carries one; see the module comment for the sectioned case.
+fn curves(scenario: &str, scene: &Value) -> Vec<Value> {
+    let projection = scene::cli::project(
+        &document(scenario),
+        None,
+        &Value::Vector(vec![]),
+        &extra(scenario),
+    );
+    let edges = items(get(scene, "edges"));
+    if get(&projection, "sections").is_none() {
+        let projected = items(get(&projection, "edges"));
+        assert_eq!(edges.len(), projected.len(), "{scenario}: projected edges");
+        for (i, (e, p)) in edges.iter().zip(&projected).enumerate() {
+            for k in ["from", "to", "points"] {
+                assert_eq!(get(e, k), get(p, k), "{scenario} edge[{i}]: projected {k}");
+            }
+        }
+        return projected
+            .iter()
+            .map(|p| get(p, "curve").cloned().expect("projected :curve"))
+            .collect();
+    }
+    let rect_of = |id: Option<&Value>| {
+        items(get(scene, "classes"))
+            .iter()
+            .find(|c| get(c, "id") == id)
+            .and_then(|c| get(c, "rect"))
+            .and_then(geom::Rect::from_value)
+    };
+    edges
+        .iter()
+        .map(|e| {
+            scene::curve::constrain_ends(
+                &scene::curve::basis_path(&items(get(e, "points"))),
+                rect_of(get(e, "from")),
+                rect_of(get(e, "to")),
+            )
+        })
+        .collect()
 }
 
 fn expected(scenario: &str) -> Value {
-    let text = std::fs::read_to_string(fixture(&format!("{scenario}.geometry.edn"))).unwrap();
-    parse(&text).unwrap()
+    read_edn(&fixture(&format!("{scenario}.geometry.edn")))
 }
 
-fn items(v: Option<&Value>) -> Vec<Value> {
-    match v {
-        Some(Value::Vector(v)) => v.clone(),
-        _ => vec![],
-    }
-}
-
-fn close(expected: &Value, actual: Option<&Value>, path: &str) {
-    match expected {
-        Value::Integer(_) | Value::Float(_) => {
-            let a = geom::num(expected).unwrap();
-            let Some(b) = actual.and_then(geom::num) else {
-                panic!("{path}: expected {a}, actual missing or non-numeric");
-            };
-            assert!(b.is_finite(), "{path}: actual not finite ({b})");
-            assert!(
-                (a - b).abs() <= 1e-6,
-                "{path}: expected {a} actual {b} (delta {})",
-                (a - b).abs()
-            );
-        }
-        Value::Map(entries) => {
-            let Some(Value::Map(other)) = actual else {
-                panic!("{path}: expected a map, got {actual:?}");
-            };
-            assert_eq!(entries.len(), other.len(), "{path}: map size");
-            for (k, v) in entries {
-                close(v, actual.unwrap().get(k), &format!("{path}{k:?}"));
-            }
-        }
-        Value::Vector(items) => {
-            let Some(Value::Vector(other)) = actual else {
-                panic!("{path}: expected a vector, got {actual:?}");
-            };
-            assert_eq!(items.len(), other.len(), "{path}: vector length");
-            for (i, v) in items.iter().enumerate() {
-                close(v, Some(&other[i]), &format!("{path}[{i}]"));
-            }
-        }
-        _ => assert_eq!(Some(expected), actual, "{path}: scalar"),
-    }
-}
-
-/// Size, class rects and every edge (in order) against the golden.
+/// Size, class rects and every edge (in order) against the golden; each
+/// edge's curve against the projection of the same view.
 fn assert_matches_original(scenario: &str) {
     let scene = compiled(scenario);
     let want = expected(scenario);
-    close(
+    assert_golden_tolerance(&want, scenario);
+    assert_close(
         get(&want, "size").unwrap(),
         get(&scene, "size"),
         &format!("{scenario} size"),
@@ -111,28 +139,17 @@ fn assert_matches_original(scenario: &str) {
     );
     for (i, (w, g)) in want_classes.iter().zip(&got_classes).enumerate() {
         assert_eq!(get(w, "id"), get(g, "id"), "{scenario}: class[{i}] id");
-        close(
+        assert_close(
             get(w, "rect").unwrap(),
             get(g, "rect"),
             &format!("{scenario} class[{i}] rect"),
         );
     }
     let (want_edges, got_edges) = (items(get(&want, "edges")), items(get(&scene, "edges")));
+    let curves = curves(scenario, &scene);
     assert_eq!(want_edges.len(), got_edges.len(), "{scenario}: edge count");
-    let rect_of = |id: Option<&Value>| {
-        got_classes
-            .iter()
-            .find(|c| get(c, "id") == id)
-            .and_then(|c| get(c, "rect"))
-            .and_then(geom::Rect::from_value)
-    };
     for (i, (w, g)) in want_edges.iter().zip(&got_edges).enumerate() {
         let at = format!("{scenario} edge[{i}]");
-        let curve = scene::curve::constrain_ends(
-            &scene::curve::basis_path(&items(get(g, "points"))),
-            rect_of(get(g, "from")),
-            rect_of(get(g, "to")),
-        );
         for k in [
             "from",
             "to",
@@ -144,11 +161,12 @@ fn assert_matches_original(scenario: &str) {
             "draw-bounds",
             "strokes",
         ] {
-            close(get(w, k).unwrap(), get(g, k), &format!("{at} {k}"));
+            let want_k = get(w, k).unwrap_or_else(|| panic!("{at}: golden has no {k}"));
+            assert_close(want_k, get(g, k), &format!("{at} {k}"));
         }
-        close(
+        assert_close(
             get(w, "curve").unwrap(),
-            Some(&curve),
+            Some(&curves[i]),
             &format!("{at} curve"),
         );
     }
@@ -259,7 +277,11 @@ fn curved_corners_and_end_tangents_left_to_right_match_the_original() {
     assert_matches_original("curve-lr");
     let scene = compiled("curve-lr");
     let e = edge(&scene, "d0-exporter", "d0-shape");
-    let curve = scene::curve::basis_path(&items(get(&e, "points")));
+    let at = items(get(&scene, "edges"))
+        .iter()
+        .position(|x| *x == e)
+        .unwrap();
+    let curve = curves("curve-lr", &scene).swap_remove(at);
     assert!(
         items(get(&curve, "ops"))
             .iter()
@@ -272,6 +294,45 @@ fn curved_corners_and_end_tangents_left_to_right_match_the_original() {
     assert!(
         behind[0] > tip[0],
         "arrives from the right, outside the box"
+    );
+}
+
+/// #148: the original keeps members on every non-hierarchical class (`IR`
+/// normalizes an absent `:hide-members` to `false`), which keeps the boxes
+/// at their full size and LoanService -> Loan one straight segment.
+#[test]
+fn unobstructed_dependency_with_member_boxes_is_direct_as_in_the_original() {
+    assert_matches_original("route148");
+    let scene = compiled("route148");
+    let e = edge(&scene, "d0-loan-service", "d0-loan");
+    assert_eq!(2, points(&e).len(), "no right-angle detour");
+    assert_eq!(1, items(get(&e, "strokes")).len(), "edge is drawn");
+    assert!(
+        rect(&scene, "d0-loan").h > 42.0,
+        "member lines are laid out, not the bare 120x42 name box"
+    );
+}
+
+#[test]
+fn proposal_view_of_a_hierarchical_document_matches_the_original() {
+    assert_matches_original("proposal");
+    let scene = compiled("proposal");
+    let ids: Vec<String> = items(get(&scene, "packages"))
+        .iter()
+        .filter_map(|p| get(p, "id").map(geom::name))
+        .collect();
+    assert_eq!(
+        vec![
+            "proposal.unassigned".to_string(),
+            "proposal.edge".to_string(),
+            "proposal.domain".to_string()
+        ],
+        ids,
+        "proposal layers, not the namespace tree"
+    );
+    assert!(
+        points(&edge(&scene, "core", "util")).len() > 2,
+        "Core -> Util detours around the Edge layer"
     );
 }
 
@@ -294,11 +355,14 @@ fn repeated_compilation_gives_identical_geometry() {
 
 #[test]
 fn zoom_pan_and_window_size_leave_world_routes_unchanged() {
-    let jvm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/jvm-goldens/rust.ir.edn");
-    let mut docs: Vec<Value> = SCENARIOS.iter().map(|s| document(s)).collect();
-    docs.push(scene::ir::read_document(&std::fs::read_to_string(jvm).unwrap()).unwrap());
-    for doc in docs {
-        let start = scene::document::new_state(doc.clone(), None, None, None, &[], None);
+    let jvm = common::fixture("jvm-goldens", "rust.ir.edn");
+    let mut docs: Vec<(Value, Value)> = SCENARIOS.iter().map(|s| (document(s), extra(s))).collect();
+    docs.push((
+        scene::ir::read_document(&std::fs::read_to_string(jvm).unwrap()).unwrap(),
+        Value::Map(vec![]),
+    ));
+    for (doc, extra) in docs {
+        let start = scene::document::new_state(doc.clone(), None, None, Some(&extra), &[], None);
         let routes = get(&start.scene, "edges").cloned();
         let mut s = start.clone();
         for (w, h) in [(1500.0, 920.0), (640.0, 480.0), (3840.0, 2160.0)] {
@@ -327,7 +391,7 @@ fn zoom_pan_and_window_size_leave_world_routes_unchanged() {
             (start.cam_x, start.cam_y, start.zoom),
             (s.cam_x, s.cam_y, s.zoom)
         );
-        let fresh = scene::document::compile_view(&doc, &[], &[], &Value::Map(vec![]));
+        let fresh = scene::document::compile_view(&doc, &[], &[], &extra);
         assert_eq!(routes, get(&fresh, "edges").cloned(), "recompiled routes");
     }
 }
