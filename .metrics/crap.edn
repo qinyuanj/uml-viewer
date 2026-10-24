@@ -380,6 +380,8 @@
   {:name "install", :namespace "viewer::signal", :complexity 2, :coverage 0.0, :crap 6.0}
   {:name "lookup", :namespace "viewer::source", :complexity 6, :coverage 100.0, :crap 6.0}
   {:name "string", :namespace "viewer::detail", :complexity 5, :coverage 66.6667, :crap 5.9259}
+  {:name "platform_support", :namespace "companion::posix", :complexity 3, :coverage 33.3333, :crap 5.6667}
+  {:name "write", :namespace "companion::posix::atomic", :complexity 4, :coverage 54.5455, :crap 5.5026}
   {:name "proposal_layers", :namespace "scene::policy", :complexity 3, :coverage 36.3636, :crap 5.3193}
   {:name "pair_names", :namespace "ir::policy", :complexity 5, :coverage 77.7778, :crap 5.2743}
   {:name "consume", :namespace "viewer::mail::Companion", :complexity 5, :coverage 78.5714, :crap 5.246}
@@ -432,13 +434,11 @@
   {:name "port", :namespace "scene::route", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "worst_band", :namespace "viewer::commands", :complexity 5, :coverage 100.0, :crap 5.0}
   {:name "pair", :namespace "viewer::driver", :complexity 5, :coverage 100.0, :crap 5.0}
-  {:name "platform_support", :namespace "companion::posix", :complexity 3, :coverage 40.0, :crap 4.944}
   {:name "as_str", :namespace "ir::graph", :complexity 4, :coverage 66.6667, :crap 4.5926}
   {:name "number_text", :namespace "viewer::detail", :complexity 4, :coverage 66.6667, :crap 4.5926}
   {:name "reference", :namespace "companion::recovery_domain", :complexity 2, :coverage 15.3846, :crap 4.4233}
   {:name "vec2", :namespace "scene::geom", :complexity 4, :coverage 71.4286, :crap 4.3732}
   {:name "parse", :namespace "companion::herdr::Herdr", :complexity 4, :coverage 75.0, :crap 4.25}
-  {:name "write", :namespace "companion::posix::atomic", :complexity 4, :coverage 75.0, :crap 4.25}
   {:name "char_size", :namespace "viewer::source", :complexity 4, :coverage 77.7778, :crap 4.1756}
   {:name "boolean", :namespace "viewer::driver", :complexity 4, :coverage 80.0, :crap 4.128}
   {:name "child_present", :namespace "companion::recovery_domain", :complexity 4, :coverage 83.3333, :crap 4.0741}
@@ -536,6 +536,7 @@
   {:name "add_chdir", :namespace "companion::posix::FileActions", :complexity 3, :coverage 66.6667, :crap 3.3333}
   {:name "real", :namespace "companion::herdr::Options", :complexity 3, :coverage 71.875, :crap 3.2002}
   {:name "register", :namespace "companion::recovery", :complexity 3, :coverage 72.7273, :crap 3.1826}
+  {:name "ensure_parent", :namespace "companion::posix::atomic", :complexity 3, :coverage 75.0, :crap 3.1406}
   {:name "child_absent", :namespace "companion::recovery_domain", :complexity 3, :coverage 75.0, :crap 3.1406}
   {:name "progress", :namespace "companion::herdr::Herdr", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "as_bool", :namespace "companion::json::Json", :complexity 3, :coverage 80.0, :crap 3.072}
@@ -553,7 +554,6 @@
   {:name "relative_path", :namespace "ir::graph", :complexity 3, :coverage 83.3333, :crap 3.0417}
   {:name "find_subslice", :namespace "ir::scan::typescript", :complexity 3, :coverage 83.3333, :crap 3.0417}
   {:name "wake", :namespace "viewer::mail::Companion", :complexity 3, :coverage 83.3333, :crap 3.0417}
-  {:name "ensure_parent", :namespace "companion::posix::atomic", :complexity 3, :coverage 85.7143, :crap 3.0262}
   {:name "strip_ts_extension", :namespace "ir::scan::typescript", :complexity 3, :coverage 85.7143, :crap 3.0262}
   {:name "file_base", :namespace "scene::hierarchy", :complexity 3, :coverage 85.7143, :crap 3.0262}
   {:name "canonical", :namespace "companion::posix", :complexity 3, :coverage 87.5, :crap 3.0176}
@@ -692,13 +692,13 @@
   {:name "write", :namespace "companion::mailbox::Mailbox", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "identity", :namespace "companion::posix", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "owner_native", :namespace "companion::posix", :complexity 2, :coverage 100.0, :crap 2.0}
-  {:name "fmt", :namespace "companion::posix::Failure", :complexity 1, :coverage 0.0, :crap 2.0}
-  {:name "from", :namespace "companion::posix::Failure", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "session_name", :namespace "companion::preflight", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "gate_file", :namespace "companion::recovery_domain", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "lock_file", :namespace "companion::recovery_domain", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "manifest_path", :namespace "companion::recovery_domain", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "preflight", :namespace "companion::role", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "fmt", :namespace "companion::vocab::Failure", :complexity 1, :coverage 0.0, :crap 2.0}
+  {:name "from", :namespace "companion::vocab::Failure", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "command", :namespace "companion::worker", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "read", :namespace "companion::worker", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "wake", :namespace "companion::worker", :complexity 1, :coverage 0.0, :crap 2.0}
@@ -914,9 +914,6 @@
   {:name "release", :namespace "companion::posix", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "temp_path", :namespace "companion::posix", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "trim_end", :namespace "companion::posix", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "from", :namespace "companion::posix::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "new", :namespace "companion::posix::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "with_reason", :namespace "companion::posix::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "drop", :namespace "companion::posix::FileActions", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "candidates", :namespace "companion::preflight", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "run_herdr", :namespace "companion::preflight", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -938,6 +935,9 @@
   {:name "terminal", :namespace "companion::recovery_domain", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "text", :namespace "companion::role", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "shell_word", :namespace "companion::text", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "from", :namespace "companion::vocab::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "new", :namespace "companion::vocab::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "with_reason", :namespace "companion::vocab::Failure", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "command_with", :namespace "companion::worker", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "mail_token", :namespace "companion::worker", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "encode_error", :namespace "edn", :complexity 1, :coverage 100.0, :crap 1.0}

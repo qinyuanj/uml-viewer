@@ -3,8 +3,8 @@
 //! `companion-preflight <root> [args...]`, `companion-worker <request.edn>`,
 //! `companion-runner <manifest.edn>`, `companion-controller <manifest.edn>`.
 
-use crate::posix::{Failure, Result};
 use crate::record;
+use crate::vocab::{Failure, Result};
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::ExitCode;

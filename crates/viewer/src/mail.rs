@@ -211,14 +211,19 @@ pub fn quit_requested(state: &ViewState) -> bool {
 mod tests {
     use super::*;
     use edn::record::get;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// A fresh temporary directory per call: process id plus an in-process
+    /// counter, so parallel tests never share one.
+    fn scratch(label: &str) -> std::path::PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{label} {} {n}", std::process::id()))
+    }
 
     #[test]
     fn a_display_path_resolves_against_the_project_root_unless_absolute() {
-        let directory = std::env::temp_dir().join(format!(
-            "uml mail {} {}",
-            std::process::id(),
-            companion::posix::monotonic_ms()
-        ));
+        let directory = scratch("uml mail");
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("second.edn"), "{:title \"Second\"}").unwrap();
         let companion = Companion {
@@ -265,11 +270,7 @@ mod tests {
 
     #[test]
     fn consuming_mail_pops_each_command_after_applying_it() {
-        let directory = std::env::temp_dir().join(format!(
-            "uml mail consume {} {}",
-            std::process::id(),
-            companion::posix::monotonic_ms()
-        ));
+        let directory = scratch("uml mail consume");
         std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
         std::fs::write(
             directory.join(".uml-viewer/to-viewer.edn"),
@@ -300,11 +301,7 @@ mod tests {
 
     #[test]
     fn a_wake_without_a_helper_is_recorded_and_keeps_the_mail() {
-        let directory = std::env::temp_dir().join(format!(
-            "uml mail wake {} {}",
-            std::process::id(),
-            companion::posix::monotonic_ms()
-        ));
+        let directory = scratch("uml mail wake");
         std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
         let mut companion = Companion::mail_only(&directory);
         companion.wake(4).unwrap();

@@ -6,9 +6,10 @@ use crate::domain;
 use crate::herdr::{ControllerSpec, Herdr, Options, ProgressFn, RunnerLauncher, Selected};
 use crate::herdr_domain;
 use crate::ownership;
-use crate::posix::{self, Failure, Result, RunOut};
+use crate::posix;
 use crate::record;
 use crate::recovery;
+use crate::vocab::{Failure, Result, RunOut};
 use edn::Value;
 
 /// Herdr derives its API socket from XDG_CONFIG_HOME + session name. Measured

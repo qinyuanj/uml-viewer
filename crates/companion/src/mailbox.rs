@@ -5,8 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::posix::{self, Failure, Result};
+use crate::posix;
 use crate::record;
+use crate::vocab::{Failure, Result};
 use edn::Value;
 
 /// Normalize whatever is on disk into `{:next-id n :queue [...]}` (Lua

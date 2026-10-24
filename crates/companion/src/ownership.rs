@@ -1,7 +1,8 @@
 //! Companion ownership file `.uml-viewer/companion.edn` (port of
 //! `love/uml/adapters/ownership.lua`). EDN on disk, atomically replaced.
 
-use crate::posix::{self, Failure, Result};
+use crate::posix;
+use crate::vocab::{Failure, Result};
 use edn::Value;
 use std::path::{Path, PathBuf};
 

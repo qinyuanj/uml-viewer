@@ -4,10 +4,11 @@
 
 use crate::herdr_domain as domain;
 use crate::json::Json;
-use crate::posix::{self, Failure, Owner, Result, RunOut};
+use crate::posix;
 use crate::record;
 use crate::recovery;
 use crate::text::shell_word;
+use crate::vocab::{Failure, Owner, Result, RunOut};
 use edn::Value;
 use std::path::Path;
 use std::rc::Rc;

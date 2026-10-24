@@ -2,9 +2,9 @@
 //! checkpoints (port of `love/uml/domain/herdr.lua`). The adapter owns every
 //! external command.
 
-use crate::posix::{Failure, Result};
 use crate::record;
 use crate::text::shell_word;
+use crate::vocab::{Failure, Result};
 use edn::Value;
 
 pub fn session_valid(session: &str) -> bool {

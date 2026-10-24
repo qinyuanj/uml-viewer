@@ -12,16 +12,17 @@ pub mod json;
 pub mod lifecycle;
 pub mod mailbox;
 pub mod ownership;
-pub mod posix;
+pub(crate) mod posix;
 pub mod preflight;
 pub mod record;
 pub mod recovery;
 pub mod recovery_domain;
 pub mod role;
 pub mod text;
+pub mod vocab;
 pub mod worker;
 
-pub use posix::{Failure, Result};
+pub use vocab::{Failure, Result};
 
 /// `pub fn run(args: &[OsString]) -> ExitCode` for each `companion-*` role,
 /// as the binary's ROLES table expects.

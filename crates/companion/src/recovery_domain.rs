@@ -2,8 +2,8 @@
 //! controller is the only journal writer; retries are bounded and only a
 //! verified abnormal child exit qualifies.
 
-use crate::posix::{Failure, Owner, Result};
 use crate::record;
+use crate::vocab::{Failure, Owner, Result};
 use edn::Value;
 
 pub const BACKOFF_MS: [i64; 3] = [1000, 2000, 4000];

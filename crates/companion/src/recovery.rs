@@ -3,9 +3,10 @@
 //! references; this module is the sole journal writer when running detached.
 //! Journals are EDN; runner `started`/`exit` side files are JSON.
 
-use crate::posix::{self, Failure, Owner, Result};
+use crate::posix;
 use crate::record;
 use crate::recovery_domain as domain;
+use crate::vocab::{Failure, Owner, Result};
 use edn::Value;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

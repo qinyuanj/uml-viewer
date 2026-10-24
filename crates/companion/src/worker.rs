@@ -13,8 +13,9 @@
 use crate::herdr::{Herdr, ProgressFn};
 use crate::lifecycle;
 use crate::mailbox::Mailbox;
-use crate::posix::{self, Failure, Result};
+use crate::posix;
 use crate::record;
+use crate::vocab::{Failure, Owner, Result};
 use edn::Value;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -50,7 +51,7 @@ fn read(path: &Path) -> Option<Value> {
 pub struct Worker {
     pub base: String,
     pub token: String,
-    pub owner: posix::Owner,
+    pub owner: Owner,
     pub sequence: u64,
     pub seen: u64,
     pub phase: String,
@@ -161,7 +162,7 @@ pub struct PollHost {
 
 type ReadFn = dyn Fn(&str) -> Option<Value>;
 type WriteFn = dyn Fn(&str, &Value) -> Result<()>;
-type OwnerFn = dyn Fn(i32) -> Option<posix::Owner>;
+type OwnerFn = dyn Fn(i32) -> Option<Owner>;
 type ClockFn = dyn Fn() -> i64;
 
 impl PollHost {
@@ -502,7 +503,7 @@ mod tests {
 
     fn host(
         journal: &Journal,
-        owner: impl Fn(i32) -> Option<posix::Owner> + 'static,
+        owner: impl Fn(i32) -> Option<Owner> + 'static,
         now: Rc<RefCell<i64>>,
     ) -> PollHost {
         let files = journal.files.clone();
@@ -528,7 +529,7 @@ mod tests {
         Worker {
             base: "journal".to_owned(),
             token: "generation".to_owned(),
-            owner: posix::Owner {
+            owner: Owner {
                 pid: 2,
                 start: "original".to_owned(),
                 name: String::new(),
@@ -543,7 +544,7 @@ mod tests {
         }
     }
 
-    fn poll_with(events: Vec<Value>, observed: Option<posix::Owner>) -> Worker {
+    fn poll_with(events: Vec<Value>, observed: Option<Owner>) -> Worker {
         let journal = Journal {
             files: Rc::new(RefCell::new(HashMap::new())),
             events: Rc::new(RefCell::new(Vec::new())),
@@ -572,7 +573,7 @@ mod tests {
     fn consumes_matching_startup_events_in_order() {
         let worker = poll_with(
             vec![event("generation", "server"), event("generation", "ready")],
-            Some(posix::Owner {
+            Some(Owner {
                 pid: 2,
                 start: "original".to_owned(),
                 name: String::new(),
@@ -597,7 +598,7 @@ mod tests {
         let host = host(
             &journal,
             |_| {
-                Some(posix::Owner {
+                Some(Owner {
                     pid: 2,
                     start: "original".to_owned(),
                     name: String::new(),
@@ -633,7 +634,7 @@ mod tests {
     fn rejects_a_reused_helper_pid() {
         let worker = poll_with(
             vec![event("generation", "ready")],
-            Some(posix::Owner {
+            Some(Owner {
                 pid: 2,
                 start: "replacement".to_owned(),
                 name: String::new(),
@@ -681,7 +682,7 @@ mod tests {
         let host = host(
             &journal,
             |_| {
-                Some(posix::Owner {
+                Some(Owner {
                     pid: 2,
                     start: "original".to_owned(),
                     name: String::new(),
@@ -729,7 +730,7 @@ mod tests {
         let host = host(
             &journal,
             |_| {
-                Some(posix::Owner {
+                Some(Owner {
                     pid: 2,
                     start: "original".to_owned(),
                     name: String::new(),
@@ -774,7 +775,7 @@ mod tests {
         let host = host(
             &journal,
             |_| {
-                Some(posix::Owner {
+                Some(Owner {
                     pid: 2,
                     start: "original".to_owned(),
                     name: String::new(),

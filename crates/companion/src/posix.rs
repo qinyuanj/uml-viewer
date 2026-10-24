@@ -11,56 +11,11 @@
 //! adapter called.
 
 use std::ffi::{CString, OsStr, OsString};
-use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub type Result<T> = std::result::Result<T, Failure>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Failure {
-    pub message: String,
-    pub reason: Option<&'static str>,
-}
-
-impl Failure {
-    pub fn new(message: impl Into<String>) -> Failure {
-        Failure {
-            message: message.into(),
-            reason: None,
-        }
-    }
-
-    pub fn with_reason(message: impl Into<String>, reason: &'static str) -> Failure {
-        Failure {
-            message: message.into(),
-            reason: Some(reason),
-        }
-    }
-}
-
-impl fmt::Display for Failure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-use std::fmt;
-
-impl std::error::Error for Failure {}
-
-impl From<io::Error> for Failure {
-    fn from(error: io::Error) -> Failure {
-        Failure::new(error.to_string())
-    }
-}
-
-impl From<edn::Error> for Failure {
-    fn from(error: edn::Error) -> Failure {
-        Failure::new(error.to_string())
-    }
-}
+use crate::vocab::{Failure, Owner, Result, RunOut};
 
 #[allow(non_camel_case_types)]
 mod sys {
@@ -238,14 +193,6 @@ fn stat_start(pid: i32) -> Option<String> {
     fields.get(19).map(|start| (*start).to_owned())
 }
 
-/// Exact creation identity of a live process; `None` when absent or a zombie.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Owner {
-    pub pid: i32,
-    pub start: String,
-    pub name: String,
-}
-
 pub fn identity(pid: i32) -> Result<Option<Owner>> {
     if pid < 1 {
         return Err(Failure::new(format!("Invalid owned process PID: {pid}")));
@@ -265,15 +212,6 @@ pub fn owner_native(pid: i32) -> Result<Option<Owner>> {
         name: String::new(),
         ..owner
     }))
-}
-
-/// Result of a bounded synchronous command (port of `Process.run`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunOut {
-    pub exit: Option<i32>,
-    pub out: String,
-    pub err: String,
-    pub timeout: bool,
 }
 
 const TERM_GRACE_MS: i64 = 2000;
@@ -729,6 +667,9 @@ pub fn canonical(path: &str) -> Result<String> {
 
 /// Nanosecond mtime + size stamp via statx (port of posix_watch.mtime). The
 /// stamp is opaque: consumers compare it for equality, never parse it.
+/// Only its own test calls it (the viewer watches files with `watch::mtime`);
+/// crate privacy merely surfaced that, so the dead-code lint is allowed here.
+#[allow(dead_code)]
 pub fn mtime_stamp(path: &Path) -> Result<String> {
     let c_path = cstring(path.as_os_str())?;
     let mut buffer = sys::Statx {

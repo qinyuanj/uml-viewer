@@ -7,7 +7,8 @@ use crate::domain::{self, Probe, Selected};
 use crate::herdr::Herdr;
 use crate::lifecycle;
 use crate::ownership;
-use crate::posix::{self, Result, RunOut};
+use crate::posix;
+use crate::vocab::{Result, RunOut};
 
 /// PATH candidates, in PATH order, deduplicated by the candidate path.
 fn candidates(path: &str) -> Vec<String> {
@@ -220,7 +221,7 @@ mod tests {
 
     #[test]
     fn failure_messages_are_single_lines_for_the_entry() {
-        let error = crate::posix::Failure::new("one line");
+        let error = crate::vocab::Failure::new("one line");
         assert!(!error.message.contains('\n'));
     }
 }

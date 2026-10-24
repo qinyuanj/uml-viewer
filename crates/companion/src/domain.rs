@@ -2,8 +2,8 @@
 //! and the verbatim prompts handed to Claude (port of
 //! `love/uml/domain/companion.lua`). No filesystem or process access.
 
-use crate::posix::{Failure, Result, RunOut};
 use crate::record;
+use crate::vocab::{Failure, Result, RunOut};
 use edn::Value;
 
 pub const LEGACY_GUIDANCE: &str = "tmux/psmux companions are retired. Ownership and resources were retained; no takeover or cleanup was attempted. Finish the old viewer/session using the old release, verify that this project's legacy resources have exited, then archive .uml-viewer/companion.edn and start ./uml fresh with Herdr. Do not use --restart to migrate; retain session.edn and mailbox queues.";
