@@ -1,16 +1,12 @@
-//! Mailbox (#142): the `to-viewer.edn` inbox, the `to-agent.edn` outbox and
-//! the element menu contract of the LOVE viewer (`adapters/mailbox.lua`,
-//! `adapters/mail.lua`, `adapters/mail_menu.lua`). The durable queue is
-//! authoritative; a command is popped only after it was applied.
-
-use std::path::{Path, PathBuf};
+//! The element menu contract of the LOVE viewer (`adapters/mail_menu.lua`,
+//! #142): the menu operations, the mail target of a selection and the mail
+//! each operation appends. The queue protocol itself is
+//! [`companion::mailbox::Mailbox`].
 
 use edn::Value;
 use edn::record::{get, local_name};
 use scene::document::ViewState;
 use scene::events;
-
-use crate::project_files;
 
 /// The section prefix of a scene id (`d0-target` -> 0), or 0.
 fn section(id: &Value) -> usize {
@@ -21,125 +17,6 @@ fn section(id: &Value) -> usize {
         .and_then(|rest| rest.split_once('-'))
         .and_then(|(n, _)| n.parse().ok())
         .unwrap_or(0)
-}
-
-/// One `{:next-id n :queue [...]}` file. Reads normalize whatever is on
-/// disk; `take` pops the head in stored order and rewrites the file.
-pub struct Mailbox {
-    pub path: PathBuf,
-}
-
-impl Mailbox {
-    pub fn open(path: impl Into<PathBuf>) -> Mailbox {
-        Mailbox { path: path.into() }
-    }
-
-    pub fn inbox(root: &Path) -> Mailbox {
-        Mailbox::open(root.join(".uml-viewer/to-viewer.edn"))
-    }
-
-    pub fn outbox(root: &Path) -> Mailbox {
-        Mailbox::open(root.join(".uml-viewer/to-agent.edn"))
-    }
-
-    pub fn read(&self) -> Value {
-        let raw = std::fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|text| edn::parse(&text).ok());
-        normalize(raw.as_ref())
-    }
-
-    fn write(&self, boxed: &Value) -> std::io::Result<()> {
-        let text = edn::encode(boxed).map_err(|e| std::io::Error::other(e.to_string()))?;
-        project_files::write_atomic(&self.path, &text)
-    }
-
-    /// Pop the head of the queue, whatever its id (the stored order is
-    /// authoritative). `None` leaves the file untouched.
-    pub fn take(&self) -> std::io::Result<Option<Value>> {
-        let (head, rest) = take(&self.read());
-        if head.is_some() {
-            self.write(&rest)?;
-        }
-        Ok(head)
-    }
-
-    /// Append a command and return it (`{:id n :op …extra}`).
-    pub fn append(&self, op: &str, extra: &[(Value, Value)]) -> std::io::Result<Value> {
-        let current = self.read();
-        let mut queue = queue(&current);
-        let id = get(&current, "next-id")
-            .and_then(edn::record::num)
-            .unwrap_or(1.0) as i64;
-        let mut cmd = Value::Map(vec![
-            (Value::keyword("id"), Value::Integer(id)),
-            (Value::keyword("op"), Value::keyword(op)),
-        ]);
-        for (k, v) in extra {
-            cmd.assoc(k.clone(), v.clone());
-        }
-        queue.push(cmd.clone());
-        let boxed = box_of(id + 1, queue);
-        self.write(&boxed)?;
-        Ok(cmd)
-    }
-}
-
-fn box_of(next_id: i64, queue: Vec<Value>) -> Value {
-    Value::Map(vec![
-        (Value::keyword("next-id"), Value::Integer(next_id)),
-        (Value::keyword("queue"), Value::Vector(queue)),
-    ])
-}
-
-/// Normalize whatever is on disk into `{:next-id n :queue [...]}`: a queue
-/// vector is kept, a bare command becomes a one-element queue, anything else
-/// is empty.
-pub fn normalize(raw: Option<&Value>) -> Value {
-    if let Some(raw) = raw {
-        if let Some(Value::Vector(items)) = get(raw, "queue") {
-            let next = get(raw, "next-id")
-                .and_then(edn::record::num)
-                .unwrap_or(1.0) as i64;
-            return box_of(next, items.clone());
-        }
-        if get(raw, "op").is_some() {
-            let id = get(raw, "id").and_then(edn::record::num).unwrap_or(0.0) as i64;
-            return box_of(id + 1, vec![raw.clone()]);
-        }
-    }
-    box_of(1, Vec::new())
-}
-
-pub fn queue(queued: &Value) -> Vec<Value> {
-    match get(queued, "queue") {
-        Some(Value::Vector(items)) => items.clone(),
-        _ => Vec::new(),
-    }
-}
-
-/// Pop the head; the remainder keeps `:next-id`.
-pub fn take(queued: &Value) -> (Option<Value>, Value) {
-    let mut items = queue(queued);
-    if items.is_empty() {
-        return (None, queued.clone());
-    }
-    let head = items.remove(0);
-    let next = get(queued, "next-id")
-        .and_then(edn::record::num)
-        .unwrap_or(1.0) as i64;
-    (Some(head), box_of(next, items))
-}
-
-/// `mail.last_id`: the id of the last queued command (0 when empty). The
-/// viewer captures it before a companion exists, so a `:display` written
-/// during startup is consumed rather than skipped.
-pub fn last_id(queued: &Value) -> i64 {
-    queue(queued)
-        .last()
-        .and_then(|cmd| get(cmd, "id"))
-        .and_then(edn::record::num)
-        .unwrap_or(0.0) as i64
 }
 
 /// The element menu operations, in the order the menu shows them. The labels

@@ -1,14 +1,12 @@
-//! Mailbox contract (#142): the `to-viewer.edn` inbox pops the head in stored
-//! order whatever its id (a restored cursor never skips mail), the
-//! `to-agent.edn` outbox appends `{:id n :op …}`, and the element menu writes
-//! the exact target shape the LOVE viewer wrote.
+//! Element menu contract (#142): the menu writes the exact `to-agent.edn`
+//! commands and target shape the LOVE viewer wrote. The queue protocol is
+//! tested with `companion::mailbox`.
 
+use companion::mailbox::Mailbox;
 use edn::Value;
 use edn::record::get;
 use scene::document;
-use viewer::mailbox::{self, MENU_OPS, Mailbox};
-
-const QUEUE: &str = "{:next-id 3 :queue [{:id 1 :op :context :context :proposal :proposal-id :p :name \"中文\"} {:id 2 :op :display :path \"second.edn\"}]}";
+use viewer::mailbox::{self, MENU_OPS};
 
 const DIAGRAM: &str = "{:title \"Second diagram\" :hierarchical true :prefix \"app\" :classes [{:id :app.target :name \"target\" :ns \"app.target\" :contents [{:id :inner}]}] :proposals [{:id :p :name \"P\" :layers []}]}";
 
@@ -26,50 +24,7 @@ fn project() -> std::path::PathBuf {
 }
 
 #[test]
-fn the_inbox_pops_the_head_in_stored_order_and_leaves_the_rest() {
-    let dir = project();
-    let path = dir.join(".uml-viewer/to-viewer.edn");
-    std::fs::write(&path, QUEUE).unwrap();
-    let inbox = Mailbox::inbox(&dir);
-    let first = inbox.take().unwrap().unwrap();
-    assert_eq!(Some(&Value::keyword("context")), get(&first, "op"));
-    let second = inbox.take().unwrap().unwrap();
-    assert_eq!(Some(&Value::keyword("display")), get(&second, "op"));
-    assert!(inbox.take().unwrap().is_none());
-    let rest = inbox.read();
-    assert_eq!(Some(&Value::Integer(3)), get(&rest, "next-id"));
-    assert!(mailbox::queue(&rest).is_empty());
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-#[test]
-fn a_cursor_beyond_the_queued_ids_never_hides_mail() {
-    let boxed = edn::parse("{:next-id 9 :queue [{:id 2 :op :regen}]}").unwrap();
-    assert_eq!(2, mailbox::last_id(&boxed));
-    let (head, rest) = mailbox::take(&boxed);
-    let head = head.unwrap();
-    assert_eq!(Some(2.0), get(&head, "id").and_then(edn::record::num));
-    assert!(mailbox::queue(&rest).is_empty());
-    assert_eq!(
-        0,
-        mailbox::last_id(&edn::parse("{:next-id 1 :queue []}").unwrap())
-    );
-}
-
-#[test]
-fn a_bare_command_and_garbage_normalize_like_the_love_protocol() {
-    let bare = edn::parse("{:id 7 :op :display :path \"d.edn\"}").unwrap();
-    let normalized = mailbox::normalize(Some(&bare));
-    assert_eq!(Some(&Value::Integer(8)), get(&normalized, "next-id"));
-    assert_eq!(vec![bare], mailbox::queue(&normalized));
-    let garbage = mailbox::normalize(Some(&edn::parse("[:invalid]").unwrap()));
-    assert_eq!(Some(&Value::Integer(1)), get(&garbage, "next-id"));
-    assert!(mailbox::queue(&garbage).is_empty());
-    assert!(mailbox::queue(&mailbox::normalize(None)).is_empty());
-}
-
-#[test]
-fn the_outbox_appends_ids_from_next_id_and_keeps_earlier_commands() {
+fn the_menu_operations_append_in_menu_order_with_their_target() {
     let dir = project();
     let outbox = Mailbox::outbox(&dir);
     let target = Value::Map(vec![

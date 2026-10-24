@@ -2,11 +2,11 @@
 //! `love/spec/inspector_spec.lua` and `display_spec.lua` (view units ==
 //! egui points).
 
+use companion::mailbox::Mailbox;
 use edn::Value;
 use edn::record::get;
 use scene::document::{self, ViewState};
 use viewer::inspector::{self, Choice};
-use viewer::mailbox::Mailbox;
 use viewer::project_files;
 
 fn load(text: &str) -> ViewState {

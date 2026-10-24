@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use edn::Value;
-use edn::record::{get, local_name, num};
+use edn::record::{get, local_name};
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
 use scene::document::{self, ViewState};
@@ -830,7 +830,7 @@ impl Viewer {
         if actions.is_empty() {
             return;
         }
-        let outbox = mailbox::Mailbox::outbox(&self.project_root);
+        let outbox = companion::mailbox::Mailbox::outbox(&self.project_root);
         for action in actions {
             match action {
                 Action::Choose(id) => {
@@ -857,7 +857,7 @@ impl Viewer {
                     // the request still waits in the queue (#142).
                     self.status = Some(match outbox.append("regen", &[]) {
                         Ok(cmd) => {
-                            let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
+                            let id = companion::record::get_i64(&cmd, "id").unwrap_or(0);
                             let woken = self.companion.as_mut().is_some_and(|c| c.wake(id).is_ok());
                             if woken {
                                 "Regen requested.".into()
@@ -894,7 +894,7 @@ impl Viewer {
                         mailbox::menu_mail(&self.state, self.state.selected.as_ref(), &op);
                     match outbox.append(&op, &extra) {
                         Ok(cmd) => {
-                            let id = get(&cmd, "id").and_then(num).unwrap_or(0.0) as i64;
+                            let id = companion::record::get_i64(&cmd, "id").unwrap_or(0);
                             if let Some(companion) = &mut self.companion
                                 && let Err(error) = companion.wake(id)
                             {

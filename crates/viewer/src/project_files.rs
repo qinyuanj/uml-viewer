@@ -1,6 +1,6 @@
 //! Project files the inspector writes (#141): proposal write-back through
-//! the scene [`Boundary`]. The `to-agent.edn` mail queue is written through
-//! [`crate::mailbox::Mailbox`], the one owner of the queue contract.
+//! the scene [`Boundary`]. The mail queues are written through
+//! [`companion::mailbox::Mailbox`], the one owner of the queue contract.
 
 use std::path::Path;
 

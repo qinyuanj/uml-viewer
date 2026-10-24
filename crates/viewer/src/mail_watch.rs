@@ -45,7 +45,7 @@ pub fn newest_event(root: &Path) -> Option<(String, String)> {
 /// Read the current stamps of everything the mail loop watches.
 pub fn stamps(root: &Path) -> Stamps {
     Stamps {
-        inbox: stamp(&root.join(".uml-viewer/to-viewer.edn")),
+        inbox: stamp(companion::mailbox::Mailbox::inbox(root).path()),
         event: newest_event(root),
     }
 }

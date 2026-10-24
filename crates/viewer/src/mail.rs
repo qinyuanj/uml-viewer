@@ -6,11 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
+use companion::mailbox::Mailbox;
 use companion::worker::{self, Worker};
 use edn::Value;
 use scene::document::{self, MailBoundary, ViewState};
-
-use crate::mailbox::Mailbox;
 
 /// Everything the frame loop needs from the mail side. IO is the worker's
 /// real file/process boundary; `wake` records the ids asked for.
@@ -145,7 +144,7 @@ impl Companion {
     }
 
     pub fn inbox_path(&self) -> &Path {
-        &self.inbox.path
+        self.inbox.path()
     }
 }
 
@@ -292,7 +291,7 @@ mod tests {
         assert!(super::quit_requested(&state));
         assert_eq!(2, state.mail_seen);
         let rest = companion.inbox.read();
-        assert!(crate::mailbox::queue(&rest).is_empty());
+        assert!(companion::mailbox::queue(&rest).is_empty());
         let (unchanged, changed) = companion.consume(&state);
         assert!(!changed);
         assert_eq!(2, unchanged.mail_seen);

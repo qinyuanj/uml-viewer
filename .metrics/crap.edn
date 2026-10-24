@@ -441,7 +441,6 @@
   {:name "write", :namespace "companion::posix::atomic", :complexity 4, :coverage 75.0, :crap 4.25}
   {:name "char_size", :namespace "viewer::source", :complexity 4, :coverage 77.7778, :crap 4.1756}
   {:name "boolean", :namespace "viewer::driver", :complexity 4, :coverage 80.0, :crap 4.128}
-  {:name "get_i64", :namespace "companion::record", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "child_present", :namespace "companion::recovery_domain", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "module_relative", :namespace "ir::scan::lua", :complexity 4, :coverage 83.3333, :crap 4.0741}
   {:name "detail_id_for", :namespace "scene::events", :complexity 4, :coverage 83.3333, :crap 4.0741}
@@ -477,7 +476,9 @@
   {:name "session_valid", :namespace "companion::herdr_domain", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "as_i64", :namespace "companion::json::Json", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "normalize", :namespace "companion::mailbox", :complexity 4, :coverage 100.0, :crap 4.0}
+  {:name "append", :namespace "companion::mailbox::Mailbox", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "select_on_path", :namespace "companion::preflight", :complexity 4, :coverage 100.0, :crap 4.0}
+  {:name "get_i64", :namespace "companion::record", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "matching", :namespace "companion::recovery_domain", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "same_child", :namespace "companion::recovery_domain", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "write", :namespace "companion::worker", :complexity 4, :coverage 100.0, :crap 4.0}
@@ -518,7 +519,6 @@
   {:name "highlight", :namespace "viewer::detail", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "value_number", :namespace "viewer::driver", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "decimate", :namespace "viewer::lod", :complexity 4, :coverage 100.0, :crap 4.0}
-  {:name "normalize", :namespace "viewer::mailbox", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "contains", :namespace "viewer::search_box", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "display", :namespace "viewer::source", :complexity 4, :coverage 100.0, :crap 4.0}
   {:name "ordered", :namespace "viewer::source", :complexity 4, :coverage 100.0, :crap 4.0}
@@ -547,7 +547,6 @@
   {:name "score", :namespace "scene::config", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "keyword_name", :namespace "scene::policy", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "stop", :namespace "viewer::mail::Companion", :complexity 3, :coverage 80.0, :crap 3.072}
-  {:name "queue", :namespace "viewer::mailbox", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "count", :namespace "viewer::render_cache", :complexity 3, :coverage 80.0, :crap 3.072}
   {:name "add_open", :namespace "companion::posix::FileActions", :complexity 3, :coverage 81.25, :crap 3.0593}
   {:name "owner_as_result", :namespace "companion::recovery_domain", :complexity 3, :coverage 83.3333, :crap 3.0417}
@@ -646,8 +645,6 @@
   {:name "choose", :namespace "viewer::inspector", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "tier", :namespace "viewer::lod", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "load", :namespace "viewer::mail::DisplayBoundary", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "append", :namespace "viewer::mailbox::Mailbox", :complexity 3, :coverage 100.0, :crap 3.0}
-  {:name "take", :namespace "viewer::mailbox::Mailbox", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "galley", :namespace "viewer::paint::TextCache", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "decimation_step", :namespace "viewer::render_cache", :complexity 3, :coverage 100.0, :crap 3.0}
   {:name "path", :namespace "viewer::session", :complexity 3, :coverage 100.0, :crap 3.0}
@@ -853,8 +850,6 @@
   {:name "any", :namespace "viewer::mail_watch::Found", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "stop", :namespace "viewer::mail_watch::Waker", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "take", :namespace "viewer::mail_watch::Waker", :complexity 1, :coverage 0.0, :crap 2.0}
-  {:name "take", :namespace "viewer::mailbox", :complexity 2, :coverage 100.0, :crap 2.0}
-  {:name "write", :namespace "viewer::mailbox::Mailbox", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "snapshot", :namespace "viewer::metrics", :complexity 2, :coverage 100.0, :crap 2.0}
   {:name "add_boxed", :namespace "viewer::paint", :complexity 1, :coverage 0.0, :crap 2.0}
   {:name "add_rect", :namespace "viewer::paint", :complexity 1, :coverage 0.0, :crap 2.0}
@@ -900,9 +895,13 @@
   {:name "role_launcher", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "table_name", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "user_config_path", :namespace "companion::lifecycle", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "last_id", :namespace "companion::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "queue", :namespace "companion::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "acknowledged", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "inbox", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "open", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "outbox", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
+  {:name "path", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "read", :namespace "companion::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "bytes", :namespace "companion::ownership", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "exists", :namespace "companion::ownership", :complexity 1, :coverage 100.0, :crap 1.0}
@@ -1129,14 +1128,8 @@
   {:name "baseline", :namespace "viewer::mail_watch::Watch", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "new", :namespace "viewer::mail_watch::Watch", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "poll", :namespace "viewer::mail_watch::Watch", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "box_of", :namespace "viewer::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "last_id", :namespace "viewer::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "menu_mail", :namespace "viewer::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "section", :namespace "viewer::mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "inbox", :namespace "viewer::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "open", :namespace "viewer::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "outbox", :namespace "viewer::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
-  {:name "read", :namespace "viewer::mailbox::Mailbox", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "canonical", :namespace "viewer::metrics", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "italic_glyph_probe", :namespace "viewer::paint", :complexity 1, :coverage 100.0, :crap 1.0}
   {:name "measure", :namespace "viewer::paint", :complexity 1, :coverage 100.0, :crap 1.0}

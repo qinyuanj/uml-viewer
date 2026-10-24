@@ -68,7 +68,10 @@ impl Wake {
         stamp_into(&mut out, &self.diagram);
         stamp_into(&mut out, &self.root.join(".metrics/crap.edn"));
         stamp_tree(&mut out, &self.root.join(".metrics/mutate"));
-        stamp_into(&mut out, &self.root.join(".uml-viewer/to-viewer.edn"));
+        stamp_into(
+            &mut out,
+            companion::mailbox::Mailbox::inbox(&self.root).path(),
+        );
         out
     }
 

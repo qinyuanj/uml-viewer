@@ -429,7 +429,7 @@ fn run_body(
         None
     };
     session.borrow_mut().event("ready", ready)?;
-    let mailbox = Mailbox::open(format!("{root}/.uml-viewer/to-agent.edn"));
+    let mailbox = Mailbox::outbox(Path::new(root));
     loop {
         session.borrow_mut().commands()?;
         let id = {
