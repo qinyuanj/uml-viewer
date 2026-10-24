@@ -21,10 +21,13 @@ The diagram is already on screen.
   them when rewriting policy. Do not invent them on launch. The inspector
   lists them; **P** returns to the namespace tree. If instructed, add a
   named proposal (default name is a timestamp) and regenerate the IR.
-- After source or policy change: `./uml crap`, then `./uml ir`. Mutation
-  is run by the maintainer by hand: when you hand off, list the changed
-  source files so they can run a differential `./uml mutate`. Uncovered
-  mutants are coverage gaps: keep the snapshot.
+- Developing this repository: the maintainer runs the quality refresh by
+  hand (`./uml crap`, a differential `./uml mutate` on the changed source
+  files, then `./uml ir`). Your hand-off ends with the list of changed
+  source files for that refresh. Commit source and docs only; `.metrics/`
+  snapshots and `examples/uml-viewer.edn` go in the maintainer's refresh
+  commit. Requests (launch, `:omit`, proposals, quality mail) still run IR
+  under their own rules.
 - In a git worktree of this repository, run `./uml` with
   `UML_VIEWER_TOOL_ROOT` set to that worktree so it uses the tree under
   change, not the clone in `.uml-viewer/uml-viewer/`.
@@ -46,7 +49,7 @@ The diagram is already on screen.
   `:display`. Missing/stale/mismatched records or failures stop that request's
   IR/display and report the cause; continue later FIFO mail. Keep findings
   snapshots without retries. Exit 3 requires a tool or project operation
-  declaration; there is no Clojure alias route.
+  declaration.
 - `:omit` → add `:id` to the current proposal's `:omit`, or to policy `:omit`
   on the real diagram, then IR; display only after IR succeeds.
 - `:context` mail: `{:context :real}` or `{:context :proposal :proposal-id
@@ -72,17 +75,13 @@ The diagram is already on screen.
   times (1, 2, 4 seconds) through the durable controller; normal or unknown
   exits stop recovery. Other Claude sessions stay up.
 - Herdr is the sole companion backend on every supported platform.
-  The delivery target is **WSL2 + Ubuntu 24.04 + WSLg**; Windows native is
-  unsupported and macOS is not committed (ADR 0007).
+  The delivery target is **WSL2 + Ubuntu 24.04 + WSLg** (ADR 0007).
   Legacy tmux/psmux or unmarked ownership is retained and refused; before
   migration read `docs/herdr-backend-contract.md` §9.
 - Installer prerequisites are the Rust toolchain pinned by
-  `rust-toolchain.toml`, git, Herdr >= 0.9.3, and Python 3.11+. There is no
-  PowerShell or Windows-native path (ADR 0007). LOVE, LuaJIT, Lua 5.4, lfs,
-  luacov/cluacov and cimgui are no longer required or provisioned (#144):
-  the single Rust binary runs the viewer, IR generation, the four scanners
-  and the companion roles, so the old LuaJIT/Lua 5.4 dual-interpreter rule
-  is gone. `get-uml-viewer` builds the pinned binary with
+  `rust-toolchain.toml`, git, Herdr >= 0.9.3, and Python 3.11+. The single
+  Rust binary runs the viewer, IR generation, the four scanners and the
+  companion roles. `get-uml-viewer` builds the pinned binary with
   `cargo build --release --locked`, provisions the Sarasa face into
   `.uml-viewer/`, fetches all three quality tools — crapper, mutator and
   dryer — and provisions their project-local `.uml-viewer/<tool>/.venv`

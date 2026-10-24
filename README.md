@@ -579,7 +579,8 @@ policy and regenerate the IR, then wait.
 After **every** later source or policy change, refresh metrics and
 regenerate the IR.
 
-For this repository that is `./uml crap`, then `./uml mutate` on the changed
+For this repository the maintainer runs that refresh by hand during
+development (see `AGENTS.md`): `./uml crap`, then `./uml mutate` on the changed
 source files, then `./uml ir`. Uncovered mutants that remain are coverage
 gaps. Keep the snapshot. Do not re-run the file or force a full mutation
 because mutate exited non-zero.
