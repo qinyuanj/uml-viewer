@@ -428,3 +428,98 @@ fn the_glyph_probe_covers_the_whole_ui_string_table() {
         assert!(probe.contains(text), "glyph probe lacks {text}");
     }
 }
+
+// #154: edges.lua and class_boxes.lua read these as `if g(x,'k')` (or
+// `not not`), so an authored `false`/`nil` draws like omission and `:yes`/`1`
+// like `true`. The omitted and `true` outputs are the reference.
+
+const FALSY: [&str; 2] = ["false", "nil"];
+const TRUTHY: [&str; 2] = [":yes", "1"];
+
+#[test]
+fn edge_and_indicator_violating_is_a_lua_truthy_flag() {
+    // edges.lua:32 `local violating=g(e,'violating')`; edges.lua:24/53 the
+    // indicator's `violating` picks the red band.
+    let stroke = |flag: &str| {
+        let s = edn::parse(&format!(
+            "{{:classes [] :edges [{{:from :a :to :b :strokes [[[0 0] [10 10]]] {flag}}}]}}"
+        ))
+        .unwrap();
+        commands::edge_commands(&s, None, None)
+    };
+    let indicator = |flag: &str| {
+        let s = edn::parse(&format!(
+            "{{:diagram {{:hide-edges true}} :classes [] \
+             :dep-indicators [{{:id :a :triangle [[0 0] [6 0] [3 5]] {flag}}}]}}"
+        ))
+        .unwrap();
+        commands::edge_commands(&s, None, None)
+    };
+    type Draw<'a> = &'a dyn Fn(&str) -> Vec<EdgeCommand>;
+    for draw in [&stroke as Draw, &indicator] {
+        let omitted = draw("");
+        let violating = draw(":violating true");
+        assert_ne!(omitted, violating, "fixture must tell a violation apart");
+        for v in FALSY {
+            assert_eq!(omitted, draw(&format!(":violating {v}")), "{v}");
+        }
+        for v in TRUTHY {
+            assert_eq!(violating, draw(&format!(":violating {v}")), "{v}");
+        }
+    }
+}
+
+#[test]
+fn dependency_popup_rows_read_violating_as_a_lua_truthy_flag() {
+    // class_boxes.lua:179 `violating=not not G.get(d,'violating')`.
+    for (v, want) in [
+        ("false", false),
+        ("nil", false),
+        ("true", true),
+        (":yes", true),
+        ("1", true),
+    ] {
+        let hover = format!("{{:kind :dep :id :a :deps [{{:from :a :to :b :violating {v}}}]}}");
+        let state = scene::document::ViewState {
+            scene: edn::parse("{:classes [] :packages [] :edges [] :dep-indicators []}").unwrap(),
+            hover: Some(edn::parse(&hover).unwrap()),
+            pointer: Some((100.0, 100.0)),
+            ..Default::default()
+        };
+        let rows: Vec<bool> = commands::chrome(&state, 800.0, 600.0)
+            .iter()
+            .find_map(|c| match c {
+                Command::DependencyPopup { rows, .. } => {
+                    Some(rows.iter().map(|r| r.violating).collect())
+                }
+                _ => None,
+            })
+            .expect("popup");
+        assert_eq!(vec![want], rows, "{v}");
+    }
+}
+
+#[test]
+fn proposal_banner_reads_the_diagram_proposal_as_a_lua_truthy_flag() {
+    // class_boxes.lua:162 `if G.get(diagram,'proposal') then` banner.
+    let banner = |flag: &str| {
+        let state = scene::document::ViewState {
+            scene: edn::parse(&format!(
+                "{{:diagram {{:title \"T\" {flag}}} :classes [] :packages [] :edges []}}"
+            ))
+            .unwrap(),
+            ..Default::default()
+        };
+        commands::chrome(&state, 800.0, 600.0)
+            .iter()
+            .any(|c| matches!(c, Command::ProposalBanner { .. }))
+    };
+    assert!(!banner(""));
+    assert!(banner(":proposal true"));
+    for v in FALSY {
+        assert!(!banner(&format!(":proposal {v}")), "{v}");
+    }
+    for v in TRUTHY {
+        assert!(banner(&format!(":proposal {v}")), "{v}");
+    }
+}

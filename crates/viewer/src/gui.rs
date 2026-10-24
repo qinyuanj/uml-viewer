@@ -1200,7 +1200,7 @@ impl Gui {
             ),
             (
                 kw("proposal"),
-                Value::Bool(get(&state.extra, "proposal") == Some(&Value::Bool(true))),
+                Value::Bool(edn::record::flag(&state.extra, "proposal")),
             ),
         ])
     }

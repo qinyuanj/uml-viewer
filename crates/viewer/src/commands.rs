@@ -440,7 +440,7 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
             };
             let italic = kind == "name"
                 && ((!stereo.is_empty() && stereo != "class")
-                    || get(c, "drill?") == Some(&Value::Bool(true))
+                    || edn::record::is_true(c, "drill?")
                     || contents_len > 0);
             out.push(Command::Text {
                 role: kind.clone(),
@@ -811,7 +811,7 @@ pub fn edge_commands(
             if points.len() != 3 {
                 continue;
             }
-            let violating = get(ind, "violating") == Some(&Value::Bool(true));
+            let violating = flag(ind, "violating");
             out.push(EdgeCommand::Indicator {
                 id: get(ind, "id").cloned(),
                 points: [points[0], points[1], points[2]],
@@ -825,7 +825,7 @@ pub fn edge_commands(
         let hot = h.hot(e, hover);
         let warm = !hot && h.warm(e);
         let dimmed = h.focus.is_some() && !hot;
-        let violating = get(e, "violating") == Some(&Value::Bool(true));
+        let violating = flag(e, "violating");
         let (color, width) = edge_style(violating, hot, warm);
         let from = get(e, "from").cloned();
         let to = get(e, "to").cloned();
@@ -929,7 +929,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         .cloned()
         .unwrap_or(Value::Map(vec![]));
     let title = get(&diagram, "title");
-    if get(&diagram, "proposal") == Some(&Value::Bool(true)) {
+    if flag(&diagram, "proposal") {
         let mut proposal_name: Option<String> = None;
         if let Some(doc) = &state.document {
             for p in &scene::hierarchy::named_proposals(doc) {
@@ -1012,7 +1012,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
                 let to = local_name(get(d, "to").unwrap_or(&Value::Nil))
                     .unwrap_or_default()
                     .to_owned();
-                let violating = get(d, "violating") == Some(&Value::Bool(true));
+                let violating = flag(d, "violating");
                 PopupRow {
                     text: format!("{from} -> {to}"),
                     violating,

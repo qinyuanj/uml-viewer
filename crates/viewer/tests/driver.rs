@@ -464,6 +464,34 @@ fn the_new_input_ops_reach_the_host_with_modifiers() {
 }
 
 #[test]
+fn step_modifiers_are_lua_truthy_flags() {
+    // #154: driver steps are EDN records like the IR, so `:ctrl false` equals
+    // omission and `:ctrl :yes` / `1` equals `true`.
+    let wheel = |ctrl: &str| {
+        let (evidence, project) = temp("modifier-flags");
+        let mut host = FakeHost::default();
+        let script = format!("{{:steps [{{:op :wheel :dy 1 {ctrl}}} {{:op :quit :code 0}}]}}");
+        run_all(&script, &evidence, &project, &mut host, 4).unwrap();
+        let _ = std::fs::remove_dir_all(evidence.parent().unwrap());
+        host.inputs
+    };
+    let held = |ctrl: bool| {
+        vec![Input::Wheel {
+            dx: 0.0,
+            dy: 1.0,
+            ctrl,
+            shift: false,
+        }]
+    };
+    for v in ["", ":ctrl false", ":ctrl nil"] {
+        assert_eq!(held(false), wheel(v), "{v:?}");
+    }
+    for v in [":ctrl true", ":ctrl :yes", ":ctrl 1"] {
+        assert_eq!(held(true), wheel(v), "{v:?}");
+    }
+}
+
+#[test]
 fn dump_view_writes_the_view_record_as_edn() {
     let (evidence, project) = temp("dump-view");
     let mut host = FakeHost {

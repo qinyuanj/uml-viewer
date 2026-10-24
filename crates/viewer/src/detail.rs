@@ -178,7 +178,7 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             add(&mut classes, &mut seen, c);
         }
     }
-    if get(&doc, "hierarchical").is_some_and(|v| v != &Value::Bool(false)) {
+    if edn::record::flag(&doc, "hierarchical") {
         let root = scene::hierarchy::view_at(&doc, &[]);
         add_view(&mut classes, &mut seen, &mut edges, &mut seen_edges, &root);
         // A port can name an intermediate namespace absent from the root and
@@ -200,7 +200,7 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             );
             for p in seq(get(&target, "packages")) {
                 for c in seq(get(p, "classes")) {
-                    if get(c, "id") != Some(id) || get(c, "drill?") != Some(&Value::Bool(true)) {
+                    if get(c, "id") != Some(id) || !edn::record::flag(c, "drill?") {
                         continue;
                     }
                     for dir in ["in-deps", "out-deps"] {
@@ -412,7 +412,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
         .file
         .as_ref()
         .and_then(|f| f.rsplit('/').next().map(String::from));
-    let drill = get(c, "drill?") == Some(&Value::Bool(true));
+    let drill = edn::record::flag(c, "drill?");
     let module = match &base {
         Some(b) if !drill && b.to_lowercase().ends_with(".rs") => Some(b.clone()),
         _ => model.ns.clone(),
@@ -471,7 +471,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
         stats.cells = cells(c, true);
         emit(&mut rows, &mut y, stats);
         for op in ops {
-            let private = get(op, "private") == Some(&Value::Bool(true));
+            let private = edn::record::is_true(op, "private");
             let text = format!(
                 "{}{}",
                 if private { "- " } else { "+ " },
