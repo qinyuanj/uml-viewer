@@ -1,0 +1,27 @@
+{:title "Route regression #148"
+ :direction :tb
+ :packages
+ [{:id :domain
+   :label "Domain"
+   :classes
+   [{:id :catalog
+     :name "Catalog"
+     :fields [{:name "books" :type "Book[]"}]
+     :ops [{:name "find" :args ["isbn"] :returns "Book"}
+           {:name "add" :args ["book"] :returns "Catalog"}]}
+    {:id :loan
+     :name "Loan"
+     :fields [{:name "book" :type "Book"}
+              {:name "patron" :type "Patron"}
+              {:name "due" :type "Date"}]
+     :ops [{:name "overdue?" :returns "bool"}]}]}
+  {:id :app
+   :label "Application"
+   :classes
+   [{:id :loan-service
+     :name "LoanService"
+     :ops [{:name "checkout" :args ["patron" "isbn"] :returns "Loan"}
+           {:name "return" :args ["loan"] :returns "void"}]}]}]
+ :edges
+ [{:from :loan-service :to :catalog :kind :dependency}
+  {:from :loan-service :to :loan :kind :dependency}]}

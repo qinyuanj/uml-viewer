@@ -73,7 +73,9 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
         ));
     }
     lines.push(line("name", get(c, "name").cloned(), vec![]));
-    if get(c, "hide-members").is_none() {
+    // Lua `not g(c,'hide-members')`: an explicit `false` (every normalized
+    // IR class carries one) still shows members (#148).
+    if matches!(get(c, "hide-members"), None | Some(Value::Bool(false))) {
         let kids = seq(get(c, "contents"));
         if !kids.is_empty() {
             lines.push(line("rule", None, vec![]));
