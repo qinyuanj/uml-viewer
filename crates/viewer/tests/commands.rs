@@ -279,6 +279,40 @@ fn hidden_edges_become_violation_aware_indicators() {
 }
 
 #[test]
+fn hide_edges_draws_indicators_for_any_lua_truthy_value() {
+    // adapters/edges.lua: `if g(g(scene,'diagram'),'hide-edges') then` draw
+    // indicators, else strokes. `:yes` hides; an authored `false` draws edges.
+    let commands_for = |hide: &str| {
+        let text = format!(
+            "{{{hide} :packages [{{:id :p :label \"P\" :classes [{{:id :a :name \"A\"}} {{:id :b :name \"B\"}}]}}] \
+             :edges [{{:from :a :to :b :kind :dependency}}]}}"
+        );
+        let s = scene::compose::compile_diagram(&edn::parse(&text).unwrap());
+        commands::edge_commands(&s, None, None)
+    };
+    let yes = commands_for(":hide-edges :yes");
+    assert_eq!(2, yes.len());
+    assert!(
+        yes.iter()
+            .all(|c| matches!(c, EdgeCommand::Indicator { .. })),
+        "{yes:?}"
+    );
+    let shown = commands_for(":hide-edges false");
+    assert!(
+        shown
+            .iter()
+            .any(|c| matches!(c, EdgeCommand::Stroke { .. })),
+        "{shown:?}"
+    );
+    assert!(
+        !shown
+            .iter()
+            .any(|c| matches!(c, EdgeCommand::Indicator { .. })),
+        "{shown:?}"
+    );
+}
+
+#[test]
 fn indicator_hover_offers_the_from_to_dependency_rows() {
     // The chrome popup lists `from -> to` sorted with violations first.
     let s = edn::parse("{:classes [] :packages [] :edges [] :dep-indicators []}").unwrap();

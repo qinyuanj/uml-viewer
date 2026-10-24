@@ -5,7 +5,7 @@
 //! widths stay in points and scale with DPI at paint time, never with zoom.
 
 use edn::Value;
-use edn::record::{get, local_name, seq};
+use edn::record::{flag, get, local_name, seq};
 use egui::Color32;
 use scene::config as C;
 use scene::document::ViewState;
@@ -804,7 +804,7 @@ pub fn edge_commands(
 ) -> Vec<EdgeCommand> {
     let h = Highlight::new(scene, selected, hover);
     let mut out = Vec::new();
-    let hide = get(scene, "diagram").and_then(|d| get(d, "hide-edges")) == Some(&Value::Bool(true));
+    let hide = get(scene, "diagram").is_some_and(|d| flag(d, "hide-edges"));
     if hide {
         for ind in seq(get(scene, "dep-indicators")) {
             let points = points_of(get(ind, "triangle"));

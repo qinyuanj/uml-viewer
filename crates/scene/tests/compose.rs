@@ -47,6 +47,24 @@ fn hide_edges_replaces_strokes_with_incoming_and_outgoing_indicators() {
 }
 
 #[test]
+fn hide_edges_is_a_lua_truthy_flag() {
+    // compose.lua: `if g(diagram,'hide-edges') then put(scene,'dep-indicators',…)`.
+    // An authored `false` equals omission; any non-nil, non-false value hides.
+    let compiled = |hide: &str| {
+        compile_diagram(&parse(&format!(
+            "{{{hide} :packages [{{:id :p :label \"P\" :classes [{{:id :a :name \"A\"}} {{:id :b :name \"B\"}}]}}] :edges [{{:from :a :to :b :kind :dependency}}]}}"
+        )).unwrap())
+    };
+    for hide in ["", ":hide-edges false", ":hide-edges nil"] {
+        let s = compiled(hide);
+        assert_eq!(None, edn::record::get(&s, "dep-indicators"), "{hide:?}");
+    }
+    for hide in [":hide-edges true", ":hide-edges :yes", ":hide-edges 1"] {
+        assert_eq!(2, seq(&compiled(hide), "dep-indicators").len(), "{hide:?}");
+    }
+}
+
+#[test]
 fn prepare_scene_clips_strokes_around_a_wall() {
     // The wall sits between the boxes; strokes split into two runs and the
     // hidden middle never hits.

@@ -8,7 +8,7 @@
 use crate::curve;
 use crate::geom::{self, Rect};
 use edn::Value;
-use edn::record::{get, put, seq};
+use edn::record::{flag, get, put, seq};
 use std::collections::HashMap;
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
@@ -226,7 +226,7 @@ pub fn compile_diagram(diagram: &Value) -> Value {
     crate::route::route(&mut scene);
     fit(&mut scene);
     prepare_scene(&mut scene);
-    if get(diagram, "hide-edges").is_some() {
+    if flag(diagram, "hide-edges") {
         let indicators = crate::hit::dep_indicators(&scene);
         put(&mut scene, "dep-indicators", indicators);
     }
