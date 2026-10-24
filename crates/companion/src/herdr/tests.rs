@@ -635,6 +635,31 @@ fn pane_run_retries_only_canonical_mode_rejections_within_the_deadline() {
 }
 
 #[test]
+fn create_reads_the_recorded_provisional_as_a_lua_truthy_flag() {
+    // herdr.lua:281 `if B.identity and not B.identity.provisional then fail`.
+    // #154: `false`/`nil` is a settled ownership; `:yes`/`1` is provisional.
+    let refused = |provisional: &str| {
+        let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+        let state: Shared = Rc::new(RefCell::new(FakeState {
+            empty_sessions: true,
+            ..FakeState::default()
+        }));
+        let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+        backend.identity = Some(edn::parse(&format!("{{:session \"s\" {provisional}}}")).unwrap());
+        backend
+            .create("uml-viewer-A", "/tmp", &["/bin/sh".to_owned()])
+            .err()
+            .is_some_and(|e| e.message.contains("existing Herdr ownership"))
+    };
+    for v in ["", ":provisional false", ":provisional nil"] {
+        assert!(refused(v), "{v:?}");
+    }
+    for v in [":provisional true", ":provisional :yes", ":provisional 1"] {
+        assert!(!refused(v), "{v:?}");
+    }
+}
+
+#[test]
 fn create_refuses_a_command_that_is_not_resolvable() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState {

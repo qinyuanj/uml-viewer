@@ -275,7 +275,7 @@ impl Session {
             match record::get_name(&command, "operation").as_deref() {
                 Some("stop") => {
                     self.stop = true;
-                    self.keep = record::get_bool(&extra, "keep") == Some(true);
+                    self.keep = edn::record::is_true(&extra, "keep");
                 }
                 Some("wake") => {
                     if let Some(id) = record::get_i64(&extra, "id") {
@@ -312,7 +312,7 @@ pub fn run(request_path: &str, attach: bool) -> Result<i32> {
     let root = record::get_name(&request, "root").unwrap_or_default();
     let base = record::get_name(&request, "base").unwrap_or_default();
     let token = record::get_name(&request, "token").unwrap_or_default();
-    let restart = record::get_bool(&request, "restart") == Some(true);
+    let restart = edn::record::flag(&request, "restart");
     let viewer = edn::record::get(&request, "viewer")
         .cloned()
         .unwrap_or(Value::Nil);

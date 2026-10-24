@@ -411,7 +411,7 @@ pub fn preflight_checks(record: Option<&Value>, opts: &PreflightOptions) -> Resu
             || record::get_name(record, "pane").is_none_or(|pane| pane.is_empty())
             || edn::record::get(record, "cwd").is_none()
             || record::get_name(record, "owner-role").as_deref() != Some("companion")
-            || record::get_bool(record, "provisional") == Some(true)
+            || edn::record::is_true(record, "provisional")
         {
             return Err(Failure::new(
                 "Companion ownership is incomplete, provisional or belongs to another project; file retained",

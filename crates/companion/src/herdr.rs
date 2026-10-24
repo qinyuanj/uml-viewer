@@ -611,7 +611,7 @@ impl Herdr {
         if self
             .identity
             .as_ref()
-            .is_some_and(|identity| record::get_bool(identity, "provisional") != Some(true))
+            .is_some_and(|identity| !edn::record::flag(identity, "provisional"))
         {
             return self.fail("Cannot create over existing Herdr ownership");
         }
