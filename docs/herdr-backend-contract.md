@@ -90,7 +90,7 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
 
 | 接口 | Herdr 机制 | 契约与已验证语义 |
 |---|---|---|
-| `create!` | `herdr --session <s> server`（隔离 server）+ `workspace create --cwd <root> --no-focus` | cwd 原样保留（含空格、`&`、中文已验证）。pane 内命令经 **argv 桥接** 投递（见 §4）。 |
+| `create!` | `herdr --session <s> server`（隔离 server）+ `workspace create --cwd <root> --no-focus` | cwd 原样保留（含空格、`&`、中文已验证）。server 启动时去掉继承的 `HERDR_*`（见 §6）。pane 内命令经 **argv 桥接** 投递（见 §4）。 |
 | `probe!` | `status server` + `api snapshot` | session 存在且 socket 可达、记录中的 pane 存在于 snapshot 才算存活；超时/含糊不得视为"已不存在"。 |
 | `identity!` | snapshot + `pane process-info --pane <id>` | 返回并核对上节全部字段；`terminal_id` 在 pane 存续期稳定。 |
 | `bind!` | 同上，纯核对，无副作用 | Viewer 新 JVM 重启后只重新绑定记录的 pane；缺失或身份变化则拒绝启动，不创建替代。 |
@@ -176,6 +176,14 @@ Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace cr
 要等 bootstrap 结束才返回；WSL interop 追加的 `/mnt/c` PATH 项使 bootstrap
 实测 5.7 秒（空闲）至 10.2 秒（另一项目并存），因此该请求使用 60 秒上限，
 其他 CLI 请求仍为 10 秒。
+
+从 Herdr pane 里启动时，launcher 会继承这个 pane 的 `HERDR_*` 变量。Herdr 0.9.5
+的 headless server 只要继承到 `HERDR_STARTUP_CWD`，就会在该目录自建一个
+startup workspace，隔离 session 因此多出一个空 shell workspace。所以 companion
+启动隔离 server 前要去掉继承的 `HERDR_*`，只保留用户自己选的
+`HERDR_CONFIG_PATH`。CLI 调用不受影响：`--session` 优先于继承的
+`HERDR_SOCKET_PATH`，pane/workspace 也都显式传 id。对照见
+`acceptance-evidence/herdr-startup-workspace/`。
 
 ### Herdr 原生证据边界（#14）
 

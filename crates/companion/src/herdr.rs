@@ -49,7 +49,10 @@ type SleepFn = Rc<dyn Fn(i64)>;
 type CanonicalFn = Rc<dyn Fn(&str) -> String>;
 type CompanionWrite = Rc<dyn Fn(&str, &Value) -> Result<()>>;
 type CompanionRead = Rc<dyn Fn(&str) -> Result<Option<Value>>>;
-type ServerSpawn = Rc<dyn Fn(&str, &[String], &str) -> Result<Option<Owner>>>;
+/// (executable, argv, cwd, inherited variables to remove).
+type ServerSpawn = Rc<dyn Fn(&str, &[String], &str, &[String]) -> Result<Option<Owner>>>;
+/// Names of the variables this process would pass to a child.
+type EnvironmentFn = Rc<dyn Fn() -> Vec<String>>;
 type RunnerStateFn = Rc<dyn Fn(&Value) -> Option<Value>>;
 type StartRecovery = Rc<dyn Fn(&Value, Option<&ControllerSpec>) -> Result<()>>;
 type CancelRecovery = Rc<dyn Fn(&Value) -> Result<()>>;
@@ -79,6 +82,7 @@ pub struct Options {
     pub progress: Option<ProgressFn>,
     pub select: Option<SelectFn>,
     pub max_socket_bytes: usize,
+    pub environment: EnvironmentFn,
 }
 
 impl Options {
@@ -112,6 +116,11 @@ impl Options {
             progress: None,
             select: None,
             max_socket_bytes: 101,
+            environment: Rc::new(|| {
+                std::env::vars_os()
+                    .map(|(name, _)| name.to_string_lossy().into_owned())
+                    .collect()
+            }),
         }
     }
 }
@@ -296,11 +305,13 @@ impl Herdr {
     pub fn launch_server(&self, session: &str, cwd: &str) -> Result<Owner> {
         // Server diagnostics belong beside the project's other lifecycle
         // journals; without them a failed start is an unexplained timeout.
+        let remove = domain::inherited_pane_env(&(self.options.environment)());
         let owner = match &self.options.spawn_server {
             Some(spawn) => spawn(
                 &self.herdr(),
                 &strings(&["--session", session, "server"]),
                 cwd,
+                &remove,
             )?,
             None => {
                 let log = Path::new(cwd).join(".uml-viewer/herdr-server.log");
@@ -314,6 +325,7 @@ impl Herdr {
                     Path::new(cwd),
                     Some(&log),
                     Some(Path::new(&format!("{}.err", log.display()))),
+                    &remove.iter().map(String::as_str).collect::<Vec<_>>(),
                 )?)
             }
         };
@@ -802,6 +814,7 @@ impl Herdr {
                         Path::new(&canonical_cwd),
                         Some(Path::new(&log)),
                         Some(Path::new(&format!("{log}.err"))),
+                        &[],
                     )?;
                     Ok(())
                 })?;

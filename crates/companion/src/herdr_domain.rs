@@ -226,6 +226,19 @@ pub fn foreground_allowed(info: Option<&crate::json::Json>, shell_pid: i64) -> R
     Ok(true)
 }
 
+/// The inherited variables an isolated server must not see. A launch from
+/// inside a Herdr pane carries that pane's `HERDR_*` context; Herdr 0.9.5's
+/// headless bootstrap turns `HERDR_STARTUP_CWD` into an extra startup
+/// workspace (contract §6), and the rest name a session this server is not.
+/// `HERDR_CONFIG_PATH` is the person's own config choice, so it stays.
+pub fn inherited_pane_env(names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| name.starts_with("HERDR_") && *name != "HERDR_CONFIG_PATH")
+        .cloned()
+        .collect()
+}
+
 /// Ownership changed when any field but the cleanup checkpoint differs.
 pub fn ownership_changed(identity: &Value, saved: &Value) -> bool {
     record::without_cleanup_phase(identity) != record::without_cleanup_phase(saved)

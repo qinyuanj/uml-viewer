@@ -690,7 +690,7 @@ fn create_backend(
                 Ok(())
             }),
             read_companion: Rc::new(|_| Ok(None)),
-            spawn_server: Some(Rc::new(|_, _, _| {
+            spawn_server: Some(Rc::new(|_, _, _, _| {
                 Ok(Some(Owner {
                     pid: 41,
                     start: "server-start".to_owned(),
@@ -834,6 +834,67 @@ fn create_waits_for_a_server_bootstrap_beyond_the_ordinary_bound() {
     assert_eq!(
         Some("w1:p1".to_owned()),
         record::get_name(&identity, "pane")
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Launched from inside a Herdr pane, the companion inherits that pane's
+/// `HERDR_*` context. The isolated server must not: Herdr 0.9.5 turns an
+/// inherited `HERDR_STARTUP_CWD` into an extra startup workspace.
+/// The person's own `HERDR_CONFIG_PATH` is not pane context and stays.
+#[test]
+fn create_starts_the_server_without_the_inherited_herdr_pane_context() {
+    let root = std::env::temp_dir().join(format!(
+        "uml herdr env {} {}",
+        std::process::id(),
+        posix::monotonic_ms()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let exe = root.join("claude");
+    std::fs::write(&exe, "").unwrap();
+    let state: Shared = Rc::new(RefCell::new(FakeState {
+        empty_sessions: true,
+        cwd: Some(root.to_string_lossy().into_owned()),
+        ..FakeState::default()
+    }));
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let checkpoints: Calls2 = Rc::new(RefCell::new(Vec::new()));
+    let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
+    let mut backend = create_backend(state, calls, checkpoints, recovered);
+    backend.options.environment = Rc::new(|| {
+        strings(&[
+            "PATH",
+            "HERDR_STARTUP_CWD",
+            "HERDR_PANE_ID",
+            "HERDR_SOCKET_PATH",
+            "HERDR_CONFIG_PATH",
+            "XDG_CONFIG_HOME",
+        ])
+    });
+    let removed: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
+    let seen = removed.clone();
+    backend.options.spawn_server = Some(Rc::new(move |_, _, _, remove| {
+        *seen.borrow_mut() = Some(remove.to_vec());
+        Ok(Some(Owner {
+            pid: 41,
+            start: "server-start".to_owned(),
+            name: "herdr".to_owned(),
+        }))
+    }));
+    backend
+        .create(
+            "uml-viewer-A",
+            &root.to_string_lossy(),
+            &[exe.to_string_lossy().into_owned()],
+        )
+        .unwrap();
+    assert_eq!(
+        Some(strings(&[
+            "HERDR_STARTUP_CWD",
+            "HERDR_PANE_ID",
+            "HERDR_SOCKET_PATH"
+        ])),
+        removed.borrow().clone()
     );
     let _ = std::fs::remove_dir_all(&root);
 }

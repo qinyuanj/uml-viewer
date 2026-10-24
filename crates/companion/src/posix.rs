@@ -512,13 +512,15 @@ pub fn run(argv: &[OsString], timeout_ms: Option<i64>, env_remove: &[&str]) -> R
 }
 
 /// Detached project-owned process in its own session; stdio goes to the
-/// given logs. Returns its exact creation identity.
+/// given logs and the named variables are removed from its environment.
+/// Returns its exact creation identity.
 pub fn spawn_detached(
     executable: &OsStr,
     argv: &[OsString],
     cwd: &Path,
     log_path: Option<&Path>,
     error_log: Option<&Path>,
+    env_remove: &[&str],
 ) -> Result<Owner> {
     let mut actions = FileActions::new()?;
     if !cwd.as_os_str().is_empty() {
@@ -542,7 +544,7 @@ pub fn spawn_detached(
     }
     let mut full: Vec<OsString> = vec![executable.to_os_string()];
     full.extend(argv.iter().cloned());
-    let args = SpawnArgs::new(&full, &[])?;
+    let args = SpawnArgs::new(&full, env_remove)?;
     let mut pid: sys::pid_t = 0;
     // SAFETY: all pointers are valid and outlive the call.
     let spawned = unsafe {
@@ -959,6 +961,7 @@ mod tests {
             Path::new("/tmp"),
             Some(&log),
             Some(&log.with_extension("err")),
+            &[],
         )
         .unwrap();
         release(Some(held));
@@ -981,6 +984,7 @@ mod tests {
             Path::new("/tmp"),
             Some(&log),
             Some(&log.with_extension("err")),
+            &[],
         )
         .unwrap();
         assert_eq!(owner.start, identity(owner.pid).unwrap().unwrap().start);
@@ -1005,6 +1009,28 @@ mod tests {
             &["HOME"],
         );
         assert_eq!("unset", removed.out);
+    }
+
+    #[test]
+    fn spawn_detached_removes_only_the_named_variables_from_the_child_environment() {
+        let _guard = fork_guard();
+        let log = temp_path("detached-env");
+        spawn_detached(
+            OsStr::new("/bin/sh"),
+            &args(&["-c", "printf '%s %s' \"${HOME:-unset}\" \"${PATH:+path}\""]),
+            Path::new("/tmp"),
+            Some(&log),
+            Some(&log.with_extension("err")),
+            &["HOME"],
+        )
+        .unwrap();
+        let deadline = monotonic_ms() + 5000;
+        while read_file(&log).is_empty() && monotonic_ms() < deadline {
+            sleep(20);
+        }
+        assert_eq!("unset path", read_file(&log));
+        let _ = std::fs::remove_file(&log);
+        let _ = std::fs::remove_file(log.with_extension("err"));
     }
 
     #[test]
