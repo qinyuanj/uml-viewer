@@ -48,11 +48,11 @@ pub fn ownership_base(
     command: &[String],
 ) -> Value {
     let mut base = identity.cloned().unwrap_or_else(|| Value::Map(vec![]));
-    record::put(&mut base, "backend", Value::keyword("herdr"));
-    record::put(&mut base, "owner-role", Value::keyword("companion"));
-    record::put(&mut base, "session", Value::String(session.to_owned()));
-    record::put(&mut base, "cwd", Value::String(cwd.to_owned()));
-    record::put(
+    edn::record::put(&mut base, "backend", Value::keyword("herdr"));
+    edn::record::put(&mut base, "owner-role", Value::keyword("companion"));
+    edn::record::put(&mut base, "session", Value::String(session.to_owned()));
+    edn::record::put(&mut base, "cwd", Value::String(cwd.to_owned()));
+    edn::record::put(
         &mut base,
         "command",
         Value::Vector(
@@ -62,14 +62,14 @@ pub fn ownership_base(
                 .collect(),
         ),
     );
-    record::put(&mut base, "provisional", Value::Bool(true));
+    edn::record::put(&mut base, "provisional", Value::Bool(true));
     base
 }
 
 /// A copy without the provisional mark.
 pub fn committed(record: &Value) -> Value {
     let mut owned = record.clone();
-    record::remove(&mut owned, "provisional");
+    edn::record::remove(&mut owned, "provisional");
     owned
 }
 
@@ -99,7 +99,7 @@ pub fn complete(identity: &Value) -> Result<()> {
         return Err(Failure::new("Incomplete Herdr ownership"));
     }
     for field in FIELDS {
-        if record::get(identity, field).is_none() {
+        if edn::record::get(identity, field).is_none() {
             return Err(Failure::new("Incomplete Herdr ownership"));
         }
     }
@@ -389,12 +389,12 @@ mod tests {
 
     #[test]
     fn committed_drops_the_provisional_mark() {
-        let base = record::map(vec![
+        let base = edn::record::record(vec![
             ("session", Value::String("s".to_owned())),
             ("provisional", Value::Bool(true)),
         ]);
         let owned = committed(&base);
-        assert_eq!(None, record::get(&owned, "provisional"));
+        assert_eq!(None, edn::record::get(&owned, "provisional"));
         assert_eq!(Some(true), record::get_bool(&base, "provisional"));
     }
 
@@ -480,13 +480,13 @@ mod tests {
     fn ownership_change_ignores_only_the_cleanup_checkpoint() {
         let owned = owned();
         let mut saved = owned.clone();
-        record::put(
+        edn::record::put(
             &mut saved,
             "cleanup-phase",
             Value::keyword("workspace-closed"),
         );
         assert!(!ownership_changed(&owned, &saved));
-        record::put(&mut saved, "pane", Value::String("w1:p2".to_owned()));
+        edn::record::put(&mut saved, "pane", Value::String("w1:p2".to_owned()));
         assert!(ownership_changed(&owned, &saved));
     }
 
@@ -501,13 +501,14 @@ mod tests {
 
     #[test]
     fn runner_events_match_only_the_current_generation_token() {
-        let identity = record::map(vec![("runner-token", Value::String("gen-2".to_owned()))]);
-        let event = record::map(vec![
+        let identity =
+            edn::record::record(vec![("runner-token", Value::String("gen-2".to_owned()))]);
+        let event = edn::record::record(vec![
             ("token", Value::String("gen-2".to_owned())),
             ("phase", Value::keyword("started")),
         ]);
         assert!(runner_event(&identity, &event).is_some());
-        let stale = record::map(vec![("token", Value::String("gen-1".to_owned()))]);
+        let stale = edn::record::record(vec![("token", Value::String("gen-1".to_owned()))]);
         assert!(runner_event(&identity, &stale).is_none());
     }
 

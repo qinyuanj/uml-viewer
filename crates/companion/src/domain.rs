@@ -405,11 +405,11 @@ pub fn preflight_checks(record: Option<&Value>, opts: &PreflightOptions) -> Resu
             "server-start",
         ]
         .iter()
-        .all(|key| record::get(record, key).is_some());
+        .all(|key| edn::record::get(record, key).is_some());
         if !complete
             || record::get_name(record, "session").is_none_or(|session| session.is_empty())
             || record::get_name(record, "pane").is_none_or(|pane| pane.is_empty())
-            || record::get(record, "cwd").is_none()
+            || edn::record::get(record, "cwd").is_none()
             || record::get_name(record, "owner-role").as_deref() != Some("companion")
             || record::get_bool(record, "provisional") == Some(true)
         {

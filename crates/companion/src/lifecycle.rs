@@ -176,7 +176,7 @@ pub fn create(root: &str, options_in: CreateOptions) -> Result<(Value, Herdr)> {
         domain::RECOVERY_PROMPT.to_owned(),
     ];
     let canonical = posix::canonical(root).unwrap_or_else(|_| root.to_owned());
-    let provisional = record::map(vec![
+    let provisional = edn::record::record(vec![
         ("backend", Value::keyword("herdr")),
         ("owner-role", Value::keyword("companion")),
         ("cwd", Value::String(canonical.clone())),

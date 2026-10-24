@@ -66,14 +66,14 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
     let base = format!("{root}/.uml-viewer/companion-worker-{token}");
     let owner = posix::owner_native(posix::current_pid())?
         .ok_or_else(|| Failure::new("viewer process identity is unavailable"))?;
-    let request = record::map(vec![
+    let request = edn::record::record(vec![
         ("token", Value::String(token.clone())),
         ("root", Value::String(root.to_owned())),
         ("restart", Value::Bool(restart)),
         ("base", Value::String(base.clone())),
         (
             "viewer",
-            record::map(vec![
+            edn::record::record(vec![
                 ("pid", Value::Integer(i64::from(owner.pid))),
                 ("start", Value::String(owner.start.clone())),
             ]),
@@ -117,10 +117,13 @@ pub fn wake(worker: &mut Worker, id: i64) -> Result<()> {
     let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
     write(
         Path::new(&path),
-        &record::map(vec![
+        &edn::record::record(vec![
             ("token", Value::String(worker.token.clone())),
             ("operation", Value::keyword("wake")),
-            ("extra", record::map(vec![("id", Value::Integer(id))])),
+            (
+                "extra",
+                edn::record::record(vec![("id", Value::Integer(id))]),
+            ),
         ]),
     )
 }
@@ -137,10 +140,13 @@ fn command_with(
     let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
     write(
         &path,
-        &record::map(vec![
+        &edn::record::record(vec![
             ("token", Value::String(worker.token.clone())),
             ("operation", Value::keyword(operation)),
-            ("extra", record::map(vec![("keep", Value::Bool(keep))])),
+            (
+                "extra",
+                edn::record::record(vec![("keep", Value::Bool(keep))]),
+            ),
         ]),
     )
 }
@@ -248,7 +254,7 @@ impl Session {
         }
         write(
             Path::new(&format!("{}.event-{}.edn", self.base, self.sequence)),
-            &record::map(entries),
+            &edn::record::record(entries),
         )
     }
 
@@ -263,7 +269,7 @@ impl Session {
                 return Err(Failure::new("Helper command identity mismatch"));
             }
             self.next_command += 1;
-            let extra = record::get(&command, "extra")
+            let extra = edn::record::get(&command, "extra")
                 .cloned()
                 .unwrap_or(Value::Nil);
             match record::get_name(&command, "operation").as_deref() {
@@ -307,7 +313,7 @@ pub fn run(request_path: &str, attach: bool) -> Result<i32> {
     let base = record::get_name(&request, "base").unwrap_or_default();
     let token = record::get_name(&request, "token").unwrap_or_default();
     let restart = record::get_bool(&request, "restart") == Some(true);
-    let viewer = record::get(&request, "viewer")
+    let viewer = edn::record::get(&request, "viewer")
         .cloned()
         .unwrap_or(Value::Nil);
     let session = Rc::new(RefCell::new(Session {
@@ -556,7 +562,7 @@ mod tests {
     }
 
     fn event(token: &str, phase: &str) -> Value {
-        record::map(vec![
+        edn::record::record(vec![
             ("token", Value::String(token.to_owned())),
             ("phase", Value::keyword(phase)),
         ])
@@ -640,7 +646,7 @@ mod tests {
     #[test]
     fn preserves_a_published_failure_after_helper_exit() {
         let worker = poll_with(
-            vec![record::map(vec![
+            vec![edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
                 ("phase", Value::keyword("failed")),
                 (
@@ -706,7 +712,7 @@ mod tests {
         assert_eq!(
             Some(false),
             record::get_bool(
-                &record::get(journal.events.borrow().last().unwrap(), "extra")
+                &edn::record::get(journal.events.borrow().last().unwrap(), "extra")
                     .cloned()
                     .unwrap(),
                 "keep"
@@ -745,7 +751,7 @@ mod tests {
         assert_eq!(Some("cancellation pending".to_owned()), worker.message);
         journal.files.borrow_mut().insert(
             "journal.event-2.edn".to_owned(),
-            record::map(vec![
+            edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
                 ("phase", Value::keyword("stopped")),
                 (
@@ -864,10 +870,13 @@ mod tests {
         // created; it must land before the next stage runs.
         write(
             &directory.join("journal.command-1.edn"),
-            &record::map(vec![
+            &edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
                 ("operation", Value::keyword("stop")),
-                ("extra", record::map(vec![("keep", Value::Bool(true))])),
+                (
+                    "extra",
+                    edn::record::record(vec![("keep", Value::Bool(true))]),
+                ),
             ]),
         )
         .unwrap();
@@ -894,10 +903,13 @@ mod tests {
         let session = session_in(&directory);
         write(
             &directory.join("journal.command-1.edn"),
-            &record::map(vec![
+            &edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
                 ("operation", Value::keyword("wake")),
-                ("extra", record::map(vec![("id", Value::Integer(4))])),
+                (
+                    "extra",
+                    edn::record::record(vec![("id", Value::Integer(4))]),
+                ),
             ]),
         )
         .unwrap();
@@ -919,7 +931,7 @@ mod tests {
         let request_path = format!("{root}/.uml-viewer/companion-worker-gen.request.edn");
         write(
             Path::new(&request_path),
-            &record::map(vec![
+            &edn::record::record(vec![
                 ("token", Value::String("gen".to_owned())),
                 ("root", Value::String(root.clone())),
                 (
@@ -929,7 +941,7 @@ mod tests {
                 ("restart", Value::Bool(false)),
                 (
                     "viewer",
-                    record::map(vec![
+                    edn::record::record(vec![
                         ("pid", Value::Integer(i64::from(posix::current_pid()))),
                         ("start", Value::String("start".to_owned())),
                     ]),
