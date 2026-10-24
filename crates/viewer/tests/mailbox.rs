@@ -157,6 +157,28 @@ fn a_scene_id_resolves_to_the_authored_document_class_and_its_namespace() {
 }
 
 #[test]
+fn a_dummy_class_is_a_component_target_for_any_lua_truthy_flag() {
+    // `mail_menu.lua` `target`: `... or G.get(class,'dummy?') or ...`, a Lua
+    // truthiness test on the document class. A hierarchical document is
+    // read raw, so an authored `:dummy?` reaches the target.
+    let kind = |fragment: &str| {
+        let doc = scene::ir::read_document(&format!(
+            "{{:title \"Dummy\" :hierarchical true :prefix \"app\" :classes [{{:id :app.stub :ns \"app.stub\" {fragment}}}]}}"
+        ))
+        .unwrap();
+        let state = document::new_state(doc, None, None, None, &[], None);
+        let selected = edn::parse("{:kind :class :id :app.stub}").unwrap();
+        get(&mailbox::target(&state, Some(&selected)), "kind").cloned()
+    };
+    for falsy in ["", ":dummy? false", ":dummy? nil"] {
+        assert_eq!(Some(Value::keyword("class")), kind(falsy), "{falsy}");
+    }
+    for truthy in [":dummy? true", ":dummy? :yes", ":dummy? 1"] {
+        assert_eq!(Some(Value::keyword("component")), kind(truthy), "{truthy}");
+    }
+}
+
+#[test]
 fn menu_mail_names_the_operation_and_the_target() {
     let state = state();
     let selected = edn::parse("{:kind :class :id :app.target}").unwrap();

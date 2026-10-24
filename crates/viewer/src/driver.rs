@@ -653,13 +653,13 @@ fn input_of(step: &Value, op: &str) -> Result<Input, String> {
         "wheel" => Input::Wheel {
             dx: number(get(step, "dx")).unwrap_or(0.0),
             dy: number(get(step, "dy")).unwrap_or(0.0),
-            ctrl: edn::record::flag(step, "ctrl"),
-            shift: edn::record::flag(step, "shift"),
+            ctrl: edn::record::is_true(step, "ctrl"),
+            shift: edn::record::is_true(step, "shift"),
         },
         "key" => Input::Key {
             key: text(get(step, "key")).ok_or("key needs :key")?,
-            ctrl: edn::record::flag(step, "ctrl"),
-            shift: edn::record::flag(step, "shift"),
+            ctrl: edn::record::is_true(step, "ctrl"),
+            shift: edn::record::is_true(step, "shift"),
         },
         "text" => Input::Text(text(get(step, "text")).ok_or("text needs :text")?),
         "paste" => Input::Paste(text(get(step, "text")).ok_or("paste needs :text")?),
@@ -821,7 +821,7 @@ fn parse_step(step: &Value) -> Result<Step, String> {
             project: text(Some(required(step, "project")?)).ok_or("edit needs :project")?,
             from: text(Some(required(step, "from")?)).ok_or("edit needs :from")?,
             to: text(Some(required(step, "to")?)).ok_or("edit needs :to")?,
-            same_length: edn::record::flag(step, "same-length"),
+            same_length: edn::record::is_true(step, "same-length"),
         },
         "record-mtime" => Step::RecordMtime {
             project: text(Some(required(step, "project")?)).ok_or("record-mtime needs :project")?,
@@ -903,8 +903,8 @@ fn parse_step(step: &Value) -> Result<Step, String> {
         },
         "gui-key" => Step::GuiKey {
             key: text(get(step, "key")).ok_or("gui-key needs :key")?,
-            ctrl: edn::record::flag(step, "ctrl"),
-            shift: edn::record::flag(step, "shift"),
+            ctrl: edn::record::is_true(step, "ctrl"),
+            shift: edn::record::is_true(step, "shift"),
         },
         "dump-gui" => Step::DumpGui {
             evidence: evidence_name(step)?,

@@ -152,8 +152,8 @@ pub const MENU_OPS: [&str; 4] = [
 ];
 
 /// `mail_menu.target`: the mail target of the current selection. A proposal
-/// layer, a class with nested contents and a package are components; the
-/// namespace and the proposal id travel with the target.
+/// layer, a dummy class, a class with nested contents and a package are
+/// components; the namespace and the proposal id travel with the target.
 pub fn target(state: &ViewState, selection: Option<&Value>) -> Value {
     let selected = selection.and_then(|s| get(s, "id")).cloned();
     let class = selected.as_ref().and_then(|id| find_class(state, id));
@@ -161,6 +161,7 @@ pub fn target(state: &ViewState, selection: Option<&Value>) -> Value {
     // and the mail contract never carried that prefix.
     let id = class.and_then(|c| get(c, "id")).cloned().or(selected);
     let component = events::layer_id(selection).is_some()
+        || class.is_some_and(|c| edn::record::flag(c, "dummy?"))
         || class.is_some_and(
             |c| matches!(get(c, "contents"), Some(Value::Vector(items)) if !items.is_empty()),
         )

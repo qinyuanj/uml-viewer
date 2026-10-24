@@ -464,9 +464,9 @@ fn the_new_input_ops_reach_the_host_with_modifiers() {
 }
 
 #[test]
-fn step_modifiers_are_lua_truthy_flags() {
-    // #154: driver steps are EDN records like the IR, so `:ctrl false` equals
-    // omission and `:ctrl :yes` / `1` equals `true`.
+fn step_modifiers_hold_only_for_boolean_true() {
+    // Driver steps are bench instrumentation with no Lua reader, not policy,
+    // IR or mail: a modifier is held only for `true`; `:yes` and `1` are not.
     let wheel = |ctrl: &str| {
         let (evidence, project) = temp("modifier-flags");
         let mut host = FakeHost::default();
@@ -483,12 +483,10 @@ fn step_modifiers_are_lua_truthy_flags() {
             shift: false,
         }]
     };
-    for v in ["", ":ctrl false", ":ctrl nil"] {
+    for v in ["", ":ctrl false", ":ctrl nil", ":ctrl :yes", ":ctrl 1"] {
         assert_eq!(held(false), wheel(v), "{v:?}");
     }
-    for v in [":ctrl true", ":ctrl :yes", ":ctrl 1"] {
-        assert_eq!(held(true), wheel(v), "{v:?}");
-    }
+    assert_eq!(held(true), wheel(":ctrl true"));
 }
 
 #[test]
