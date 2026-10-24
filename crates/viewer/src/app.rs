@@ -30,10 +30,6 @@ use crate::{
 use crate::{clock, source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
-/// Default window in points (the LOVE viewer's 1500x920 view units); egui
-/// multiplies points by pixels-per-point, so a scaled display keeps it.
-pub const WINDOW_SIZE: [f32; 2] = [1500.0, 920.0];
-pub const WINDOW_MIN: [f32; 2] = [640.0, 480.0];
 
 /// `UML_VIEWER_TEST_DPI_SCALE` simulates a display scale in isolated runs
 /// (port of `adapters/dpi.lua` `override`). Real displays need nothing:
@@ -154,15 +150,6 @@ fn canonical(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn read_session(root: &Path) -> Option<Value> {
-    session::read(root)
-}
-
-/// Reapply a saved view (port of `application.session.restore`).
-fn restore_session(state: &ViewState, snapshot: &Value) -> ViewState {
-    session::restore(state, snapshot)
-}
-
 struct Setup {
     project_root: PathBuf,
     diagram: PathBuf,
@@ -186,7 +173,7 @@ impl Setup {
         let project_root = canonical(&root);
         // The saved path is consulted only on --restart (Lua `session.path`).
         let snapshot = if options.restart {
-            read_session(&project_root)
+            session::read(&project_root)
         } else {
             None
         };
@@ -266,7 +253,10 @@ pub fn run(options: Options) -> ExitCode {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(WINDOW_TITLE)
         .with_inner_size([width as f32, height as f32])
-        .with_min_inner_size([WINDOW_MIN[0] * scale, WINDOW_MIN[1] * scale])
+        .with_min_inner_size([
+            session::WINDOW_MIN[0] * scale,
+            session::WINDOW_MIN[1] * scale,
+        ])
         .with_decorations(mode.decorated());
     if !mode.decorated() {
         viewport = viewport.with_title(format!("{WINDOW_TITLE} (无装饰)"));
@@ -589,8 +579,8 @@ impl Viewer {
         state.path = Some(path);
         state.project_root = Some(self.project_root.to_string_lossy().into_owned());
         if restart {
-            if let Some(snapshot) = read_session(&self.project_root) {
-                state = restore_session(&state, &snapshot);
+            if let Some(snapshot) = session::read(&self.project_root) {
+                state = session::restore(&state, &snapshot);
             }
         } else {
             state.fit_pending = true;

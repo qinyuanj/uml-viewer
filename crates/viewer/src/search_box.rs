@@ -10,7 +10,15 @@ use edn::record::local_name;
 use scene::geom::Rect;
 use scene::search::{self, Match};
 
-use crate::driver::SearchRecord;
+/// The search box as the driver observes it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SearchRecord {
+    pub active: bool,
+    pub query: String,
+    /// Result ids (keyword names), in display order.
+    pub results: Vec<String>,
+    pub selection: Option<String>,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchBox {

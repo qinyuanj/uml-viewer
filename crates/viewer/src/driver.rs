@@ -34,6 +34,7 @@ use edn::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+pub use crate::search_box::SearchRecord;
 use crate::watch;
 
 /// One replayed input event (view/canvas coordinates in points).
@@ -70,16 +71,6 @@ pub enum Input {
     Text(String),
     /// Clipboard paste into the focused text field.
     Paste(String),
-}
-
-/// The search box as the driver observes it.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SearchRecord {
-    pub active: bool,
-    pub query: String,
-    /// Result ids (keyword names), in display order.
-    pub results: Vec<String>,
-    pub selection: Option<String>,
 }
 
 /// A snapshot of the navigation state. Ids are keyword names.

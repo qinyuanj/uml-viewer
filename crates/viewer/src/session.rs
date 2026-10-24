@@ -10,7 +10,10 @@ use edn::Value;
 use edn::record::{get, num};
 use scene::document::{self, ViewState};
 
-use crate::app::{WINDOW_MIN, WINDOW_SIZE};
+/// Default window in points (the LOVE viewer's 1500x920 view units); egui
+/// multiplies points by pixels-per-point, so a scaled display keeps it.
+pub const WINDOW_SIZE: [f32; 2] = [1500.0, 920.0];
+pub const WINDOW_MIN: [f32; 2] = [640.0, 480.0];
 
 /// Window chrome travels beside the view: window size (LOVE's window px =
 /// this viewer's logical points at scale 1) and the DPI-independent
