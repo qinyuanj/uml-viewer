@@ -20,10 +20,13 @@ pub const MAX_SOCKET_BYTES: usize = 101;
 pub const MAX_NAME_BYTES: usize = 64;
 
 pub fn config_root() -> String {
-    let root = std::env::var("XDG_CONFIG_HOME")
-        .ok()
+    config_root_in(&|name| std::env::var(name).ok())
+}
+
+fn config_root_in(var: &dyn Fn(&str) -> Option<String>) -> String {
+    let root = var("XDG_CONFIG_HOME")
         .filter(|root| !root.is_empty())
-        .unwrap_or_else(|| format!("{}/.config", std::env::var("HOME").unwrap_or_default()));
+        .unwrap_or_else(|| format!("{}/.config", var("HOME").unwrap_or_default()));
     root.trim_end_matches('/').to_owned()
 }
 
@@ -262,13 +265,135 @@ fn on_path(name: &str) -> Option<String> {
     })
 }
 
+const HIDDEN_SIDEBAR: [(&str, &str); 2] = [
+    ("sidebar_start_collapsed", "true"),
+    ("sidebar_collapsed_mode", "\"hidden\""),
+];
+
+/// The person's Herdr config: `HERDR_CONFIG_PATH`, else under the config root.
+fn user_config_path(var: &dyn Fn(&str) -> Option<String>) -> String {
+    var("HERDR_CONFIG_PATH")
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| format!("{}/herdr/config.toml", config_root_in(var)))
+}
+
+fn table_name(header: &str) -> String {
+    let inner = header
+        .trim_start_matches('[')
+        .split(']')
+        .next()
+        .unwrap_or("");
+    inner
+        .split('.')
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// `base` with the sidebar hidden: any existing sidebar collapse keys give
+/// way to a hidden pair at the top of `[ui]`, which is appended when absent.
+/// Line-based, so a config it cannot follow is caught by `config check`.
+fn hidden_sidebar(base: &str) -> String {
+    let settings = HIDDEN_SIDEBAR.map(|(key, value)| format!("{key} = {value}"));
+    let mut out: Vec<String> = Vec::new();
+    let mut table = String::new();
+    let mut placed = false;
+    for line in base.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            table = table_name(trimmed);
+            out.push(line.to_owned());
+            if table == "ui" && !placed {
+                out.extend(settings.iter().cloned());
+                placed = true;
+            }
+            continue;
+        }
+        if let Some((key, _)) = trimmed.split_once('=') {
+            let key = key.split('.').map(str::trim).collect::<Vec<_>>().join(".");
+            let full = if table.is_empty() {
+                key
+            } else {
+                format!("{table}.{key}")
+            };
+            if HIDDEN_SIDEBAR
+                .iter()
+                .any(|(name, _)| full == format!("ui.{name}"))
+            {
+                continue;
+            }
+        }
+        out.push(line.to_owned());
+    }
+    if !placed {
+        if !out.is_empty() {
+            out.push(String::new());
+        }
+        out.push("[ui]".to_owned());
+        out.extend(settings);
+    }
+    out.join("\n") + "\n"
+}
+
+/// The attach client, not the server, reads the sidebar settings (measured on
+/// Herdr 0.9.5), so the companion's client gets the person's config with the
+/// sidebar hidden. A config Herdr rejects falls back to theirs unchanged.
+fn attach_config(root: &str, herdr: &str) -> Option<String> {
+    let var = |name: &str| std::env::var(name).ok();
+    let base = std::fs::read_to_string(user_config_path(&var)).unwrap_or_default();
+    let path = format!(
+        "{}/.uml-viewer/herdr-attach.toml",
+        root.trim_end_matches('/')
+    );
+    std::fs::write(&path, hidden_sidebar(&base)).ok()?;
+    let argv: Vec<std::ffi::OsString> = [
+        "/usr/bin/env",
+        &format!("HERDR_CONFIG_PATH={path}"),
+        herdr,
+        "config",
+        "check",
+    ]
+    .iter()
+    .map(std::ffi::OsString::from)
+    .collect();
+    let check = posix::run(&argv, Some(10000), &[]);
+    (check.exit == Some(0) && !check.timeout).then_some(path)
+}
+
+/// The `/usr/bin/env` prefix that carries the config root and the attach
+/// config into the new tab; empty when neither applies. Windows Terminal
+/// splits its command line at `;` even inside quotes, so an attach config
+/// under such a project path is left out and the tab reads the person's own.
+fn attach_env(config_root: Option<String>, attach_config: Option<&str>) -> Vec<String> {
+    let mut assignments: Vec<String> = config_root
+        .filter(|root| !root.is_empty())
+        .map(|root| format!("XDG_CONFIG_HOME={root}"))
+        .into_iter()
+        .collect();
+    assignments.extend(
+        attach_config
+            .filter(|path| !path.contains(';'))
+            .map(|path| format!("HERDR_CONFIG_PATH={path}")),
+    );
+    if assignments.is_empty() {
+        return assignments;
+    }
+    assignments.insert(0, "/usr/bin/env".to_owned());
+    assignments
+}
+
 /// WSL reaches the host's Windows Terminal through interop; the new tab enters
 /// the same distribution and attaches with the selected Herdr's absolute path.
 /// Elsewhere, or when the terminal does not start, the caller reports the
 /// command a person can run (ADR 0007).
-pub fn open_window(session: &str, herdr: &str) -> Opened {
+pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
+    let config = attach_config(root, herdr);
     let attach = format!(
-        "{} session attach {}",
+        "{}{} session attach {}",
+        config
+            .as_ref()
+            .map(|path| format!("HERDR_CONFIG_PATH={} ", crate::text::shell_word(path)))
+            .unwrap_or_default(),
         crate::text::shell_word(herdr),
         crate::text::shell_word(session)
     );
@@ -297,12 +422,10 @@ pub fn open_window(session: &str, herdr: &str) -> Opened {
         distro,
         "--exec".to_owned(),
     ];
-    if let Ok(config) = std::env::var("XDG_CONFIG_HOME")
-        && !config.is_empty()
-    {
-        argv.push("/usr/bin/env".to_owned());
-        argv.push(format!("XDG_CONFIG_HOME={config}"));
-    }
+    argv.extend(attach_env(
+        std::env::var("XDG_CONFIG_HOME").ok(),
+        config.as_deref(),
+    ));
     for word in [herdr, "session", "attach", session] {
         argv.push(word.to_owned());
     }
@@ -325,6 +448,77 @@ pub fn start_worker(root: &str, restart: bool) -> Result<crate::worker::Worker> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_attach_config_hides_the_sidebar_and_keeps_every_other_setting() {
+        let base = "onboarding = false\n[ui.toast]\ndelivery = \"herdr\"\n\n[ui]\nsidebar_start_collapsed = false\nstatus_indicators = \"symbols\"\nsidebar_collapsed_mode = \"compact\"\n[theme]\nname = \"x\"\n";
+        assert_eq!(
+            "onboarding = false\n[ui.toast]\ndelivery = \"herdr\"\n\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = \"hidden\"\nstatus_indicators = \"symbols\"\n[theme]\nname = \"x\"\n",
+            hidden_sidebar(base)
+        );
+        assert_eq!(
+            "ui.sidebar_width = 30\n[theme]\nname = \"x\"\n\n[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = \"hidden\"\n",
+            hidden_sidebar(
+                "ui.sidebar_width = 30\nui.sidebar_start_collapsed=false\n[theme]\nname = \"x\"\n"
+            )
+        );
+        assert_eq!(
+            "[ui]\nsidebar_start_collapsed = true\nsidebar_collapsed_mode = \"hidden\"\n",
+            hidden_sidebar("")
+        );
+    }
+
+    #[test]
+    fn the_new_tab_receives_the_config_root_and_the_attach_config() {
+        assert_eq!(Vec::<String>::new(), attach_env(None, None));
+        assert_eq!(Vec::<String>::new(), attach_env(Some(String::new()), None));
+        assert_eq!(
+            vec![
+                "/usr/bin/env".to_owned(),
+                "XDG_CONFIG_HOME=/x".to_owned(),
+                "HERDR_CONFIG_PATH=/p/a.toml".to_owned()
+            ],
+            attach_env(Some("/x".to_owned()), Some("/p/a.toml"))
+        );
+        assert_eq!(
+            vec![
+                "/usr/bin/env".to_owned(),
+                "HERDR_CONFIG_PATH=/p/a.toml".to_owned()
+            ],
+            attach_env(None, Some("/p/a.toml"))
+        );
+        assert_eq!(
+            vec!["/usr/bin/env".to_owned(), "XDG_CONFIG_HOME=/x".to_owned()],
+            attach_env(Some("/x".to_owned()), Some("/p;q/a.toml"))
+        );
+        assert_eq!(Vec::<String>::new(), attach_env(None, Some("/p;q/a.toml")));
+    }
+
+    #[test]
+    fn the_person_s_herdr_config_follows_the_override_then_the_config_root() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            }
+        };
+        let all = env(&[
+            ("HERDR_CONFIG_PATH", "/c/herdr.toml"),
+            ("XDG_CONFIG_HOME", "/x/"),
+            ("HOME", "/h"),
+        ]);
+        assert_eq!("/c/herdr.toml", user_config_path(&all));
+        let xdg = env(&[
+            ("HERDR_CONFIG_PATH", ""),
+            ("XDG_CONFIG_HOME", "/x/"),
+            ("HOME", "/h"),
+        ]);
+        assert_eq!("/x/herdr/config.toml", user_config_path(&xdg));
+        let home = env(&[("HOME", "/h")]);
+        assert_eq!("/h/.config/herdr/config.toml", user_config_path(&home));
+    }
 
     #[test]
     fn names_a_fresh_session_uniquely_per_launch_within_the_grammar() {

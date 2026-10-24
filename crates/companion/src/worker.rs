@@ -410,7 +410,7 @@ fn run_body(
     }
     let ready = if !restart && attach {
         let name = record::get_name(&record_value, "session").unwrap_or_default();
-        let opened = lifecycle::open_window(&name, &backend.herdr());
+        let opened = lifecycle::open_window(root, &name, &backend.herdr());
         if opened.terminal == "none" {
             Some(format!(
                 "Companion started; attach manually: {}",

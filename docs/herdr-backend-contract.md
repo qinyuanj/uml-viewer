@@ -120,6 +120,14 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
   WSL 上 adapter 经 interop 调用 `wt.exe -w new new-tab … wsl.exe -d <distro> --exec
   herdr session attach <name>`（自定义 `XDG_CONFIG_HOME` 经 `/usr/bin/env` 传入）；
   不在 WSL、没有 `wt.exe` 或启动非 0 时只报告 attach 命令，不重试、不另起 companion。
+  边栏设置由 attach 客户端读取，server 上设置不生效（Herdr 0.9.5 实测）。
+  因此每次 attach 前，adapter 把用户自己的配置（`HERDR_CONFIG_PATH`，否则取配置根下的
+  `herdr/config.toml`）复制到 `.uml-viewer/herdr-attach.toml`，在 `[ui]` 里设
+  `sidebar_start_collapsed = true`、`sidebar_collapsed_mode = "hidden"`，再经
+  `HERDR_CONFIG_PATH` 传给 attach 命令和报告出的手动命令。生成结果过不了
+  `herdr config check` 时，不传这个变量，客户端照常读用户原配置。Windows
+  Terminal 即使在引号内也按 `;` 拆分命令行，所以项目路径含 `;` 时新标签页
+  不传这个变量（手动命令照传）。
   原生 Windows 的 Windows Terminal 分支随原生支持退役（ADR 0007）。
 - companion 的 EDN 邮箱联动不依赖 TUI：socket/CLI 控制与面板输入在
   无 TTY 下全部可用（已验证）。
