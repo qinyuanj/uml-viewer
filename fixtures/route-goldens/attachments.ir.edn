@@ -1,0 +1,20 @@
+{:title "Route golden: several attachments on one class face"
+ :direction :tb
+ :packages
+ [{:id :hub
+   :label "Hub"
+   :classes
+   [{:id :broker
+     :name "Broker"
+     :fields [{:name "topics" :type "Topic[]"}]
+     :ops [{:name "publish" :args ["topic" "msg"] :returns "void"}]}
+    {:id :audit :name "Audit" :ops [{:name "record" :returns "void"}]}
+    {:id :orders :name "Orders"}
+    {:id :billing :name "Billing" :fields [{:name "ledger" :type "Ledger"}]}
+    {:id :shipping :name "Shipping"}]}]
+ :edges
+ [{:from :broker :to :orders :kind :dependency}
+  {:from :broker :to :billing :kind :dependency}
+  {:from :broker :to :shipping :kind :dependency}
+  {:from :audit :to :billing :kind :dependency}
+  {:from :audit :to :orders :kind :aggregation}]}

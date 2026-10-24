@@ -1,0 +1,12 @@
+{:title "Route golden: equal-score candidates"
+ :direction :tb
+ :packages
+ [{:id :peer
+   :label "Peers"
+   :classes
+   [{:id :left :name "Left" :fields [{:name "peer" :type "Right"}]}
+    {:id :middle :name "Middle"}
+    {:id :right :name "Right" :fields [{:name "peer" :type "Left"}]}]}]
+ :edges
+ [{:from :left :to :right :kind :association}
+  {:from :right :to :left :kind :association}]}

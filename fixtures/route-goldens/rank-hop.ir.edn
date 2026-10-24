@@ -1,0 +1,20 @@
+{:title "Route golden: connection hopping a rank"
+ :direction :tb
+ :packages
+ [{:id :api
+   :label "Api"
+   :classes
+   [{:id :gateway
+     :name "Gateway"
+     :fields [{:name "routes" :type "Map<String, RequestHandlerRegistration>"}]
+     :ops [{:name "dispatch" :args ["request"] :returns "Response"}]}]}
+  {:id :middle
+   :label "Middleware"
+   :classes
+   [{:id :auth :name "Auth" :ops [{:name "check" :returns "bool"}]}
+    {:id :limit :name "RateLimit" :ops [{:name "allow" :returns "bool"}]}]}
+  {:id :store
+   :label "Store"
+   :classes [{:id :repo :name "Repo" :ops [{:name "save" :returns "void"}]}]}]
+ :edges
+ [{:from :gateway :to :repo :kind :dependency}]}

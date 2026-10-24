@@ -1,0 +1,4 @@
+;; #149 route golden "direct": expected scene geometry of direct.ir.edn, produced
+;; once offline by the pre-#144 Lua/LOVE scene core (git a692019^, love/uml).
+;; Static data: tests read it; they never run Lua or the JVM.
+{:absolute-tolerance 9.9999999999999995e-07 :size {:h 628 :min-x 0 :min-y 0 :w 332} :classes [{:id :d0-order :rect {:h 120 :w 136 :x 108 :y 164}} {:id :d0-line :rect {:h 72 :w 120 :x 108 :y 424}}] :edges [{:from :d0-order :to :d0-line :kind :composition :head :diamond-fill :points [[176 284] [168 424]] :tip [168 424] :behind [176 284] :draw-bounds {:h 140 :w 8 :x 168 :y 284} :strokes [[[176 284] [168 424]]] :curve {:ops [{:op :line :p [168 424]}] :start [176 284]}}]}

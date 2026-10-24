@@ -1,0 +1,16 @@
+{:title "Route golden: one class box in the way"
+ :direction :tb
+ :packages
+ [{:id :intake
+   :label "Intake"
+   :classes [{:id :source :name "Source" :ops [{:name "emit" :returns "Event"}]}]}
+  {:id :rules
+   :label "Rules"
+   :classes [{:id :filter :name "Filter" :fields [{:name "rule" :type "Rule"}]}]}
+  {:id :output
+   :label "Output"
+   :classes [{:id :sink :name "Sink" :ops [{:name "accept" :args ["event"] :returns "void"}]}]}]
+ :edges
+ [{:from :source :to :filter :kind :dependency}
+  {:from :filter :to :sink :kind :dependency}
+  {:from :source :to :sink :kind :association}]}

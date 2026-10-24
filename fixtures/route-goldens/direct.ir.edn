@@ -1,0 +1,15 @@
+{:title "Route golden: unobstructed direct connection"
+ :direction :tb
+ :packages
+ [{:id :core
+   :label "Core"
+   :classes
+   [{:id :order
+     :name "Order"
+     :fields [{:name "lines" :type "Line[]"} {:name "total" :type "Money"}]
+     :ops [{:name "place" :returns "void"}]}
+    {:id :line
+     :name "Line"
+     :fields [{:name "qty" :type "int"}]}]}]
+ :edges
+ [{:from :order :to :line :kind :composition}]}

@@ -1,0 +1,25 @@
+{:title "Route golden: curved corners and end tangents, left to right"
+ :direction :lr
+ :packages
+ [{:id :shapes
+   :label "Shapes"
+   :classes
+   [{:id :shape
+     :name "Shape"
+     :ops [{:name "area" :returns "double"} {:name "bounds" :returns "Rect"}]}
+    {:id :circle :name "Circle" :fields [{:name "radius" :type "double"}]}
+    {:id :square :name "Square" :fields [{:name "side" :type "double"}]}]}
+  {:id :canvas
+   :label "Canvas"
+   :classes
+   [{:id :canvas :name "Canvas" :ops [{:name "draw" :args ["shape"] :returns "void"}]}]}
+  {:id :export
+   :label "Export"
+   :classes
+   [{:id :exporter :name "Exporter" :ops [{:name "write" :args ["shape"] :returns "Bytes"}]}]}]
+ :edges
+ [{:from :circle :to :shape :kind :inheritance}
+  {:from :square :to :shape :kind :inheritance}
+  {:from :canvas :to :shape :kind :dependency}
+  {:from :exporter :to :shape :kind :dependency}
+  {:from :exporter :to :square :kind :association}]}
