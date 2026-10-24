@@ -346,7 +346,7 @@ impl Herdr {
         {
             return self.fail("Herdr socket changed");
         }
-        let server_pid = record::get(expected, "server-pid")
+        let server_pid = edn::record::get(expected, "server-pid")
             .cloned()
             .unwrap_or(Value::Nil);
         let server_start = record::get_name(expected, "server-start").unwrap_or_default();
@@ -361,7 +361,7 @@ impl Herdr {
             process_info,
             &*self.options.canonical,
         )?;
-        let shell_pid = record::get(expected, "shell-pid")
+        let shell_pid = edn::record::get(expected, "shell-pid")
             .cloned()
             .unwrap_or(Value::Nil);
         let owner_start = record::get_name(expected, "owner-start").unwrap_or_default();
@@ -425,7 +425,7 @@ impl Herdr {
             .ok_or_else(|| Failure::new("Herdr ownership has no runner state path"))?;
         let manifest = format!("{state_path}.launch.edn");
         let mut copy = record.clone();
-        record::put(
+        edn::record::put(
             &mut copy,
             "command",
             Value::Vector(
@@ -517,15 +517,16 @@ impl Herdr {
         self.terminal_reset(record)?;
         let shell = self
             .process_owner(
-                &record::get(record, "shell-pid")
+                &edn::record::get(record, "shell-pid")
                     .cloned()
                     .unwrap_or(Value::Nil),
             )?
             .ok_or_else(|| Failure::new("Herdr process creation identity changed"))?;
-        let command: Vec<String> = record::string_vec(
-            record::get_vec(record, "recovery-command")
-                .or_else(|| record::get_vec(record, "command")),
-        );
+        // A `:recovery-command` vector wins, even an empty one.
+        let command = record::string_vec(match edn::record::get(record, "recovery-command") {
+            Some(Value::Vector(items)) => items,
+            _ => edn::record::seq(edn::record::get(record, "command")),
+        });
         let argv = self.runner_command(record, &command)?;
         self.pane_run(&session, &pane, &domain::pane_command(&argv, &shell.name)?)
     }
@@ -538,7 +539,7 @@ impl Herdr {
     }
 
     pub fn recovery_status(&self, record: &Value) -> Result<Option<Value>> {
-        if record::get(record, "supervisor").is_some() {
+        if edn::record::get(record, "supervisor").is_some() {
             return recovery::status(record, &recovery::real_host());
         }
         Ok(None)
@@ -611,7 +612,7 @@ impl Herdr {
         if self
             .identity
             .as_ref()
-            .is_some_and(|identity| record::get_bool(identity, "provisional") != Some(true))
+            .is_some_and(|identity| !edn::record::flag(identity, "provisional"))
         {
             return self.fail("Cannot create over existing Herdr ownership");
         }
@@ -631,12 +632,12 @@ impl Herdr {
         (self.options.write_companion)(&canonical_cwd, &base)?;
         self.progress("server")?;
         let owner = self.launch_server(session, &canonical_cwd)?;
-        record::put(
+        edn::record::put(
             &mut base,
             "server-pid",
             Value::String(owner.pid.to_string()),
         );
-        record::put(
+        edn::record::put(
             &mut base,
             "server-start",
             Value::String(owner.start.clone()),
@@ -652,7 +653,7 @@ impl Herdr {
             "Herdr server did not become reachable",
         )?;
         self.compatible(&status)?;
-        record::put(
+        edn::record::put(
             &mut base,
             "socket",
             Value::String(
@@ -682,8 +683,8 @@ impl Herdr {
             .and_then(Json::as_str)
             .unwrap_or_default()
             .to_owned();
-        record::put(&mut base, "workspace", Value::String(workspace));
-        record::put(
+        edn::record::put(&mut base, "workspace", Value::String(workspace));
+        edn::record::put(
             &mut base,
             "pane",
             Value::String(
@@ -693,7 +694,7 @@ impl Herdr {
                     .to_owned(),
             ),
         );
-        record::put(
+        edn::record::put(
             &mut base,
             "terminal-id",
             Value::String(
@@ -718,20 +719,20 @@ impl Herdr {
         let shell = self
             .process_owner(&Value::Integer(shell_pid))?
             .ok_or_else(|| Failure::new("Herdr process creation identity changed"))?;
-        record::put(&mut base, "shell-pid", Value::Integer(shell_pid));
-        record::put(&mut base, "owner-start", Value::String(shell.start.clone()));
-        record::put(
+        edn::record::put(&mut base, "shell-pid", Value::Integer(shell_pid));
+        edn::record::put(&mut base, "owner-start", Value::String(shell.start.clone()));
+        edn::record::put(
             &mut base,
             "runner-token",
             Value::String(recovery::new_token()),
         );
         let root = format!("{canonical_cwd}/.uml-viewer/");
         let runner_state = format!("{root}{session}-runner.edn");
-        record::put(&mut base, "runner-state", Value::String(runner_state));
-        record::put(
+        edn::record::put(&mut base, "runner-state", Value::String(runner_state));
+        edn::record::put(
             &mut base,
             "supervisor",
-            record::map(vec![
+            edn::record::record(vec![
                 ("token", Value::String(recovery::new_token())),
                 (
                     "manifest",
@@ -928,7 +929,7 @@ impl Herdr {
             .or_else(|| record::get_name(&identity, "pane"))
             .unwrap_or_default();
         self.observe(&identity, session, &pane)?;
-        if record::get(&identity, "supervisor").is_some() {
+        if edn::record::get(&identity, "supervisor").is_some() {
             if enabled {
                 recovery::verify(&identity, &recovery::real_host())?;
                 return Ok(true);
@@ -955,7 +956,7 @@ impl Herdr {
         if session != record::get_name(&record, "session").unwrap_or_default() {
             return self.fail("Cleanup selector conflicts with ownership");
         }
-        if record::get(&record, "supervisor").is_some() {
+        if edn::record::get(&record, "supervisor").is_some() {
             self.cancel_recovery(&record)?;
         }
         let cwd = record::get_name(&record, "cwd").unwrap_or_default();
@@ -968,7 +969,7 @@ impl Herdr {
         }
         let checkpoint = |record: &Value, phase: &str| -> Result<()> {
             let mut value = record.clone();
-            crate::record::put(&mut value, "cleanup-phase", Value::keyword(phase));
+            edn::record::put(&mut value, "cleanup-phase", Value::keyword(phase));
             (self.options.write_companion)(&cwd, &value)
         };
         let mut phase = saved
@@ -995,7 +996,7 @@ impl Herdr {
             Some("workspace-closing") | Some("workspace-closed")
         ) {
             self.compatible(&endpoint)?;
-            let server_pid = record::get(&record, "server-pid")
+            let server_pid = edn::record::get(&record, "server-pid")
                 .cloned()
                 .unwrap_or(Value::Nil);
             let server_start = record::get_name(&record, "server-start").unwrap_or_default();
@@ -1047,7 +1048,7 @@ impl Herdr {
             {
                 return self.fail("Cleanup socket changed");
             }
-            let server_pid = record::get(&record, "server-pid")
+            let server_pid = edn::record::get(&record, "server-pid")
                 .cloned()
                 .unwrap_or(Value::Nil);
             let server_start = record::get_name(&record, "server-start").unwrap_or_default();
@@ -1084,7 +1085,7 @@ impl Herdr {
             checkpoint(&record, "server-stopped")?;
         }
         endpoint = self.status(session)?;
-        let server_pid = record::get(&record, "server-pid")
+        let server_pid = edn::record::get(&record, "server-pid")
             .cloned()
             .unwrap_or(Value::Nil);
         if !(endpoint.get("running") == Some(&Json::Bool(false))

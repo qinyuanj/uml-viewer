@@ -6,7 +6,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
-use crate::value::{getd as get, kw, record, seq, truthy};
+use crate::value::get_truthy as get;
+use edn::record::{flag, record, seq};
 
 const SKIP_DIRS: &[&str] = &[
     "lua_modules",
@@ -599,7 +600,7 @@ impl Scanner for LuaScanner {
             }
             let mut ops = Vec::new();
             for d in seq(get(&surface, "defns")) {
-                if !truthy(get(d, "local")) && !truthy(get(d, "nested")) {
+                if !flag(d, "local") && !flag(d, "nested") {
                     ops.push(record(vec![
                         ("name", get(d, "name").cloned().unwrap_or(Value::Nil)),
                         ("text", get(d, "name").cloned().unwrap_or(Value::Nil)),
@@ -610,13 +611,17 @@ impl Scanner for LuaScanner {
                 ("id", cid.clone()),
                 ("ns", Value::String(ns.clone())),
                 ("name", Value::String(graph::module_name(cid))),
-                ("lang", kw("lua")),
+                ("lang", Value::keyword("lua")),
                 ("file", Value::String(graph::relative_path(&f.path, cwd))),
                 ("ops", Value::Vector(ops)),
             ]));
             let edge = |edges: &mut Vec<Value>, to: Value, kind: &str| {
                 if *cid != to {
-                    let e = record(vec![("from", cid.clone()), ("to", to), ("kind", kw(kind))]);
+                    let e = record(vec![
+                        ("from", cid.clone()),
+                        ("to", to),
+                        ("kind", Value::keyword(kind)),
+                    ]);
                     if !edges.contains(&e) {
                         edges.push(e);
                     }
@@ -649,7 +654,7 @@ impl Scanner for LuaScanner {
                 let target = match target {
                     Some(target) => target,
                     None => {
-                        let foreign = kw(&name);
+                        let foreign = Value::keyword(&name);
                         if !foreigns.contains(&foreign) {
                             foreigns.push(foreign.clone());
                         }
@@ -678,7 +683,7 @@ mod tests {
         let surface = read_module(source.as_bytes());
         seq(get(&surface, "defns"))
             .iter()
-            .filter(|d| !truthy(get(d, "local")) && !truthy(get(d, "nested")))
+            .filter(|d| !flag(d, "local") && !flag(d, "nested"))
             .filter_map(|d| match get(d, "name") {
                 Some(Value::String(n)) => Some(n.clone()),
                 _ => None,

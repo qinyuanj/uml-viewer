@@ -8,11 +8,12 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use edn::Value;
+use edn::record::{get, local_name, num};
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
 use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
-use scene::geom::{Rect, get, name, num};
+use scene::geom::Rect;
 use scene::hit;
 
 use crate::bench;
@@ -1515,7 +1516,10 @@ fn edn_number(x: f64) -> Value {
 }
 
 fn keywords_of(items: &[Value]) -> Vec<String> {
-    items.iter().map(name).collect()
+    items
+        .iter()
+        .map(|v| local_name(v).unwrap_or_default().to_owned())
+        .collect()
 }
 
 fn info_lines(info: &str) -> String {
@@ -1754,8 +1758,11 @@ impl driver::Host for Viewer {
     fn view_record(&mut self, anchor: Option<[f64; 2]>) -> ViewRecord {
         let s = &self.state;
         let id_of = |v: &Option<Value>| {
-            v.as_ref()
-                .map(|v| get(v, "id").map(name).unwrap_or_else(|| name(v)))
+            v.as_ref().map(|v| {
+                get(v, "id")
+                    .map(|v| local_name(v).unwrap_or_default().to_owned())
+                    .unwrap_or_else(|| local_name(v).unwrap_or_default().to_owned())
+            })
         };
         let results = self.search.results(s.document.as_ref());
         ViewRecord {
@@ -1764,9 +1771,12 @@ impl driver::Host for Viewer {
             cam_x: s.cam_x,
             cam_y: s.cam_y,
             selected: id_of(&s.selected),
-            detail: s.detail_id.as_ref().map(name),
+            detail: s
+                .detail_id
+                .as_ref()
+                .map(|v| local_name(v).unwrap_or_default().to_owned()),
             declutter: get(&s.extra, "declutter")
-                .map(name)
+                .map(|v| local_name(v).unwrap_or_default().to_owned())
                 .unwrap_or_else(|| "full".into()),
             dragging: s.drag.is_some(),
             anchor: anchor.map(|[x, y]| events::world_xy(s, x, y)),
@@ -1795,9 +1805,13 @@ impl driver::Host for Viewer {
         let class = hit::class_by_id(&self.state.scene, &wanted)
             .or_else(|| {
                 let suffix = format!("-{id}");
-                scene::geom::get_slice(get(&self.state.scene, "classes"))
+                edn::record::seq(get(&self.state.scene, "classes"))
                     .iter()
-                    .find(|c| get(c, "id").map(name).is_some_and(|n| n.ends_with(&suffix)))
+                    .find(|c| {
+                        get(c, "id")
+                            .map(|v| local_name(v).unwrap_or_default().to_owned())
+                            .is_some_and(|n| n.ends_with(&suffix))
+                    })
             })
             .ok_or_else(|| format!("no class {id} on the scene"))?;
         let r = get(class, "rect")

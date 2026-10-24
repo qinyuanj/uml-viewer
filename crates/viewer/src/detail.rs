@@ -5,9 +5,9 @@
 //! the egui window only paints [`Item`]s and reports pointer rows.
 
 use edn::Value;
+use edn::record::{get, local_name, num, seq};
 use scene::config;
 use scene::document::ViewState;
-use scene::geom::{get, get_slice, name, num};
 
 use crate::source::Ident;
 use crate::strings;
@@ -61,18 +61,18 @@ fn string(v: Option<&Value>) -> Option<String> {
     match v? {
         Value::String(s) => Some(s.clone()),
         Value::Nil => None,
-        other => Some(name(other)),
+        other => Some(local_name(other).unwrap_or_default().to_owned()),
     }
 }
 
 fn named<'a>(scene: &'a Value, key: &str, id: &Value) -> Option<&'a Value> {
-    get_slice(get(scene, key))
+    seq(get(scene, key))
         .iter()
         .find(|c| get(c, "id") == Some(id))
 }
 
 fn phrase(kind: Option<&Value>, outgoing: bool) -> String {
-    let kind = kind.map(name).unwrap_or_default();
+    let kind = kind.and_then(local_name).unwrap_or_default().to_owned();
     let (out, inc) = strings::PHRASES
         .iter()
         .find(|(k, _, _)| *k == kind)
@@ -84,7 +84,7 @@ fn phrase(kind: Option<&Value>, outgoing: bool) -> String {
 pub fn model(scene: &Value, id: &Value) -> Option<Model> {
     let c = named(scene, "classes", id)?;
     let mut rels = Vec::new();
-    for e in get_slice(get(scene, "edges")) {
+    for e in seq(get(scene, "edges")) {
         let outgoing = get(e, "from") == Some(id);
         if !(outgoing || get(e, "to") == Some(id)) {
             continue;
@@ -94,7 +94,7 @@ pub fn model(scene: &Value, id: &Value) -> Option<Model> {
             .unwrap_or(Value::Nil);
         let other_name = named(scene, "classes", &other)
             .and_then(|o| string(get(o, "name")))
-            .unwrap_or_else(|| name(&other));
+            .unwrap_or_else(|| local_name(&other).unwrap_or_default().to_owned());
         rels.push(Rel {
             id: other,
             name: other_name,
@@ -104,7 +104,8 @@ pub fn model(scene: &Value, id: &Value) -> Option<Model> {
     }
     Some(Model {
         class: c.clone(),
-        ns: string(get(c, "ns")).or_else(|| get(c, "id").map(name)),
+        ns: string(get(c, "ns"))
+            .or_else(|| get(c, "id").map(|v| local_name(v).unwrap_or_default().to_owned())),
         package: get(c, "package")
             .and_then(|p| named(scene, "packages", p))
             .cloned(),
@@ -146,7 +147,7 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             seen.push(cid);
             classes.push(c.clone());
         }
-        for child in get_slice(get(c, "contents")) {
+        for child in seq(get(c, "contents")) {
             add(classes, seen, child);
         }
     }
@@ -155,34 +156,38 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
                     edges: &mut Vec<Value>,
                     seen_edges: &mut Vec<Value>,
                     view: &Value| {
-        add_edges(edges, seen_edges, get_slice(get(view, "edges")));
-        for p in get_slice(get(view, "packages")) {
-            for c in get_slice(get(p, "classes")) {
+        add_edges(edges, seen_edges, seq(get(view, "edges")));
+        for p in seq(get(view, "packages")) {
+            for c in seq(get(p, "classes")) {
                 add(classes, seen, c);
             }
         }
         for key in ["classes", "foreign"] {
-            for c in get_slice(get(view, key)) {
+            for c in seq(get(view, key)) {
                 add(classes, seen, c);
             }
         }
     };
-    add_edges(&mut edges, &mut seen_edges, get_slice(get(&doc, "edges")));
+    add_edges(&mut edges, &mut seen_edges, seq(get(&doc, "edges")));
     // Authored leaf data wins over the abbreviated rows of collapsed boxes.
-    for c in get_slice(get(&doc, "classes")) {
+    for c in seq(get(&doc, "classes")) {
         add(&mut classes, &mut seen, c);
     }
-    for p in get_slice(get(&doc, "packages")) {
-        for c in get_slice(get(p, "classes")) {
+    for p in seq(get(&doc, "packages")) {
+        for c in seq(get(p, "classes")) {
             add(&mut classes, &mut seen, c);
         }
     }
-    if get(&doc, "hierarchical").is_some_and(|v| v != &Value::Bool(false)) {
+    if edn::record::flag(&doc, "hierarchical") {
         let root = scene::hierarchy::view_at(&doc, &[]);
         add_view(&mut classes, &mut seen, &mut edges, &mut seen_edges, &root);
         // A port can name an intermediate namespace absent from the root and
         // current boxes: resolve its parent view only when asked.
-        let mut parent: Vec<Value> = name(id).split('.').map(Value::keyword).collect();
+        let mut parent: Vec<Value> = local_name(id)
+            .unwrap_or_default()
+            .split('.')
+            .map(Value::keyword)
+            .collect();
         parent.pop();
         if !parent.is_empty() {
             let target = scene::hierarchy::view_at(&doc, &parent);
@@ -193,13 +198,13 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
                 &mut seen_edges,
                 &target,
             );
-            for p in get_slice(get(&target, "packages")) {
-                for c in get_slice(get(p, "classes")) {
-                    if get(c, "id") != Some(id) || get(c, "drill?") != Some(&Value::Bool(true)) {
+            for p in seq(get(&target, "packages")) {
+                for c in seq(get(p, "classes")) {
+                    if get(c, "id") != Some(id) || !edn::record::flag(c, "drill?") {
                         continue;
                     }
                     for dir in ["in-deps", "out-deps"] {
-                        for dep in get_slice(get(c, dir)) {
+                        for dep in seq(get(c, dir)) {
                             add(&mut classes, &mut seen, dep);
                             let other = get(dep, "id").cloned().unwrap_or(Value::Nil);
                             let (from, to) = if dir == "out-deps" {
@@ -219,12 +224,8 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
             }
         }
     }
-    add_edges(
-        &mut edges,
-        &mut seen_edges,
-        get_slice(get(&state.scene, "edges")),
-    );
-    for c in get_slice(get(&state.scene, "classes")) {
+    add_edges(&mut edges, &mut seen_edges, seq(get(&state.scene, "edges")));
+    for c in seq(get(&state.scene, "classes")) {
         add(&mut classes, &mut seen, c);
     }
     let merged = Value::Map(vec![
@@ -247,7 +248,10 @@ pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
 /// What a source jump from this card opens: the module, or one member.
 pub fn member_ident(model: &Model, member: Option<&str>) -> Ident {
     Ident {
-        lang: model.lang.as_ref().map(name),
+        lang: model
+            .lang
+            .as_ref()
+            .map(|v| local_name(v).unwrap_or_default().to_owned()),
         file: model.file.clone(),
         ns: model.ns.clone(),
         name: member.filter(|m| !m.is_empty()).map(Into::into),
@@ -315,7 +319,7 @@ fn cells(c: &Value, class: bool) -> Cells {
         if n.is_some() || !class {
             return n;
         }
-        get_slice(get(c, "ops"))
+        seq(get(c, "ops"))
             .iter()
             .filter_map(|op| get(op, k).and_then(num))
             .fold(None, |acc, v| Some(acc.unwrap_or(0.0) + v))
@@ -396,14 +400,19 @@ pub fn rows(model: &Model) -> Vec<Row> {
         emit(
             &mut rows,
             &mut y,
-            row("muted", format!("«{}»", name(stereo)), 0.0, 18.0),
+            row(
+                "muted",
+                format!("«{}»", local_name(stereo).unwrap_or_default().to_owned()),
+                0.0,
+                18.0,
+            ),
         );
     }
     let base = model
         .file
         .as_ref()
         .and_then(|f| f.rsplit('/').next().map(String::from));
-    let drill = get(c, "drill?") == Some(&Value::Bool(true));
+    let drill = edn::record::flag(c, "drill?");
     let module = match &base {
         Some(b) if !drill && b.to_lowercase().ends_with(".rs") => Some(b.clone()),
         _ => model.ns.clone(),
@@ -417,7 +426,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
         .package
         .as_ref()
         .and_then(|p| string(get(p, "label")))
-        .or_else(|| get(c, "package").map(name))
+        .or_else(|| get(c, "package").map(|v| local_name(v).unwrap_or_default().to_owned()))
         .unwrap_or_default();
     emit(
         &mut rows,
@@ -441,7 +450,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
         };
         emit(&mut rows, &mut y, row("crap", text, 0.0, 18.0));
     }
-    let ops = get_slice(get(c, "ops"));
+    let ops = seq(get(c, "ops"));
     let has = |k: &str| get(c, k).is_some_and(|v| *v != Value::Nil);
     if !ops.is_empty()
         || mu(crap).is_some()
@@ -462,7 +471,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
         stats.cells = cells(c, true);
         emit(&mut rows, &mut y, stats);
         for op in ops {
-            let private = get(op, "private") == Some(&Value::Bool(true));
+            let private = edn::record::is_true(op, "private");
             let text = format!(
                 "{}{}",
                 if private { "- " } else { "+ " },
@@ -475,7 +484,7 @@ pub fn rows(model: &Model) -> Vec<Row> {
             emit(&mut rows, &mut y, r);
         }
     }
-    let fields = get_slice(get(c, "fields"));
+    let fields = seq(get(c, "fields"));
     if !fields.is_empty() {
         y += 12.0;
         emit(

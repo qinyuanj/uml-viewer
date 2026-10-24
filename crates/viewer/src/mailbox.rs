@@ -6,15 +6,17 @@
 use std::path::{Path, PathBuf};
 
 use edn::Value;
+use edn::record::{get, local_name};
 use scene::document::ViewState;
 use scene::events;
-use scene::geom::{self, get, name};
 
 use crate::project_files;
 
 /// The section prefix of a scene id (`d0-target` -> 0), or 0.
 fn section(id: &Value) -> usize {
-    geom::name(id)
+    local_name(id)
+        .unwrap_or_default()
+        .to_owned()
         .strip_prefix('d')
         .and_then(|rest| rest.split_once('-'))
         .and_then(|(n, _)| n.parse().ok())
@@ -66,7 +68,9 @@ impl Mailbox {
     pub fn append(&self, op: &str, extra: &[(Value, Value)]) -> std::io::Result<Value> {
         let current = self.read();
         let mut queue = queue(&current);
-        let id = get(&current, "next-id").and_then(geom::num).unwrap_or(1.0) as i64;
+        let id = get(&current, "next-id")
+            .and_then(edn::record::num)
+            .unwrap_or(1.0) as i64;
         let mut cmd = Value::Map(vec![
             (Value::keyword("id"), Value::Integer(id)),
             (Value::keyword("op"), Value::keyword(op)),
@@ -94,11 +98,13 @@ fn box_of(next_id: i64, queue: Vec<Value>) -> Value {
 pub fn normalize(raw: Option<&Value>) -> Value {
     if let Some(raw) = raw {
         if let Some(Value::Vector(items)) = get(raw, "queue") {
-            let next = get(raw, "next-id").and_then(geom::num).unwrap_or(1.0) as i64;
+            let next = get(raw, "next-id")
+                .and_then(edn::record::num)
+                .unwrap_or(1.0) as i64;
             return box_of(next, items.clone());
         }
         if get(raw, "op").is_some() {
-            let id = get(raw, "id").and_then(geom::num).unwrap_or(0.0) as i64;
+            let id = get(raw, "id").and_then(edn::record::num).unwrap_or(0.0) as i64;
             return box_of(id + 1, vec![raw.clone()]);
         }
     }
@@ -119,7 +125,9 @@ pub fn take(queued: &Value) -> (Option<Value>, Value) {
         return (None, queued.clone());
     }
     let head = items.remove(0);
-    let next = get(queued, "next-id").and_then(geom::num).unwrap_or(1.0) as i64;
+    let next = get(queued, "next-id")
+        .and_then(edn::record::num)
+        .unwrap_or(1.0) as i64;
     (Some(head), box_of(next, items))
 }
 
@@ -130,7 +138,7 @@ pub fn last_id(queued: &Value) -> i64 {
     queue(queued)
         .last()
         .and_then(|cmd| get(cmd, "id"))
-        .and_then(geom::num)
+        .and_then(edn::record::num)
         .unwrap_or(0.0) as i64
 }
 
@@ -144,8 +152,8 @@ pub const MENU_OPS: [&str; 4] = [
 ];
 
 /// `mail_menu.target`: the mail target of the current selection. A proposal
-/// layer, a class with nested contents and a package are components; the
-/// namespace and the proposal id travel with the target.
+/// layer, a dummy class, a class with nested contents and a package are
+/// components; the namespace and the proposal id travel with the target.
 pub fn target(state: &ViewState, selection: Option<&Value>) -> Value {
     let selected = selection.and_then(|s| get(s, "id")).cloned();
     let class = selected.as_ref().and_then(|id| find_class(state, id));
@@ -153,10 +161,11 @@ pub fn target(state: &ViewState, selection: Option<&Value>) -> Value {
     // and the mail contract never carried that prefix.
     let id = class.and_then(|c| get(c, "id")).cloned().or(selected);
     let component = events::layer_id(selection).is_some()
+        || class.is_some_and(|c| edn::record::flag(c, "dummy?"))
         || class.is_some_and(
             |c| matches!(get(c, "contents"), Some(Value::Vector(items)) if !items.is_empty()),
         )
-        || selection.and_then(|s| get(s, "kind")).map(name).as_deref() == Some("package");
+        || selection.and_then(|s| get(s, "kind")).and_then(local_name) == Some("package");
     let mut target = Value::Map(vec![
         (
             Value::keyword("kind"),
@@ -182,7 +191,7 @@ fn find_class<'a>(state: &'a ViewState, id: &Value) -> Option<&'a Value> {
             return None;
         };
         let prefix = format!("d{}-", section(id));
-        let authored = geom::name(id);
+        let authored = local_name(id).unwrap_or_default().to_owned();
         let authored = authored
             .strip_prefix(&prefix)
             .unwrap_or(&authored)
@@ -190,8 +199,11 @@ fn find_class<'a>(state: &'a ViewState, id: &Value) -> Option<&'a Value> {
         let matches = |candidate: Option<&Value>| {
             candidate.is_some_and(|candidate| {
                 candidate == id
-                    || geom::name(candidate) == authored
-                    || geom::name(id).ends_with(&format!("-{}", geom::name(candidate)))
+                    || local_name(candidate).unwrap_or_default() == authored
+                    || local_name(id).unwrap_or_default().ends_with(&format!(
+                        "-{}",
+                        local_name(candidate).unwrap_or_default().to_owned()
+                    ))
             })
         };
         for item in items {

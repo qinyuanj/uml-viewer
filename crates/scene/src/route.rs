@@ -426,23 +426,27 @@ fn stable_sort_by<T: Clone, F: Fn(&T) -> f64>(xs: &mut [T], scorefn: F) {
 /// `R.route`: route every diagram edge around class boxes. The input scene's
 /// `:edges` is replaced with routed copies carrying `:points` and `:head`.
 pub fn route(scene: &mut Value) {
-    let diagram = geom::get(scene, "diagram").cloned().unwrap_or(Value::Nil);
-    let direction = geom::get(&diagram, "direction").map(geom::name);
+    let diagram = edn::record::get(scene, "diagram")
+        .cloned()
+        .unwrap_or(Value::Nil);
+    let direction = edn::record::get(&diagram, "direction").map(geom::name);
     let lr = direction.as_deref() == Some("lr") || direction.as_deref() == Some("rl");
     let mut nodes: Vec<Node> = Vec::new();
     let mut idx: HashMap<String, usize> = HashMap::new();
-    if let Some(Value::Vector(classes)) = geom::get(scene, "classes") {
+    if let Some(Value::Vector(classes)) = edn::record::get(scene, "classes") {
         for c in classes {
-            let Some(r) = geom::get(c, "rect").and_then(Rect::from_value) else {
+            let Some(r) = edn::record::get(c, "rect").and_then(Rect::from_value) else {
                 continue;
             };
-            let id = edn::encode(geom::get(c, "id").unwrap()).unwrap();
+            let id = edn::encode(edn::record::get(c, "id").unwrap()).unwrap();
             idx.insert(id.clone(), nodes.len());
             nodes.push(Node {
                 r,
                 id,
-                rank: geom::get(c, "rank").and_then(geom::num).unwrap_or(0.0),
-                dummy: geom::get(c, "dummy?").is_some(),
+                rank: edn::record::get(c, "rank")
+                    .and_then(edn::record::num)
+                    .unwrap_or(0.0),
+                dummy: edn::record::flag(c, "dummy?"),
             });
         }
     }
@@ -450,12 +454,13 @@ pub fn route(scene: &mut Value) {
     let mut from: HashMap<String, Vec<usize>> = HashMap::new();
     let mut to: HashMap<String, Vec<usize>> = HashMap::new();
     let mut hops: HashMap<String, Vec<usize>> = HashMap::new();
-    if let Some(Value::Vector(diagram_edges)) =
-        geom::get(geom::get(scene, "diagram").unwrap_or(&Value::Nil), "edges")
-    {
+    if let Some(Value::Vector(diagram_edges)) = edn::record::get(
+        edn::record::get(scene, "diagram").unwrap_or(&Value::Nil),
+        "edges",
+    ) {
         for e in diagram_edges {
-            let f = geom::get(e, "from").and_then(|v| idx.get(&edn::encode(v).unwrap()));
-            let t = geom::get(e, "to").and_then(|v| idx.get(&edn::encode(v).unwrap()));
+            let f = edn::record::get(e, "from").and_then(|v| idx.get(&edn::encode(v).unwrap()));
+            let t = edn::record::get(e, "to").and_then(|v| idx.get(&edn::encode(v).unwrap()));
             if let (Some(&f), Some(&t)) = (f, t) {
                 let ei = edges.len();
                 edges.push(RouteEdge {
@@ -600,15 +605,15 @@ pub fn route(scene: &mut Value) {
         }
         let mut edge = e.edge.clone();
         let points: Vec<Value> = e.ps.iter().map(|p| geom::point(*p)).collect();
-        geom::put(&mut edge, "points", Value::Vector(points));
-        let head = match geom::get(&edge, "kind").map(geom::name) {
+        edn::record::put(&mut edge, "points", Value::Vector(points));
+        let head = match edn::record::get(&edge, "kind").map(geom::name) {
             Some(k) if k == "inheritance" || k == "implements" => "triangle",
             Some(k) if k == "composition" => "diamond-fill",
             Some(k) if k == "aggregation" => "diamond",
             _ => "open",
         };
-        geom::put(&mut edge, "head", Value::keyword(head));
+        edn::record::put(&mut edge, "head", Value::keyword(head));
         out.push(edge);
     }
-    geom::put(scene, "edges", Value::Vector(out));
+    edn::record::put(scene, "edges", Value::Vector(out));
 }

@@ -3,8 +3,8 @@
 //! egui points).
 
 use edn::Value;
+use edn::record::get;
 use scene::document::{self, ViewState};
-use scene::geom::get;
 use viewer::inspector::{self, Choice};
 use viewer::mailbox::Mailbox;
 use viewer::project_files;

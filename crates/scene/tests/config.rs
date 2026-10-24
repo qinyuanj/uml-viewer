@@ -1,8 +1,8 @@
 //! Quality bands, grades and pooling — the config_spec.lua oracle.
 
+use edn::record::local_name;
 use edn::{Value, parse};
 use scene::config::{self, crap_band, mutation_band};
-use scene::geom::name;
 
 fn band(v: &Value) -> &str {
     match v {
@@ -192,6 +192,14 @@ fn summarize_scores_mixes_numbers_and_summaries() {
 
 #[test]
 fn names_rendered_for_bands_stay_keywords() {
-    assert_eq!("red", name(&crap_band(None)));
-    assert_eq!("green", name(&mutation_band(Some(1.0))));
+    assert_eq!(
+        "red",
+        local_name(&crap_band(None)).unwrap_or_default().to_owned()
+    );
+    assert_eq!(
+        "green",
+        local_name(&mutation_band(Some(1.0)))
+            .unwrap_or_default()
+            .to_owned()
+    );
 }

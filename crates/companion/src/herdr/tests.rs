@@ -521,7 +521,7 @@ fn stale_or_malformed_runner_state_is_ignored() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
-    let record = record::map(vec![
+    let record = edn::record::record(vec![
         (
             "runner-state",
             Value::String(path.to_string_lossy().into_owned()),
@@ -561,7 +561,10 @@ fn socket_paths_over_the_measured_limit_are_refused_before_any_command() {
     };
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let mut backend = backend(run, fake_owner(state));
-    backend.identity = Some(record::map(vec![("provisional", Value::Bool(true))]));
+    backend.identity = Some(edn::record::record(vec![(
+        "provisional",
+        Value::Bool(true),
+    )]));
     backend.options.max_socket_bytes = 1;
     let error = backend
         .create("uml-viewer-fixture", "/tmp", &["claude".to_owned()])
@@ -632,6 +635,31 @@ fn pane_run_retries_only_canonical_mode_rejections_within_the_deadline() {
 }
 
 #[test]
+fn create_reads_the_recorded_provisional_as_a_lua_truthy_flag() {
+    // herdr.lua:281 `if B.identity and not B.identity.provisional then fail`.
+    // #154: `false`/`nil` is a settled ownership; `:yes`/`1` is provisional.
+    let refused = |provisional: &str| {
+        let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+        let state: Shared = Rc::new(RefCell::new(FakeState {
+            empty_sessions: true,
+            ..FakeState::default()
+        }));
+        let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+        backend.identity = Some(edn::parse(&format!("{{:session \"s\" {provisional}}}")).unwrap());
+        backend
+            .create("uml-viewer-A", "/tmp", &["/bin/sh".to_owned()])
+            .err()
+            .is_some_and(|e| e.message.contains("existing Herdr ownership"))
+    };
+    for v in ["", ":provisional false", ":provisional nil"] {
+        assert!(refused(v), "{v:?}");
+    }
+    for v in [":provisional true", ":provisional :yes", ":provisional 1"] {
+        assert!(!refused(v), "{v:?}");
+    }
+}
+
+#[test]
 fn create_refuses_a_command_that_is_not_resolvable() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState {
@@ -639,7 +667,10 @@ fn create_refuses_a_command_that_is_not_resolvable() {
         ..FakeState::default()
     }));
     let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
-    backend.identity = Some(record::map(vec![("provisional", Value::Bool(true))]));
+    backend.identity = Some(edn::record::record(vec![(
+        "provisional",
+        Value::Bool(true),
+    )]));
     let error = backend
         .create(
             "uml-viewer-A",
@@ -659,7 +690,10 @@ fn a_command_without_argv_is_refused() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
-    backend.identity = Some(record::map(vec![("provisional", Value::Bool(true))]));
+    backend.identity = Some(edn::record::record(vec![(
+        "provisional",
+        Value::Bool(true),
+    )]));
     assert!(backend.create("uml-viewer-A", "/tmp", &[]).is_err());
 }
 
@@ -672,7 +706,10 @@ fn create_backend(
     let run_state = state.clone();
     let run_calls = calls.clone();
     Herdr::new(
-        Some(record::map(vec![("provisional", Value::Bool(true))])),
+        Some(edn::record::record(vec![(
+            "provisional",
+            Value::Bool(true),
+        )])),
         Options {
             run: Rc::new(move |argv, timeout| {
                 fake_cli(run_calls.clone(), run_state.clone())(argv, timeout)
@@ -705,10 +742,10 @@ fn create_backend(
                 ],
             }),
             runner_state: Some(Rc::new(|record| {
-                Some(record::map(vec![
+                Some(edn::record::record(vec![
                     (
                         "token",
-                        record::get(record, "runner-token")
+                        edn::record::get(record, "runner-token")
                             .cloned()
                             .unwrap_or(Value::Nil),
                     ),
@@ -760,9 +797,9 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
         .unwrap();
     assert_eq!(
         original,
-        record::string_vec(record::get_vec(&identity, "command"))
+        record::string_vec(edn::record::seq(edn::record::get(&identity, "command")))
     );
-    assert_eq!(None, record::get(&identity, "provisional"));
+    assert_eq!(None, edn::record::get(&identity, "provisional"));
     assert_eq!(
         Some("term_A".to_owned()),
         record::get_name(&identity, "terminal-id")
@@ -771,10 +808,12 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
     let before_run = checkpoints
         .borrow()
         .iter()
-        .any(|record| record::get_bool(record, "provisional") == Some(true));
+        .any(|record| edn::record::is_true(record, "provisional"));
     assert!(before_run);
     for entry in checkpoints.borrow().iter() {
-        if record::get(entry, "pane").is_some() && record::get(entry, "shell-pid").is_some() {
+        if edn::record::get(entry, "pane").is_some()
+            && edn::record::get(entry, "shell-pid").is_some()
+        {
             assert_eq!(Some(42), record::get_i64(entry, "shell-pid"));
             assert_eq!(
                 Some("shell-start".to_owned()),
@@ -784,7 +823,7 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
     }
     assert!(state.borrow().run_text.is_some());
     let recovered = recovered.borrow().clone().expect("recovery registered");
-    assert_eq!(None, record::get(&recovered, "provisional"));
+    assert_eq!(None, edn::record::get(&recovered, "provisional"));
     let _ = std::fs::remove_dir_all(&bin);
 }
 
@@ -956,10 +995,10 @@ fn cleanup_resumes_after_workspace_closure_only_under_the_same_server_identity()
 #[test]
 fn cleanup_cancels_recovery_before_destroying_any_resource() {
     let mut record = owned();
-    record::put(
+    edn::record::put(
         &mut record,
         "supervisor",
-        record::map(vec![("token", Value::String("controller".to_owned()))]),
+        edn::record::record(vec![("token", Value::String("controller".to_owned()))]),
     );
     let order: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let order_run = order.clone();
@@ -1028,7 +1067,7 @@ mod relaunch {
 
     fn identity() -> Value {
         let mut identity = owned();
-        record::put(
+        edn::record::put(
             &mut identity,
             "runner-token",
             Value::String("gen-token".to_owned()),
@@ -1039,7 +1078,7 @@ mod relaunch {
             crate::posix::monotonic_ms()
         ));
         std::fs::create_dir_all(&directory).unwrap();
-        record::put(
+        edn::record::put(
             &mut identity,
             "runner-state",
             Value::String(directory.join("runner.edn").to_string_lossy().into_owned()),

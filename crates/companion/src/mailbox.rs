@@ -11,28 +11,31 @@ use edn::Value;
 /// one-element queue, anything else is empty.
 pub fn normalize(raw: Option<&Value>) -> Value {
     if let Some(raw) = raw {
-        if let Some(queue) = record::get_vec(raw, "queue") {
-            let next = record::get(raw, "next-id")
+        if let Some(Value::Vector(queue)) = edn::record::get(raw, "queue") {
+            let next = edn::record::get(raw, "next-id")
                 .cloned()
                 .unwrap_or(Value::Integer(1));
-            return record::map(vec![("next-id", next), ("queue", Value::Vector(queue))]);
+            return edn::record::record(vec![
+                ("next-id", next),
+                ("queue", Value::Vector(queue.clone())),
+            ]);
         }
-        if record::get(raw, "op").is_some() {
+        if edn::record::get(raw, "op").is_some() {
             let id = record::get_i64(raw, "id").unwrap_or(0);
-            return record::map(vec![
+            return edn::record::record(vec![
                 ("next-id", Value::Integer(id + 1)),
                 ("queue", Value::Vector(vec![raw.clone()])),
             ]);
         }
     }
-    record::map(vec![
+    edn::record::record(vec![
         ("next-id", Value::Integer(1)),
         ("queue", Value::Vector(vec![])),
     ])
 }
 
 pub fn queue(boxed: &Value) -> Vec<Value> {
-    record::get_vec(boxed, "queue").unwrap_or_default()
+    edn::record::seq(edn::record::get(boxed, "queue")).to_vec()
 }
 
 /// Pop the head of `:queue` whenever one exists, whatever its id. The stored
@@ -43,12 +46,12 @@ pub fn take(boxed: &Value) -> (Option<Value>, Value) {
         return (None, boxed.clone());
     }
     let head = items.remove(0);
-    let next = record::get(boxed, "next-id")
+    let next = edn::record::get(boxed, "next-id")
         .cloned()
         .unwrap_or(Value::Integer(1));
     (
         Some(head),
-        record::map(vec![("next-id", next), ("queue", Value::Vector(items))]),
+        edn::record::record(vec![("next-id", next), ("queue", Value::Vector(items))]),
     )
 }
 
@@ -128,7 +131,7 @@ mod tests {
             .collect();
         assert_eq!(vec![1, 2], remaining);
         assert_eq!(Some(4), record::get_i64(&rest, "next-id"));
-        let (none, same) = take(&record::map(vec![("next-id", Value::Integer(1))]));
+        let (none, same) = take(&edn::record::record(vec![("next-id", Value::Integer(1))]));
         assert!(none.is_none());
         assert!(queue(&same).is_empty());
     }

@@ -9,7 +9,8 @@ use edn::Value;
 use crate::files::{Adapter, SourceFile};
 use crate::scan;
 use crate::text;
-use crate::value::{get, key_of, kw, name, record};
+use crate::value::{encode_key, id_name};
+use edn::record::{flag, get, record};
 
 /// A language scanner: file selection plus the project scan.
 pub trait Scanner {
@@ -69,16 +70,16 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
     let mut by_id: HashMap<String, usize> = HashMap::new();
     let mut owners: HashMap<String, Value> = HashMap::new();
     for scan in scans {
-        for c in crate::value::seq(get(scan, "classes")) {
-            let key = key_of(get(c, "id").unwrap_or(&Value::Nil));
+        for c in edn::record::seq(get(scan, "classes")) {
+            let key = encode_key(get(c, "id").unwrap_or(&Value::Nil));
             match by_id.get(&key) {
                 None => {
                     classes.push(c.clone());
                     by_id.insert(key, classes.len() - 1);
                 }
                 Some(&at) => {
-                    if !crate::value::truthy(get(c, "foreign")) {
-                        if !crate::value::truthy(get(&classes[at], "foreign")) {
+                    if !flag(c, "foreign") {
+                        if !flag(&classes[at], "foreign") {
                             return Err(format!("duplicate class id: {key}"));
                         }
                         classes[at] = c.clone();
@@ -88,8 +89,8 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
         }
         if let Some(Value::Map(entries)) = get(scan, "commands") {
             for (id, cmds) in entries {
-                for cmd in crate::value::seq(Some(cmds)) {
-                    owners.insert(key_of(cmd), id.clone());
+                for cmd in edn::record::seq(Some(cmds)) {
+                    owners.insert(encode_key(cmd), id.clone());
                 }
             }
         }
@@ -101,15 +102,15 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
         }
     };
     for scan in scans {
-        for e in crate::value::seq(get(scan, "edges")) {
+        for e in edn::record::seq(get(scan, "edges")) {
             add(&mut edges, e.clone());
         }
     }
     for scan in scans {
         if let Some(Value::Map(entries)) = get(scan, "invokes") {
             for (from, commands) in entries {
-                for command in crate::value::seq(Some(commands)) {
-                    if let Some(to) = owners.get(&key_of(command))
+                for command in edn::record::seq(Some(commands)) {
+                    if let Some(to) = owners.get(&encode_key(command))
                         && to != from
                     {
                         add(
@@ -117,7 +118,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
                             record(vec![
                                 ("from", from.clone()),
                                 ("to", to.clone()),
-                                ("kind", kw("dependency")),
+                                ("kind", Value::keyword("dependency")),
                             ]),
                         );
                     }
@@ -133,7 +134,7 @@ pub fn merge_scans(scans: &[Value]) -> Result<Value, String> {
 
 fn blank(s: Option<&Value>) -> bool {
     match s {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => true,
+        _ if !edn::record::truthy(s) => true,
         Some(Value::String(s)) => s
             .trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r'))
             .is_empty(),
@@ -158,13 +159,13 @@ pub fn id_of(ns: &str, prefix: Option<&Value>) -> Value {
             ns = ns[prefix.len() + 1..].to_owned();
         }
     }
-    kw(&ns)
+    Value::keyword(&ns)
 }
 
 /// `module_name(cid)`: the display name from the last dotted segment.
 pub fn module_name(cid: &Value) -> String {
     let segment = {
-        let name = name(cid);
+        let name = id_name(cid);
         let stripped = name.strip_suffix('.').unwrap_or(&name);
         stripped.rsplit('.').next().unwrap_or(stripped).to_owned()
     };
@@ -213,8 +214,8 @@ pub fn ns_join(prefix: &str, relative: &str) -> String {
 pub fn foreign_class(cid: &Value) -> Value {
     record(vec![
         ("id", cid.clone()),
-        ("name", Value::String(name(cid))),
-        ("ns", Value::String(name(cid))),
+        ("name", Value::String(id_name(cid))),
+        ("ns", Value::String(id_name(cid))),
         ("foreign", Value::Bool(true)),
     ])
 }

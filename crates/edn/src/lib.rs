@@ -19,6 +19,7 @@
 //! Lists `( )` and character literals are unsupported, as in the Lua codec.
 
 pub mod pair_order;
+pub mod record;
 
 use std::fmt;
 

@@ -1,8 +1,8 @@
 //! Inspector search (port of `application/inspector.lua` search): UTF-8
 //! substring over class names and namespaces, ASCII case-insensitive.
 
-use crate::geom::{self, get};
 use edn::Value;
+use edn::record::get;
 
 /// One search result row.
 #[derive(Debug, Clone, PartialEq)]
@@ -14,10 +14,6 @@ pub struct Match {
 }
 
 /// ASCII-only lowercase, leaving non-ASCII bytes untouched (Lua `:lower()`).
-fn geom_name(v: &Value) -> String {
-    geom::name(v)
-}
-
 fn ascii_lower(s: &str) -> String {
     s.bytes()
         .map(|b| b.to_ascii_lowercase())
@@ -38,11 +34,11 @@ pub fn search(doc: &Value, query: &str) -> Vec<Match> {
         let Some(id) = get(c, "id") else { return };
         let class_name = match get(c, "name") {
             Some(Value::String(s)) => s.clone(),
-            _ => geom_name(id),
+            _ => crate::geom::name(id),
         };
         let ns = match get(c, "ns") {
             Some(Value::String(s)) => s.clone(),
-            _ => geom_name(id),
+            _ => crate::geom::name(id),
         };
         if ascii_lower(&class_name).contains(&query) || ascii_lower(&ns).contains(&query) {
             out.push(Match {
@@ -53,11 +49,11 @@ pub fn search(doc: &Value, query: &str) -> Vec<Match> {
             });
         }
     };
-    for c in crate::geom::get_slice(get(doc, "classes")) {
+    for c in edn::record::seq(get(doc, "classes")) {
         add(c);
     }
-    for p in crate::geom::get_slice(get(doc, "packages")) {
-        for c in crate::geom::get_slice(get(p, "classes")) {
+    for p in edn::record::seq(get(doc, "packages")) {
+        for c in edn::record::seq(get(p, "classes")) {
             add(c);
         }
     }

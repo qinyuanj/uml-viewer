@@ -3,7 +3,7 @@
 
 use edn::Value;
 
-use crate::value::{getd as get, kw};
+use crate::value::get_truthy as get;
 
 fn supported(lang: Option<&Value>) -> Result<Option<Value>, String> {
     if let Some(lang) = lang {
@@ -69,5 +69,5 @@ pub fn select(policy: &Value, filenames: &[String]) -> Result<Option<Value>, Str
     if languages.len() != 1 {
         return Err("Cannot detect one language; declare explicit :lang or :sources".to_owned());
     }
-    Ok(Some(kw(languages[0])))
+    Ok(Some(Value::keyword(languages[0])))
 }

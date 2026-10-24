@@ -12,12 +12,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use edn::Value;
+use edn::record::{get, local_name, num};
 use egui::{
     Align2, Color32, CursorIcon, FontFamily, FontId, Id, Pos2, Rect as ERect, RichText, Sense, Vec2,
 };
 use scene::document::ViewState;
 use scene::events;
-use scene::geom::{Rect, get, name, num};
+use scene::geom::Rect;
 
 use crate::detail::{self, Hover};
 use crate::inspector;
@@ -450,7 +451,7 @@ impl Gui {
                 .selected
                 .as_ref()
                 .and_then(|s| get(s, "kind"))
-                .map(name);
+                .map(|v| local_name(v).unwrap_or_default().to_owned());
             self.card_for(state, &id)
                 .map(|c| (id.clone(), Some(c), kind.clone()))
                 .or(Some((id, None, kind)))
@@ -498,10 +499,12 @@ impl Gui {
                                     .unwrap_or(row.rect.center());
                                 menu_request = Some((id.clone(), at));
                             }
-                            let key = entry
-                                .id
-                                .as_ref()
-                                .map_or("real".to_string(), |id| format!("proposal:{}", name(id)));
+                            let key = entry.id.as_ref().map_or("real".to_string(), |id| {
+                                format!(
+                                    "proposal:{}",
+                                    local_name(id).unwrap_or_default().to_owned()
+                                )
+                            });
                             bounds.push((key, row.rect));
                         }
                         let new = themed_button(ui, strings::NEW_PROPOSAL);
@@ -648,7 +651,7 @@ impl Gui {
         let title = get(&model.class, "name")
             .map(|v| match v {
                 Value::String(s) => s.clone(),
-                other => name(other),
+                other => local_name(other).unwrap_or_default().to_owned(),
             })
             .or(model.ns.clone())
             .unwrap_or_default();
@@ -738,7 +741,14 @@ impl Gui {
                             } else if let Some(op) = &it.op_name {
                                 format!("member:{op}")
                             } else {
-                                format!("rel:{}", it.rel.as_ref().map(name).unwrap_or_default())
+                                format!(
+                                    "rel:{}",
+                                    it.rel
+                                        .as_ref()
+                                        .and_then(local_name)
+                                        .unwrap_or_default()
+                                        .to_owned()
+                                )
                             };
                             bounds.push((key, row.intersect(clip)));
                         }
@@ -1190,7 +1200,7 @@ impl Gui {
             ),
             (
                 kw("proposal"),
-                Value::Bool(get(&state.extra, "proposal") == Some(&Value::Bool(true))),
+                Value::Bool(edn::record::flag(&state.extra, "proposal")),
             ),
         ])
     }
@@ -1242,7 +1252,7 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Integer(n)) => n.to_string(),
         Some(Value::Float(x)) => x.to_string(),
-        Some(other) => name(other),
+        Some(other) => local_name(other).unwrap_or_default().to_owned(),
         None => String::new(),
     };
     label(ui, text(get(c, "name")), theme::INK);
@@ -1251,7 +1261,7 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
         .as_ref()
         .and_then(|p| get(p, "label"))
         .map(|l| text(Some(l)))
-        .or_else(|| get(c, "package").map(name))
+        .or_else(|| get(c, "package").map(|v| local_name(v).unwrap_or_default().to_owned()))
         .unwrap_or_else(|| "foreign".into());
     label(ui, format!("{}{package}", strings::PACKAGE), theme::MUTED);
     if let Some(level) = get(c, "level").filter(|v| **v != Value::Nil) {
@@ -1262,7 +1272,11 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
         );
     }
     if let Some(stereo) = get(c, "stereotype") {
-        label(ui, format!("«{}»", name(stereo)), theme::MUTED);
+        label(
+            ui,
+            format!("«{}»", local_name(stereo).unwrap_or_default().to_owned()),
+            theme::MUTED,
+        );
     }
     let crap = get(c, "crap");
     let mut measured = false;
@@ -1276,8 +1290,11 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
     if let Some(line) = mutation_line(c) {
         label(ui, line, theme::MUTED);
     }
-    for line in scene::geom::get_slice(get(c, "lines")) {
-        let kind = get(line, "kind").map(name).unwrap_or_default();
+    for line in edn::record::seq(get(c, "lines")) {
+        let kind = get(line, "kind")
+            .and_then(local_name)
+            .unwrap_or_default()
+            .to_owned();
         if kind == "field" || kind == "op" {
             label(ui, text(get(line, "text")), theme::INK);
         }
@@ -1293,7 +1310,7 @@ fn package_summary(ui: &mut egui::Ui, state: &ViewState, id: &Value) {
     };
     let title = match get(p, "label") {
         Some(Value::String(s)) => s.clone(),
-        _ => name(id),
+        _ => local_name(id).unwrap_or_default().to_owned(),
     };
     label(ui, title, theme::INK);
     let crap = get(p, "crap");
@@ -1303,7 +1320,7 @@ fn package_summary(ui: &mut egui::Ui, state: &ViewState, id: &Value) {
     if let Some(line) = mutation_line(p) {
         label(ui, line, theme::MUTED);
     }
-    let count = scene::geom::get_slice(get(&state.scene, "classes"))
+    let count = edn::record::seq(get(&state.scene, "classes"))
         .iter()
         .filter(|c| get(c, "package") == Some(id))
         .count();

@@ -1,8 +1,8 @@
 //! Metrics overlay — the closed_overlay_parity_spec and metrics_spec oracle
 //! (pure parts; adapter IO stays outside this crate's core).
 
+use edn::record::{get, local_name, num};
 use edn::{Value, parse};
-use scene::geom::{get, name, num};
 use scene::overlay::{self, Snapshot};
 
 fn snap(path: &str, text: &str, mtime: Value) -> Snapshot {
@@ -21,7 +21,7 @@ fn names(c: &Value) -> Vec<String> {
         Some(Value::Vector(ops)) => ops
             .iter()
             .filter_map(|op| get(op, "name"))
-            .map(name)
+            .map(|v| local_name(v).unwrap_or_default().to_owned())
             .collect(),
         _ => vec![],
     }

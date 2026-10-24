@@ -3,8 +3,8 @@
 //! equivalent documents are written literally, which is exactly what the IR
 //! the scene core consumes looks like.
 
+use edn::record::{get, local_name, num};
 use edn::{Value, parse};
-use scene::geom::{self, get, name, num};
 use scene::hierarchy as H;
 
 fn kw(s: &str) -> Value {
@@ -177,7 +177,7 @@ fn routes_off_view_dependencies_into_ports_while_keeping_visible_arrows() {
 }
 
 fn geom_put_omit(d: &mut Value) {
-    geom::put(d, "omit", parse("[:engine]").unwrap());
+    edn::record::put(d, "omit", parse("[:engine]").unwrap());
 }
 
 #[test]
@@ -282,7 +282,12 @@ fn declutter_arrows_keep_leaf_provenance_and_collapsed_quality() {
     let mut mode: Option<Value> = None;
     for want in ["arrows", "triangles", "elements", "classes", "full"] {
         mode = Some(H::next_declutter(mode.as_ref()));
-        assert_eq!(want, name(mode.as_ref().unwrap()));
+        assert_eq!(
+            want,
+            local_name(mode.as_ref().unwrap())
+                .unwrap_or_default()
+                .to_owned()
+        );
     }
 }
 

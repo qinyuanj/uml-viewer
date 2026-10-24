@@ -157,7 +157,7 @@ pub fn verify(identity: &Value, host: &Host) -> Result<Value> {
     let state = status(identity, host)?
         .ok_or_else(|| Failure::new("Recovery controller identity is missing or changed"))?;
     domain::matching(identity, &state)?;
-    let controller = record::get(&state, "controller")
+    let controller = edn::record::get(&state, "controller")
         .filter(|controller| record::is_map(controller))
         .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
     let pid = record::get_i64(controller, "pid")
@@ -199,9 +199,9 @@ pub fn cancel(identity: &Value, host: &Host) -> Result<()> {
     with_gate(identity, || {
         write_state(
             &control_path,
-            &record::map(vec![(
+            &edn::record::record(vec![(
                 "cancel",
-                record::get(&reference, "token")
+                edn::record::get(&reference, "token")
                     .cloned()
                     .unwrap_or(Value::Nil),
             )]),
@@ -211,7 +211,7 @@ pub fn cancel(identity: &Value, host: &Host) -> Result<()> {
     let deadline = (host.clock)() + 10000;
     loop {
         let state = verify(identity, host)?;
-        let controller = record::get(&state, "controller").unwrap();
+        let controller = edn::record::get(&state, "controller").unwrap();
         let pid = record::get_i64(controller, "pid").unwrap_or(0);
         let start = record::get_name(controller, "start").unwrap_or_default();
         // A reused PID is not the registered controller: only the exact
@@ -294,20 +294,20 @@ pub fn step(step: &Step) -> Result<Value> {
     }
     write_state(&state_path, &decision.state, host)?;
     let mut submission = identity.clone();
-    if let Some(token) = record::get(&decision.state, "runner-token") {
-        record::put(&mut submission, "runner-token", token.clone());
+    if let Some(token) = edn::record::get(&decision.state, "runner-token") {
+        edn::record::put(&mut submission, "runner-token", token.clone());
     }
-    if let Some(path) = record::get(&decision.state, "runner-state") {
-        record::put(&mut submission, "runner-state", path.clone());
+    if let Some(path) = edn::record::get(&decision.state, "runner-state") {
+        edn::record::put(&mut submission, "runner-state", path.clone());
     }
     let mut result = decision.state.clone();
     match (step.launch)(&submission) {
         Ok(()) => {
-            record::put(&mut result, "phase", Value::keyword("running"));
+            edn::record::put(&mut result, "phase", Value::keyword("running"));
         }
         Err(error) => {
-            record::put(&mut result, "phase", Value::keyword("failed"));
-            record::put(
+            edn::record::put(&mut result, "phase", Value::keyword("failed"));
+            edn::record::put(
                 &mut result,
                 "reason",
                 Value::String(format!("Recovery submission uncertain: {}", error.message)),
@@ -391,10 +391,11 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
     let exit_path = PathBuf::from(format!("{runner_state}.exit.json"));
     let _ = std::fs::remove_file(&started_path);
     let _ = std::fs::remove_file(&exit_path);
-    let command: Vec<std::ffi::OsString> = record::string_vec(record::get_vec(identity, "command"))
-        .into_iter()
-        .map(std::ffi::OsString::from)
-        .collect();
+    let command: Vec<std::ffi::OsString> =
+        record::string_vec(edn::record::seq(edn::record::get(identity, "command")))
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect();
     if command.is_empty() {
         posix::release(generation_lock);
         return Err(Failure::new("Runner manifest has no command"));
@@ -427,7 +428,7 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
         }
         posix::sleep(25);
     };
-    let child_record = record::map(vec![
+    let child_record = edn::record::record(vec![
         (
             "pid",
             Value::Integer(
@@ -448,12 +449,12 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
             ),
         ),
     ]);
-    let token = record::get(identity, "runner-token")
+    let token = edn::record::get(identity, "runner-token")
         .cloned()
         .unwrap_or(Value::Nil);
     write_state(
         Path::new(&runner_state),
-        &record::map(vec![
+        &edn::record::record(vec![
             ("token", token.clone()),
             ("phase", Value::keyword("started")),
             ("child", child_record.clone()),
@@ -461,14 +462,14 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
         &host,
     )?;
     let exit = posix::await_exit(&child, Some(&exit_path));
-    let mut exited = record::map(vec![
+    let mut exited = edn::record::record(vec![
         ("token", token),
         ("phase", Value::keyword("exited")),
         ("child", child_record),
         ("at", Value::Integer(posix::monotonic_ms())),
     ]);
     if let Some(code) = exit {
-        record::put(&mut exited, "exit", Value::Integer(code as i64));
+        edn::record::put(&mut exited, "exit", Value::Integer(code as i64));
     }
     write_state(Path::new(&runner_state), &exited, &host)?;
     posix::release(generation_lock);
@@ -489,7 +490,7 @@ pub fn controller_loop(
     }
     let current = (host.owner)(i64::from(posix::current_pid()))
         .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
-    let controller = record::map(vec![
+    let controller = edn::record::record(vec![
         ("pid", Value::Integer(i64::from(current.pid))),
         ("start", Value::String(current.start)),
     ]);
@@ -507,8 +508,8 @@ pub fn controller_loop(
             Ok(state) => state,
             Err(error) => {
                 let mut existing = status(identity, host)?.unwrap_or_else(|| Value::Map(vec![]));
-                record::put(&mut existing, "phase", Value::keyword("failed"));
-                record::put(&mut existing, "reason", Value::String(error.message));
+                edn::record::put(&mut existing, "phase", Value::keyword("failed"));
+                edn::record::put(&mut existing, "reason", Value::String(error.message));
                 write_state(Path::new(&domain::state_file(identity)), &existing, host)?;
                 existing
             }
@@ -584,19 +585,19 @@ mod tests {
     }
 
     fn controller() -> Value {
-        record::map(vec![
+        edn::record::record(vec![
             ("pid", Value::Integer(10)),
             ("start", Value::String("start".to_owned())),
         ])
     }
 
     fn exited(token: &str, code: i64) -> Value {
-        record::map(vec![
+        edn::record::record(vec![
             ("token", Value::String(token.to_owned())),
             ("phase", Value::keyword("exited")),
             (
                 "child",
-                record::map(vec![
+                edn::record::record(vec![
                     ("pid", Value::Integer(20)),
                     ("start", Value::String("child".to_owned())),
                 ]),
@@ -805,7 +806,7 @@ mod tests {
             let identity = identity("/r");
             register(&identity, &controller(), &host).unwrap();
             let mut state = status(&identity, &host).unwrap().unwrap();
-            record::put(&mut state, "phase", Value::keyword(phase));
+            edn::record::put(&mut state, "phase", Value::keyword(phase));
             save(&identity, &state, &host).unwrap();
             assert!(retire_completed(&identity, &host).unwrap().is_some());
             assert!(status(&identity, &host).unwrap().is_none());
@@ -816,7 +817,7 @@ mod tests {
             let identity = identity("/r");
             register(&identity, &controller(), &host).unwrap();
             let mut state = status(&identity, &host).unwrap().unwrap();
-            record::put(&mut state, "phase", Value::keyword(phase));
+            edn::record::put(&mut state, "phase", Value::keyword(phase));
             save(&identity, &state, &host).unwrap();
             assert!(retire_completed(&identity, &host).is_err());
             assert_eq!(
@@ -846,18 +847,18 @@ mod tests {
             record::get_name(&verify(&identity, &host).unwrap(), "phase").unwrap()
         );
         for replacement in [
-            record::map(vec![
+            edn::record::record(vec![
                 ("pid", Value::Integer(11)),
                 ("start", Value::String("start".to_owned())),
             ]),
-            record::map(vec![
+            edn::record::record(vec![
                 ("pid", Value::Integer(10)),
                 ("start", Value::String("other".to_owned())),
             ]),
-            record::map(vec![("start", Value::String("start".to_owned()))]),
+            edn::record::record(vec![("start", Value::String("start".to_owned()))]),
         ] {
             let mut state = status(&identity, &host).unwrap().unwrap();
-            record::put(&mut state, "controller", replacement);
+            edn::record::put(&mut state, "controller", replacement);
             save(&identity, &state, &host).unwrap();
             assert!(verify(&identity, &host).is_err());
         }
@@ -868,7 +869,7 @@ mod tests {
         let directory = tempfile();
         let good = directory.join("runner.edn");
         std::fs::write(&good, "{:token \"t\" :phase :started}").unwrap();
-        let state = record::map(vec![(
+        let state = edn::record::record(vec![(
             "runner-state",
             Value::String(good.to_string_lossy().into_owned()),
         )]);
@@ -918,7 +919,7 @@ mod tests {
         assert_eq!(Some("exited".to_owned()), record::get_name(&state, "phase"));
         assert_eq!(Some(7), record::get_i64(&state, "exit"));
         assert!(record::get_i64(&state, "at").is_some());
-        let child = record::get(&state, "child").unwrap();
+        let child = edn::record::get(&state, "child").unwrap();
         assert!(record::get_i64(child, "pid").unwrap_or(0) > 1);
         // A second run of the same generation now succeeds (lock released).
         let _ = std::fs::remove_dir_all(&directory);

@@ -5,7 +5,8 @@ use edn::Value;
 
 use crate::graph::{self, Scanner};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
-use crate::value::{getd as get, kw, record, seq};
+use crate::value::get_truthy as get;
+use edn::record::{record, seq};
 
 fn ident(c: Option<u8>) -> bool {
     c.is_some_and(is_word)
@@ -237,7 +238,7 @@ fn parse_import(s: &[u8]) -> Option<Value> {
                 && module.iter().all(|&c| is_word(c) || c == b'.'));
         if valid {
             return Some(record(vec![
-                ("kind", kw("from")),
+                ("kind", Value::keyword("from")),
                 ("dots", Value::Integer(dots as i64)),
                 (
                     "module",
@@ -254,7 +255,7 @@ fn parse_import(s: &[u8]) -> Option<Value> {
     }
     if s.starts_with(b"import ") {
         return Some(record(vec![
-            ("kind", kw("import")),
+            ("kind", Value::keyword("import")),
             ("modules", Value::Vector(parts(&s[7..]))),
         ]));
     }
@@ -337,7 +338,7 @@ pub fn read_module(source: &[u8]) -> Value {
                 }
                 defs.push(record(vec![
                     ("name", Value::String(text::text(&name))),
-                    ("kind", kw("class")),
+                    ("kind", Value::keyword("class")),
                     (
                         "bases",
                         body.map(|_| Value::Vector(bases)).unwrap_or(Value::Nil),
@@ -346,7 +347,7 @@ pub fn read_module(source: &[u8]) -> Value {
             } else {
                 defs.push(record(vec![
                     ("name", Value::String(text::text(&name))),
-                    ("kind", kw("function")),
+                    ("kind", Value::keyword("function")),
                     (
                         "return",
                         match_return(&header)
@@ -618,7 +619,7 @@ impl Scanner for PythonScanner {
                 parent(&m.ns).unwrap_or("").to_owned()
             };
             for imp in seq(get(&surface, "imports")) {
-                if get(imp, "kind") == Some(&kw("import")) {
+                if get(imp, "kind") == Some(&Value::keyword("import")) {
                     for part in seq(get(imp, "modules")) {
                         let n = match get(part, "name") {
                             Some(Value::String(s)) => s.clone(),
@@ -722,7 +723,7 @@ impl Scanner for PythonScanner {
                         }
                     }
                     Hit::Foreign(name) => {
-                        let foreign = kw(name);
+                        let foreign = Value::keyword(name);
                         if !external.contains(&foreign) {
                             external.push(foreign.clone());
                         }
@@ -759,7 +760,7 @@ impl Scanner for PythonScanner {
             for d in seq(get(&surface, "defs")) {
                 let n = get(d, "name").cloned().unwrap_or(Value::Nil);
                 ops.push(record(vec![("name", n.clone()), ("text", n)]));
-                if get(d, "kind") == Some(&kw("function")) {
+                if get(d, "kind") == Some(&Value::keyword("function")) {
                     interface = false;
                 } else {
                     class_count += 1;
@@ -802,17 +803,17 @@ impl Scanner for PythonScanner {
                 ("id", m.id.clone()),
                 ("ns", Value::String(m.ns.clone())),
                 ("name", Value::String(graph::module_name(&m.id))),
-                ("lang", kw("python")),
+                ("lang", Value::keyword("python")),
                 (
                     "file",
                     Value::String(graph::relative_path(&m.file_path, cwd)),
                 ),
             ]);
             if !ops.is_empty() {
-                c = crate::value::put(&c, "ops", Value::Vector(ops));
+                edn::record::put(&mut c, "ops", Value::Vector(ops));
             }
             if class_count > 0 && interface {
-                c = crate::value::put(&c, "stereotype", kw("interface"));
+                edn::record::put(&mut c, "stereotype", Value::keyword("interface"));
             }
             classes.push(c);
             for (group, kind) in [
@@ -826,7 +827,7 @@ impl Scanner for PythonScanner {
                         let e = record(vec![
                             ("from", m.id.clone()),
                             ("to", to.clone()),
-                            ("kind", kw(kind)),
+                            ("kind", Value::keyword(kind)),
                         ]);
                         if !edges.contains(&e) {
                             edges.push(e);

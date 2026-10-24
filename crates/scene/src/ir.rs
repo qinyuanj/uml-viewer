@@ -1,19 +1,13 @@
 //! IR normalization on load (port of `love/uml/domain/ir.lua`): validate and
 //! canonicalize the flat/diagram documents the scanners emit.
 
-use crate::geom::{self, name, numval};
+use crate::geom::numval;
 use edn::Value;
+use edn::record::{flag, local_name, seq};
 use std::collections::HashSet;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
-    geom::get(m, key)
-}
-
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
+    edn::record::get(m, key)
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -39,14 +33,14 @@ fn id(x: &Value) -> Result<Value> {
             }
             Ok(Value::keyword(&String::from_utf8(out).unwrap()))
         }
-        Value::Symbol(_) => Ok(Value::keyword(&name(x))),
+        Value::Symbol(_) => Ok(Value::keyword(local_name(x).unwrap_or_default())),
         _ => Err("id must be a keyword or string".into()),
     }
 }
 
 fn number(x: Option<&Value>, kind: &str) -> Result<Value> {
     let Some(x) = x else { return Ok(Value::Nil) };
-    let Some(n) = geom::num(x) else {
+    let Some(n) = edn::record::num(x) else {
         return Err(format!("{kind} must be a number"));
     };
     if kind == "coverage" {
@@ -66,7 +60,7 @@ fn number(x: Option<&Value>, kind: &str) -> Result<Value> {
 
 fn crap(x: Option<&Value>) -> Result<Value> {
     let Some(x) = x else { return Ok(Value::Nil) };
-    if let Some(n) = geom::num(x) {
+    if let Some(n) = edn::record::num(x) {
         return Ok(Value::Map(vec![
             (Value::keyword("mu"), numval(n)),
             (Value::keyword("max"), numval(n)),
@@ -96,10 +90,10 @@ fn crap(x: Option<&Value>) -> Result<Value> {
                 .unwrap_or(Value::Integer(0)),
         ),
     ]);
-    if let Some(n) = g(x, "n").and_then(geom::num)
+    if let Some(n) = g(x, "n").and_then(edn::record::num)
         && n > 0.0
     {
-        geom::put(&mut r, "n", numval(n.floor()));
+        edn::record::put(&mut r, "n", numval(n.floor()));
     }
     Ok(r)
 }
@@ -116,7 +110,7 @@ fn member(x: &Value) -> Result<Value> {
         None => {
             let mut text = match g(x, "name") {
                 Some(Value::String(s)) => s.clone(),
-                Some(other) => name(other),
+                Some(other) => crate::geom::name(other),
                 None => String::new(),
             };
             if let Some(Value::Vector(args)) = g(x, "args")
@@ -126,7 +120,7 @@ fn member(x: &Value) -> Result<Value> {
                     .iter()
                     .map(|a| match a {
                         Value::String(s) => s.clone(),
-                        other => name(other),
+                        other => crate::geom::name(other),
                     })
                     .collect();
                 text = format!("{}({})", text, parts.join(", "));
@@ -137,7 +131,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match t {
                         Value::String(s) => s.clone(),
-                        other => name(other),
+                        other => crate::geom::name(other),
                     }
                 );
             }
@@ -147,7 +141,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match r {
                         Value::String(s) => s.clone(),
-                        other => name(other),
+                        other => crate::geom::name(other),
                     }
                 );
             }
@@ -164,35 +158,35 @@ fn member(x: &Value) -> Result<Value> {
         "cc",
         "crap",
     ] {
-        if let Some(raw) = geom::get_raw(x, k) {
+        if let Some(raw) = edn::record::get_raw(x, k) {
             let v = if k == "crap" {
                 crap(Some(raw))?
             } else {
                 number(Some(raw), k)?
             };
-            geom::put(&mut r, k, v);
+            edn::record::put(&mut r, k, v);
         }
     }
-    if g(x, "private") == Some(&Value::Bool(true)) {
-        geom::put(&mut r, "private", Value::Bool(true));
+    if edn::record::is_true(x, "private") {
+        edn::record::put(&mut r, "private", Value::Bool(true));
     }
     if let Some(n) = g(x, "name") {
-        geom::put(&mut r, "name", n.clone());
+        edn::record::put(&mut r, "name", n.clone());
     }
     Ok(r)
 }
 
 fn class(c: &Value) -> Result<Value> {
-    // `name or name(id)`; a missing :name falls back to the id's last segment.
+    // `name or G.name(id)`; a missing :name falls back to the id's last segment.
     let label = match g(c, "name") {
         Some(v) => v.clone(),
         None => match g(c, "id") {
-            Some(v) if !matches!(v, Value::Nil) => Value::String(name(v)),
+            Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
             _ => return Err("class needs :name or :id".into()),
         },
     };
     let idv = id(g(c, "id").unwrap_or(&label))?;
-    let oval = geom::truthy(g(c, "foreign")) || g(c, "shape").map(name).as_deref() == Some("oval");
+    let oval = flag(c, "foreign") || g(c, "shape").and_then(local_name) == Some("oval");
     let mut r = Value::Map(vec![
         (Value::keyword("id"), idv),
         (Value::keyword("name"), label),
@@ -211,22 +205,22 @@ fn class(c: &Value) -> Result<Value> {
         (Value::keyword("crap"), crap(g(c, "crap"))?),
         (
             Value::keyword("hide-members"),
-            Value::Bool(g(c, "hide-members") == Some(&Value::Bool(true))),
+            Value::Bool(edn::record::is_true(c, "hide-members")),
         ),
     ]);
     for k in ["coverage", "cc", "killed", "survived", "uncovered", "sites"] {
-        geom::put(&mut r, k, number(g(c, k), k)?);
+        edn::record::put(&mut r, k, number(g(c, k), k)?);
     }
     for k in ["fields", "ops"] {
         let mut xs = Vec::new();
         for x in seq(g(c, k)) {
             xs.push(member(x)?);
         }
-        geom::put(&mut r, k, Value::Vector(xs));
+        edn::record::put(&mut r, k, Value::Vector(xs));
     }
     for k in ["ns", "lang", "file", "level"] {
         if let Some(v) = g(c, k) {
-            geom::put(&mut r, k, v.clone());
+            edn::record::put(&mut r, k, v.clone());
         }
     }
     Ok(r)
@@ -248,7 +242,7 @@ pub fn normalize(raw: &Value) -> Result<Value> {
         let label = match g(p, "label") {
             Some(v) => v.clone(),
             None => match g(p, "id") {
-                Some(v) if !matches!(v, Value::Nil) => Value::String(name(v)),
+                Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
                 _ => return Err("package needs :label or :id".into()),
             },
         };
@@ -290,8 +284,8 @@ pub fn normalize(raw: &Value) -> Result<Value> {
                 g(e, "label").cloned().unwrap_or(Value::Nil),
             ),
         ]);
-        if g(e, "violating") == Some(&Value::Bool(true)) {
-            geom::put(&mut x, "violating", Value::Bool(true));
+        if edn::record::is_true(e, "violating") {
+            edn::record::put(&mut x, "violating", Value::Bool(true));
         }
         es.push(x);
     }
@@ -314,8 +308,8 @@ pub fn normalize(raw: &Value) -> Result<Value> {
 
 fn default_or<'a>(v: Option<&'a Value>, d: &'a Value) -> &'a Value {
     match v {
-        None | Some(Value::Nil) | Some(Value::Bool(false)) => d,
-        Some(v) => v,
+        Some(x) if edn::record::truthy(v) => x,
+        _ => d,
     }
 }
 
@@ -325,7 +319,7 @@ pub fn read_document(text: &str) -> Result<Value> {
     if !matches!(raw, Value::Map(_)) {
         return Err("document must be an EDN map".into());
     }
-    if g(&raw, "hierarchical") == Some(&Value::Bool(true)) {
+    if flag(&raw, "hierarchical") {
         return Ok(raw);
     }
     let mut ds = Vec::new();

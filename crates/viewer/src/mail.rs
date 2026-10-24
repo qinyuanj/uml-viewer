@@ -211,7 +211,7 @@ pub fn quit_requested(state: &ViewState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scene::geom::get;
+    use edn::record::get;
 
     #[test]
     fn a_display_path_resolves_against_the_project_root_unless_absolute() {

@@ -2,7 +2,7 @@
 //! member-line rules exercised by viewer_spec.
 
 use edn::parse;
-use scene::geom::{get, name};
+use edn::record::{get, local_name};
 use scene::layout::{CHAR_W, class_box_size, class_lines, text_w};
 
 #[test]
@@ -49,7 +49,7 @@ fn member_lines_show_stereotype_public_members_and_rules() {
     assert_eq!(vec!["«interface»", "a", "field", "visible"], texts);
     let rules = lines
         .iter()
-        .filter(|l| name(get(l, "kind").unwrap()) == "rule")
+        .filter(|l| local_name(get(l, "kind").unwrap()).unwrap_or_default() == "rule")
         .count();
     assert_eq!(2, rules);
     let (_, h, _) = class_box_size(&c);
@@ -63,7 +63,11 @@ fn hidden_members_and_children_replace_member_lines() {
     let lines = class_lines(&c);
     let kinds: Vec<String> = lines
         .iter()
-        .map(|l| name(get(l, "kind").unwrap()))
+        .map(|l| {
+            local_name(get(l, "kind").unwrap())
+                .unwrap_or_default()
+                .to_owned()
+        })
         .collect();
     assert_eq!(vec!["name", "rule", "child"], kinds);
     let child = &lines[2];

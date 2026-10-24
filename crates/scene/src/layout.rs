@@ -3,8 +3,9 @@
 //! characters count as two — so layout never depends on a loaded font.
 
 use crate::config;
-use crate::geom::{self, Rect, get, name, num, numval, put};
+use crate::geom::{self, Rect, numval};
 use edn::Value;
+use edn::record::{flag, get, local_name, num, put, seq};
 
 /// Estimated advance of one half-width character at the 16px body font.
 pub const CHAR_W: f64 = 8.0;
@@ -43,13 +44,6 @@ pub fn text_w(s: Option<&str>) -> f64 {
     CHAR_W * n as f64
 }
 
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
-}
-
 fn line(kind: &str, text: Option<Value>, extra: Vec<(Value, Value)>) -> Value {
     let mut l = Value::Map(vec![
         (Value::keyword("kind"), Value::keyword(kind)),
@@ -68,14 +62,14 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
     if let Some(stereotype) = get(c, "stereotype") {
         lines.push(line(
             "stereo",
-            Some(Value::String(format!("«{}»", name(stereotype)))),
+            Some(Value::String(format!("«{}»", geom::name(stereotype)))),
             vec![],
         ));
     }
     lines.push(line("name", get(c, "name").cloned(), vec![]));
     // Lua `not g(c,'hide-members')`: an explicit `false` (every normalized
     // IR class carries one) still shows members (#148).
-    if matches!(get(c, "hide-members"), None | Some(Value::Bool(false))) {
+    if !flag(c, "hide-members") {
         let kids = seq(get(c, "contents"));
         if !kids.is_empty() {
             lines.push(line("rule", None, vec![]));
@@ -90,7 +84,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
                         ),
                         (
                             Value::keyword("drill?"),
-                            Value::Bool(get(ch, "drill?") == Some(&Value::Bool(true))),
+                            Value::Bool(edn::record::is_true(ch, "drill?")),
                         ),
                     ],
                 ));
@@ -99,7 +93,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
             for kind in ["fields", "ops"] {
                 let shown: Vec<&Value> = seq(get(c, kind))
                     .iter()
-                    .filter(|x| kind != "ops" || !geom::truthy(get(x, "private")))
+                    .filter(|x| kind != "ops" || !flag(x, "private"))
                     .collect();
                 if !shown.is_empty() {
                     lines.push(line("rule", None, vec![]));
@@ -122,7 +116,7 @@ pub fn class_box_size(c: &Value) -> (f64, f64, Vec<Value>) {
     let lines = class_lines(c);
     let (mut w, mut h): (f64, f64) = (120.0, 24.0);
     for l in &lines {
-        if name(get(l, "kind").unwrap()) == "rule" {
+        if local_name(get(l, "kind").unwrap()).unwrap_or_default() == "rule" {
             h += 12.0;
         } else {
             h += 18.0;
@@ -140,8 +134,10 @@ pub fn class_box_size(c: &Value) -> (f64, f64, Vec<Value>) {
 fn port_w(d: &Value) -> f64 {
     (44.0_f64).max(
         10.0 + text_w(Some(&match get(d, "name") {
-            Some(v @ Value::String(_)) => name(v),
-            _ => name(get(d, "id").unwrap()),
+            Some(v @ Value::String(_)) => geom::name(v),
+            _ => local_name(get(d, "id").unwrap())
+                .unwrap_or_default()
+                .to_owned(),
         })),
     )
 }
@@ -260,7 +256,10 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
         if !nbr[&t].contains(&f) {
             nbr.get_mut(&t).unwrap().push(f.clone());
         }
-        let k = get(e, "kind").map(name).unwrap_or_default();
+        let k = get(e, "kind")
+            .and_then(local_name)
+            .unwrap_or_default()
+            .to_owned();
         let (f, t) = if k == "inheritance" || k == "implements" {
             (t, f)
         } else {
@@ -440,7 +439,7 @@ pub fn layout(diagram: &Value) -> Value {
             seq(get(p, "classes")),
             seq(get(diagram, "edges")),
             &get(diagram, "direction")
-                .map(name)
+                .map(geom::name)
                 .unwrap_or_else(|| "tb".into()),
         );
         let mut rects: Vec<Rect> = Vec::new();
@@ -455,7 +454,7 @@ pub fn layout(diagram: &Value) -> Value {
             let rank = num(get(c, "rank").unwrap()).unwrap();
             put(c, "rank", numval(i as f64 * stride + rank));
             ports(c);
-            if get(c, "dummy?").is_none() {
+            if !flag(c, "dummy?") {
                 real.push(c.clone());
                 rects.push(Rect::from_value(get(c, "rect").unwrap()).unwrap());
                 for k in ["in-ports", "out-ports"] {
@@ -505,7 +504,7 @@ pub fn layout(diagram: &Value) -> Value {
         }
         pkgs.push(pkg);
         for c in inner.iter_mut() {
-            if get(c, "dummy?").is_some() {
+            if flag(c, "dummy?") {
                 put(c, "rect", pr.to_value());
                 ports(c);
             }

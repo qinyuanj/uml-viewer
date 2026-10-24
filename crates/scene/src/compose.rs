@@ -8,22 +8,8 @@
 use crate::curve;
 use crate::geom::{self, Rect};
 use edn::Value;
+use edn::record::{flag, get, put, seq};
 use std::collections::HashMap;
-
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
-}
-
-fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    geom::get(v, key)
-}
-
-fn put(v: &mut Value, key: &str, value: Value) {
-    geom::put(v, key, value);
-}
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
 /// dummy boxes are tracked but never clip strokes.
@@ -48,7 +34,7 @@ impl ClassIndex {
                 continue;
             };
             index.rect_by_id.insert(edn::encode(id).unwrap(), rect);
-            let dummy = get(c, "dummy?").is_some();
+            let dummy = flag(c, "dummy?");
             let slot = index.obstacles.len();
             index.obstacles.push((id.clone(), rect, dummy));
             let (x0, y0) = (
@@ -240,7 +226,7 @@ pub fn compile_diagram(diagram: &Value) -> Value {
     crate::route::route(&mut scene);
     fit(&mut scene);
     prepare_scene(&mut scene);
-    if get(diagram, "hide-edges").is_some() {
+    if flag(diagram, "hide-edges") {
         let indicators = crate::hit::dep_indicators(&scene);
         put(&mut scene, "dep-indicators", indicators);
     }
@@ -297,7 +283,7 @@ pub fn compile_document(doc: &Value) -> Value {
         fit(&mut scene);
         let h = get(&scene, "size")
             .and_then(|s| get(s, "h"))
-            .and_then(geom::num)
+            .and_then(edn::record::num)
             .unwrap();
         let prefix = format!("d{}-", i);
         prefix_ids(&mut scene, &prefix);
@@ -342,7 +328,7 @@ pub fn compile_document(doc: &Value) -> Value {
         translate(&mut scene, dx, 0.0);
     }
     size(&mut scene);
-    if let Some(Value::Map(entries)) = geom::get_raw(&scene, "size").cloned() {
+    if let Some(Value::Map(entries)) = edn::record::get_raw(&scene, "size").cloned() {
         let mut sz = Value::Map(entries);
         sz.assoc(Value::keyword("h"), geom::numval(y));
         put(&mut scene, "size", sz);

@@ -3,8 +3,8 @@
 //! structural comparison ported from `edges_spec.close`.
 #![allow(dead_code)] // each test crate uses a different subset
 
+use edn::record::get;
 use edn::{Value, parse};
-use scene::geom::{self, get};
 use std::path::{Path, PathBuf};
 
 /// Absolute tolerance of every golden number; goldens record it as
@@ -48,8 +48,8 @@ pub fn assert_golden_tolerance(golden: &Value, label: &str) {
 pub fn assert_close(expected: &Value, actual: Option<&Value>, path: &str) {
     match expected {
         Value::Integer(_) | Value::Float(_) => {
-            let a = geom::num(expected).unwrap();
-            let Some(b) = actual.and_then(geom::num) else {
+            let a = edn::record::num(expected).unwrap();
+            let Some(b) = actual.and_then(edn::record::num) else {
                 panic!("{path}: expected {a}, actual missing or non-numeric");
             };
             assert!(b.is_finite(), "{path}: actual not finite ({b})");

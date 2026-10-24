@@ -8,7 +8,7 @@
 use edn::Value;
 
 use crate::policy;
-use crate::value::get;
+use edn::record::get;
 
 fn parse(text: &str) -> Value {
     edn::parse(text).unwrap()
@@ -227,7 +227,7 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
     ));
     let pairs = |doc: &Value| -> Value {
         Value::Vector(
-            crate::value::seq(get(doc, "edges"))
+            edn::record::seq(get(doc, "edges"))
                 .iter()
                 .map(|e| {
                     Value::Vector(vec![
@@ -239,8 +239,8 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
         )
     };
     let graph = Value::Map(vec![
-        (crate::value::kw("classes"), Value::Vector(classes.clone())),
-        (crate::value::kw("edges"), Value::Vector(edges.clone())),
+        (Value::keyword("classes"), Value::Vector(classes.clone())),
+        (Value::keyword("edges"), Value::Vector(edges.clone())),
     ]);
     let doc = policy::apply_policy(&parse("{}"), &graph);
     assert_same(
@@ -249,8 +249,8 @@ fn clojure_group_by_order_holds_past_the_array_map_boundary() {
     );
     add("h", &mut classes, &mut edges);
     let graph = Value::Map(vec![
-        (crate::value::kw("classes"), Value::Vector(classes)),
-        (crate::value::kw("edges"), Value::Vector(edges)),
+        (Value::keyword("classes"), Value::Vector(classes)),
+        (Value::keyword("edges"), Value::Vector(edges)),
     ]);
     let doc = policy::apply_policy(&parse("{}"), &graph);
     assert_same(
@@ -273,4 +273,11 @@ fn a_timestamp_named_proposal_is_kept_but_never_invented() {
         .and_then(|p| get(p, "name"));
     assert_same(r#""2026-10-22 14:11:13""#, name);
     assert_eq!(None, get(&doc, "proposal"));
+}
+
+#[test]
+fn an_explicit_nil_proposal_has_no_layers() {
+    // policy.lua:113-116: `E.get` finds the key, `get` then yields nil, and
+    // `normalize_proposal(nil)` has no layers. #154: no panic.
+    assert!(policy::proposal_layers(&parse("{:proposal nil}")).is_empty());
 }

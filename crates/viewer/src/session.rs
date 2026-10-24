@@ -7,8 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use edn::Value;
+use edn::record::{get, num};
 use scene::document::{self, ViewState};
-use scene::geom::{get, num};
 
 use crate::app::{WINDOW_MIN, WINDOW_SIZE};
 

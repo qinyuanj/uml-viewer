@@ -2,14 +2,11 @@
 //! navigation, camera, selection, search location and proposal CRUD.
 
 use crate::document::{self, Boundary, ViewState};
-use crate::geom::{self, get, name, num};
+use crate::geom;
 use crate::hierarchy as H;
 use crate::hit;
 use edn::Value;
-
-fn kw(s: &str) -> Value {
-    Value::keyword(s)
-}
+use edn::record::{get, local_name, num};
 
 /// Canvas geometry for camera math: window size, usable view width and the
 /// optional pointer/control/shift modifiers.
@@ -56,7 +53,7 @@ fn clamp_zoom(z: f64) -> f64 {
 
 fn rebuild(mut s: ViewState) -> ViewState {
     if let Some(doc) = s.document.clone()
-        && get(&doc, "hierarchical") == Some(&Value::Bool(true))
+        && edn::record::flag(&doc, "hierarchical")
     {
         s.scene = document::compile_view(&doc, &s.snapshots, &s.focus.clone(), &s.extra.clone());
         // Recompiling geometry is not navigation: keep camera/zoom and valid
@@ -185,7 +182,7 @@ pub fn rename_proposal(
         .map(|p| {
             let mut out = p.clone();
             if get(&p, "id") == Some(id) {
-                geom::put(&mut out, "name", Value::String(new_name.to_owned()));
+                edn::record::put(&mut out, "name", Value::String(new_name.to_owned()));
             }
             out
         })
@@ -237,7 +234,7 @@ pub fn rename_op(id: &Value, raw: Option<&str>) -> Option<Value> {
 }
 
 pub fn apply_proposal_op(s: &ViewState, op: &Value, boundary: Option<&dyn Boundary>) -> ViewState {
-    match get(op, "op").map(name).as_deref() {
+    match get(op, "op").map(geom::name).as_deref() {
         Some("rename") => {
             let name = match get(op, "name") {
                 Some(Value::String(s)) => s.clone(),
@@ -270,7 +267,7 @@ pub fn drill(s: &ViewState, id: &Value) -> ViewState {
         n.extra.assoc(Value::keyword("open-layer"), id.clone());
     } else {
         n.focus = s.focus.clone();
-        let last = name(id);
+        let last = geom::name(id);
         n.focus
             .push(Value::keyword(last.rsplit('.').next().unwrap_or("")));
     }
@@ -450,7 +447,7 @@ pub fn zoom_dir(key: Option<&str>, dims: &Dims) -> Option<&'static str> {
 fn key_name(key: Option<&Value>) -> Option<String> {
     match key? {
         Value::String(s) => Some(s.clone()),
-        Value::Keyword(_) => Some(name(key?)),
+        Value::Keyword(_) => Some(geom::name(key?)),
         Value::Integer(n) => Some(n.to_string()),
         _ => None,
     }
@@ -518,11 +515,9 @@ pub fn on_key(s: &ViewState, key: Option<&Value>, dims: &Dims) -> ViewState {
 /// The layer a hit drills into (drillable class, child row, proposal package).
 pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
-    let kind = get(hit_value, "kind").map(name)?;
+    let kind = get(hit_value, "kind").map(geom::name)?;
     match kind.as_str() {
-        "class" if get(hit_value, "drill?") == Some(&Value::Bool(true)) => {
-            get(hit_value, "id").cloned()
-        }
+        "class" if edn::record::flag(hit_value, "drill?") => get(hit_value, "id").cloned(),
         "child" => get(hit_value, "parent").cloned(),
         "package" if H::proposal_package_id(get(hit_value, "id")) => get(hit_value, "id").cloned(),
         _ => None,
@@ -532,7 +527,7 @@ pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
 /// Detail target identity of a class, child row or port hit.
 pub fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
-    match get(hit_value, "kind").map(name).as_deref() {
+    match get(hit_value, "kind").map(geom::name).as_deref() {
         Some("class") | Some("child") | Some("port") => get(hit_value, "id").cloned(),
         _ => None,
     }
@@ -563,7 +558,10 @@ pub fn element_menu(selection: Option<&Value>) -> bool {
     let Some(selection) = selection else {
         return false;
     };
-    let kind = get(selection, "kind").map(name).unwrap_or_default();
+    let kind = get(selection, "kind")
+        .and_then(local_name)
+        .unwrap_or_default()
+        .to_owned();
     kind == "class" || kind == "child" || layer_id(Some(selection)).is_some()
 }
 
@@ -599,7 +597,7 @@ pub fn on_press(s: &ViewState, x: f64, y: f64) -> ViewState {
     match hit_value
         .as_ref()
         .and_then(|h| get(h, "kind"))
-        .map(name)
+        .map(geom::name)
         .as_deref()
     {
         Some("child") | Some("port") => open_detail(s, hit_value.as_ref()),
@@ -619,7 +617,7 @@ pub fn on_left_press(s: &ViewState, x: f64, y: f64) -> ViewState {
         hit_value
             .as_ref()
             .and_then(|h| get(h, "kind"))
-            .map(name)
+            .map(geom::name)
             .as_deref(),
         Some("class" | "child" | "port" | "dep")
     );
@@ -737,21 +735,24 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
     let hierarchical = s
         .document
         .as_ref()
-        .is_some_and(|d| get(d, "hierarchical") == Some(&Value::Bool(true)));
+        .is_some_and(|d| edn::record::flag(d, "hierarchical"));
     if !present && !hierarchical {
         return s.clone();
     }
     if !present && hierarchical {
         let doc = s.document.clone().unwrap();
-        let id_name = name(id);
+        let id_name = geom::name(id);
         let parts: Vec<&str> = id_name.split('.').collect();
         if parts.len() < 2 {
             return s.clone();
         }
-        let parent: Vec<Value> = parts[..parts.len() - 1].iter().map(|p| kw(p)).collect();
+        let parent: Vec<Value> = parts[..parts.len() - 1]
+            .iter()
+            .map(|p| Value::keyword(p))
+            .collect();
         let candidate = document::compile_view(&doc, &s.snapshots, &parent, &Value::Map(vec![]));
         let found = hit::class_by_id(&candidate, id)
-            .map(|c| get(c, "drill?") == Some(&Value::Bool(true)))
+            .map(|c| edn::record::flag(c, "drill?"))
             .unwrap_or(false);
         if !found {
             return s.clone();
@@ -765,7 +766,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
         let doc = n.document.clone().unwrap();
         n.scene = document::compile_view(&doc, &n.snapshots, &n.focus.clone(), &n.extra.clone());
         hit::class_by_id(&n.scene, id)
-            .map(|c| get(c, "dummy?").is_none() && get(c, "proposal-group?").is_none())
+            .map(|c| !edn::record::flag(c, "dummy?") && !edn::record::flag(c, "proposal-group?"))
             .unwrap_or(false)
     };
     let pid = get(&n.extra, "proposal-id").cloned();
@@ -780,13 +781,15 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
                     if get(&p, "id") != Some(&pid) {
                         continue;
                     }
-                    for layer in crate::geom::get_slice(get(&p, "layers")) {
+                    for layer in edn::record::seq(get(&p, "layers")) {
                         if !found {
                             found = compile(
                                 &mut n,
                                 Some(Value::keyword(&format!(
                                     "proposal.{}",
-                                    name(get(layer, "id").unwrap())
+                                    local_name(get(layer, "id").unwrap())
+                                        .unwrap_or_default()
+                                        .to_owned()
                                 ))),
                             );
                         }
@@ -802,10 +805,10 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
             return finish_locate(s, n, found, id, dims);
         }
         None => {
-            let id_name = name(id);
+            let id_name = geom::name(id);
             let parts: Vec<&str> = id_name.split('.').collect();
             for p in &parts[..parts.len().saturating_sub(1)] {
-                n.focus.push(kw(p));
+                n.focus.push(Value::keyword(p));
             }
             compile(&mut n, None)
         }
@@ -843,7 +846,7 @@ fn locate_groups(
     nses: Option<&Value>,
     compile: &dyn Fn(&mut ViewState, Option<Value>) -> bool,
 ) -> bool {
-    for x in crate::geom::get_slice(nses) {
+    for x in edn::record::seq(nses) {
         if !matches!(x, Value::Map(_)) {
             continue;
         }

@@ -60,13 +60,3 @@ fn rect_algebra_matches_the_lua_helpers() {
     );
     assert_eq!(None, geom::union(&[]));
 }
-
-#[test]
-fn names_follow_the_lua_keyword_and_string_rules() {
-    assert_eq!(
-        "engine.parser",
-        geom::name(&Value::keyword("uml/engine.parser"))
-    );
-    assert_eq!("plain", geom::name(&Value::String("plain".into())));
-    assert_eq!("sym", geom::name(&Value::Symbol("a/sym".into())));
-}

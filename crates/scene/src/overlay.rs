@@ -3,19 +3,13 @@
 //! filesystem work belongs to callers. Join rule: by class `:ns`, then by id.
 
 use crate::config;
-use crate::geom::{self, name, numval};
+use crate::geom::numval;
 use edn::Value;
+use edn::record::{flag, local_name, put, seq};
 use std::collections::BTreeMap;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
-    geom::get(m, key)
-}
-
-fn seq(v: Option<&Value>) -> &[Value] {
-    match v {
-        Some(Value::Vector(items)) => items,
-        _ => &[],
-    }
+    edn::record::get(m, key)
 }
 
 /// One snapshot file record, as the metrics adapter produced it.
@@ -115,7 +109,7 @@ pub fn load(files: &[Snapshot]) -> Metrics {
 }
 
 fn doc_classes(doc: &Value) -> Vec<Value> {
-    if g(doc, "hierarchical") == Some(&Value::Bool(true)) {
+    if flag(doc, "hierarchical") {
         return seq(g(doc, "classes")).to_vec();
     }
     let mut cs = Vec::new();
@@ -139,9 +133,11 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut root: Option<&Value> = None;
     let mut count = 0;
     for c in classes {
-        if g(c, "lang").map(name).as_deref() == Some("rust")
-            && !geom::truthy(g(c, "foreign"))
-            && !name(g(c, "id").unwrap()).contains('.')
+        if g(c, "lang").and_then(local_name) == Some("rust")
+            && !flag(c, "foreign")
+            && !local_name(g(c, "id").unwrap())
+                .unwrap_or_default()
+                .contains('.')
         {
             root = Some(c);
             count += 1;
@@ -151,10 +147,12 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
     let mut best_rank = i64::MAX;
     let mut best_len = i64::MAX;
     for c in classes {
-        if geom::truthy(g(c, "foreign")) || g(c, "shape").map(name).as_deref() == Some("oval") {
+        if flag(c, "foreign") || g(c, "shape").and_then(local_name) == Some("oval") {
             continue;
         }
-        let class_id = name(g(c, "id").unwrap());
+        let class_id = local_name(g(c, "id").unwrap())
+            .unwrap_or_default()
+            .to_owned();
         let class_ns = g(c, "ns").and_then(|v| match v {
             Value::String(s) => Some(s.as_str()),
             _ => None,
@@ -165,7 +163,10 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
             (1, 0)
         } else if ns.starts_with(&format!("{class_id}.")) {
             (2, -(class_id.len() as i64))
-        } else if count == 1 && Some(c) == root && prefix.map(name).as_deref() == Some(ns) {
+        } else if count == 1
+            && Some(c) == root
+            && prefix.map(crate::geom::name).as_deref() == Some(ns)
+        {
             (3, 0)
         } else {
             continue;
@@ -180,16 +181,12 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
 }
 
 fn sites(f: &Value) -> f64 {
-    if let Some(n) = g(f, "sites").and_then(geom::num) {
+    if let Some(n) = g(f, "sites").and_then(edn::record::num) {
         return n;
     }
-    g(f, "killed").and_then(geom::num).unwrap_or(0.0)
-        + g(f, "survived").and_then(geom::num).unwrap_or(0.0)
-        + g(f, "uncovered").and_then(geom::num).unwrap_or(0.0)
-}
-
-fn put(c: &mut Value, key: &str, v: Value) {
-    geom::put(c, key, v);
+    g(f, "killed").and_then(edn::record::num).unwrap_or(0.0)
+        + g(f, "survived").and_then(edn::record::num).unwrap_or(0.0)
+        + g(f, "uncovered").and_then(edn::record::num).unwrap_or(0.0)
 }
 
 fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
@@ -200,7 +197,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         for e in metrics.crap.get(ns).into_iter().flatten() {
             entries.push(e.clone());
             if let Some(n) = g(e, "name").cloned() {
-                by_name.insert(name(&n), e.clone());
+                by_name.insert(crate::geom::name(&n), e.clone());
             }
         }
         if let Some(data) = metrics.mutate.get(ns) {
@@ -228,7 +225,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         (Vec::new(), Vec::new(), Ordered::default());
     for op in seq(g(c, "ops")) {
         if let Some(n) = g(op, "name") {
-            let n = name(n);
+            let n = crate::geom::name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n.clone());
@@ -240,7 +237,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
     }
     for e in &entries {
         if let Some(n) = g(e, "name") {
-            let n = name(n);
+            let n = crate::geom::name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n);
@@ -278,7 +275,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
                 g(e, "complexity").cloned().unwrap_or(Value::Nil),
             );
             put(&mut op, "crap", g(e, "crap").cloned().unwrap_or(Value::Nil));
-            let cov = g(e, "coverage").and_then(geom::num);
+            let cov = g(e, "coverage").and_then(edn::record::num);
             put(
                 &mut op,
                 "coverage",
@@ -292,7 +289,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
                 put(
                     &mut op,
                     k,
-                    numval(g(&form, k).and_then(geom::num).unwrap_or(0.0)),
+                    numval(g(&form, k).and_then(edn::record::num).unwrap_or(0.0)),
                 );
             }
             put(&mut op, "sites", numval(sites(&form)));
@@ -307,13 +304,13 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
     }
     let (mut scores, mut cov, mut cc) = (Vec::new(), Vec::new(), 0.0);
     for e in &entries {
-        if let Some(s) = g(e, "crap").and_then(geom::num) {
+        if let Some(s) = g(e, "crap").and_then(edn::record::num) {
             scores.push(Value::Float(s));
         }
-        if let Some(v) = g(e, "coverage").and_then(geom::num) {
+        if let Some(v) = g(e, "coverage").and_then(edn::record::num) {
             cov.push(v);
         }
-        cc += g(e, "complexity").and_then(geom::num).unwrap_or(0.0);
+        cc += g(e, "complexity").and_then(edn::record::num).unwrap_or(0.0);
     }
     if !scores.is_empty() {
         if let Some(summary) = config::summarize_scores(&scores) {
@@ -329,7 +326,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         let mut sums: BTreeMap<&str, f64> = BTreeMap::new();
         for (form, _) in forms.values() {
             for k in ["killed", "survived", "uncovered"] {
-                *sums.entry(k).or_default() += g(form, k).and_then(geom::num).unwrap_or(0.0);
+                *sums.entry(k).or_default() += g(form, k).and_then(edn::record::num).unwrap_or(0.0);
             }
             *sums.entry("sites").or_default() += sites(form);
         }
@@ -412,7 +409,7 @@ pub fn apply_metrics(doc: &Value, metrics: &Metrics) -> Value {
             paint(c, nss, metrics);
         }
     };
-    if g(&doc, "hierarchical") == Some(&Value::Bool(true)) {
+    if flag(&doc, "hierarchical") {
         let classes = seq(g(&doc, "classes")).to_vec();
         let mut painted = Vec::with_capacity(classes.len());
         for mut c in classes.into_iter() {

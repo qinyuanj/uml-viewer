@@ -7,7 +7,6 @@
 //! check is the near-linearity evidence.
 
 use edn::Value;
-use scene::geom;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -21,13 +20,13 @@ fn scene_of(name: &str) -> (Value, usize, usize) {
     let path = repo().join("bench/scenes").join(name);
     let text = std::fs::read_to_string(&path).unwrap();
     let doc = scene::ir::read_document(&text).unwrap();
-    let diagrams = geom::get_slice(geom::get(&doc, "diagrams"));
+    let diagrams = edn::record::seq(edn::record::get(&doc, "diagrams"));
     let diagram = &diagrams[0];
-    let classes: usize = geom::get_slice(geom::get(diagram, "packages"))
+    let classes: usize = edn::record::seq(edn::record::get(diagram, "packages"))
         .iter()
-        .map(|p| geom::get_slice(geom::get(p, "classes")).len())
+        .map(|p| edn::record::seq(edn::record::get(p, "classes")).len())
         .sum();
-    let edges = geom::get_slice(geom::get(diagram, "edges")).len();
+    let edges = edn::record::seq(edn::record::get(diagram, "edges")).len();
     (doc, classes, edges)
 }
 
@@ -52,8 +51,8 @@ fn the_bench_scenes_load_with_the_expected_size() {
 fn the_2000_class_scene_compiles_in_seconds() {
     let (doc, _, _) = scene_of("synthetic-2000.edn");
     let (elapsed, scene) = compile(&doc);
-    let classes = geom::get_slice(geom::get(&scene, "classes")).len();
-    let edges = geom::get_slice(geom::get(&scene, "edges")).len();
+    let classes = edn::record::seq(edn::record::get(&scene, "classes")).len();
+    let edges = edn::record::seq(edn::record::get(&scene, "edges")).len();
     eprintln!(
         "scene: 2000-class compile {:.3}s ({} classes, {} edges)",
         elapsed.as_secs_f64(),
@@ -102,22 +101,22 @@ fn the_exported_projection_covers_every_bench_class_and_edge() {
     let view = scene::cli::project(&doc, None, &Value::Vector(vec![]), &Value::Map(vec![]));
     // The synthetic scenes are flat diagrams, so the projection stacks one
     // section per diagram.
-    let sections = geom::get_slice(geom::get(&view, "sections"));
+    let sections = edn::record::seq(edn::record::get(&view, "sections"));
     assert_eq!(1, sections.len());
     let section = &sections[0];
     assert_eq!(
         classes,
-        geom::get_slice(geom::get(section, "classes")).len()
+        edn::record::seq(edn::record::get(section, "classes")).len()
     );
-    let exported = geom::get_slice(geom::get(section, "edges"));
+    let exported = edn::record::seq(edn::record::get(section, "edges"));
     assert_eq!(edges, exported.len());
     // Section edges are routed but not clipped (prepare runs once on the
     // stacked scene), so the export carries finite routed points per section.
     for e in exported {
-        let points = geom::get_slice(geom::get(e, "points"));
+        let points = edn::record::seq(edn::record::get(e, "points"));
         assert!(points.len() >= 2);
         for p in points {
-            assert!(geom::num(p.as_vector_first().unwrap()).is_some());
+            assert!(edn::record::num(p.as_vector_first().unwrap()).is_some());
         }
     }
 }

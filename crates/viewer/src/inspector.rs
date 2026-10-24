@@ -3,8 +3,8 @@
 //! (the Lua DPI-independent view units); egui applies the display scale.
 
 use edn::Value;
+use edn::record::{get, local_name};
 use scene::document::ViewState;
-use scene::geom::{get, name};
 
 use crate::{detail, strings};
 
@@ -58,7 +58,7 @@ pub fn entries(state: &ViewState) -> Vec<Entry> {
         let id = get(&p, "id").cloned().unwrap_or(Value::Nil);
         let label = match get(&p, "name") {
             Some(Value::String(n)) => n.clone(),
-            _ => name(&id),
+            _ => local_name(&id).unwrap_or_default().to_owned(),
         };
         out.push(Entry {
             active: active == Some(&id),
@@ -85,7 +85,7 @@ pub fn choose(state: &ViewState, id: Option<&Value>) -> Choice {
                 .into_iter()
                 .find(|e| e.id.as_ref() == Some(id))
                 .map(|e| e.label)
-                .unwrap_or_else(|| name(id));
+                .unwrap_or_else(|| local_name(id).unwrap_or_default().to_owned());
             Value::Map(vec![
                 (kw("context"), kw("proposal")),
                 (kw("proposal-id"), id.clone()),
@@ -106,7 +106,7 @@ pub fn empty_explanation(state: &ViewState) -> Option<&'static str> {
 
 pub fn declutter_label(state: &ViewState) -> &'static str {
     let mode = get(&state.extra, "declutter")
-        .map(name)
+        .map(|v| local_name(v).unwrap_or_default().to_owned())
         .unwrap_or_else(|| "full".into());
     strings::declutter_label(&mode)
 }

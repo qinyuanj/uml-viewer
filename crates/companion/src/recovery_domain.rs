@@ -14,12 +14,12 @@ pub const GONE_GRACE_MS: i64 = 2000;
 /// `R.reference`): a present `:supervisor` on the identity wins, otherwise
 /// the conventional paths under the project root.
 pub fn reference(identity: &Value) -> Value {
-    if let Some(supervisor) = record::get(identity, "supervisor") {
+    if let Some(supervisor) = edn::record::get(identity, "supervisor") {
         return supervisor.clone();
     }
     let cwd = record::get_name(identity, "cwd").unwrap_or_else(|| ".".to_owned());
     let root = format!("{cwd}/.uml-viewer");
-    record::map(vec![
+    edn::record::record(vec![
         ("token", Value::String("controller".to_owned())),
         (
             "manifest",
@@ -87,22 +87,24 @@ pub fn terminal(phase: &str) -> bool {
 
 pub fn initial(identity: &Value, controller: &Value, now: i64) -> Value {
     let reference = reference(identity);
-    let mut state = record::map(vec![
+    let mut state = edn::record::record(vec![
         (
             "token",
-            record::get(&reference, "token")
+            edn::record::get(&reference, "token")
                 .cloned()
                 .unwrap_or(Value::Nil),
         ),
         (
             "session",
-            record::get(identity, "session")
+            edn::record::get(identity, "session")
                 .cloned()
                 .unwrap_or(Value::Nil),
         ),
         (
             "cwd",
-            record::get(identity, "cwd").cloned().unwrap_or(Value::Nil),
+            edn::record::get(identity, "cwd")
+                .cloned()
+                .unwrap_or(Value::Nil),
         ),
         ("controller", controller.clone()),
         ("phase", Value::keyword("running")),
@@ -110,11 +112,11 @@ pub fn initial(identity: &Value, controller: &Value, now: i64) -> Value {
         ("attempts", Value::Integer(0)),
         ("submitted-at", Value::Integer(now)),
     ]);
-    if let Some(token) = record::get(identity, "runner-token") {
-        record::put(&mut state, "runner-token", token.clone());
+    if let Some(token) = edn::record::get(identity, "runner-token") {
+        edn::record::put(&mut state, "runner-token", token.clone());
     }
-    if let Some(path) = record::get(identity, "runner-state") {
-        record::put(&mut state, "runner-state", path.clone());
+    if let Some(path) = edn::record::get(identity, "runner-state") {
+        edn::record::put(&mut state, "runner-state", path.clone());
     }
     state
 }
@@ -122,8 +124,8 @@ pub fn initial(identity: &Value, controller: &Value, now: i64) -> Value {
 fn same_child(a: &Value, b: &Value) -> bool {
     record::is_map(a)
         && record::is_map(b)
-        && record::get(a, "pid") == record::get(b, "pid")
-        && record::get(a, "start") == record::get(b, "start")
+        && edn::record::get(a, "pid") == edn::record::get(b, "pid")
+        && edn::record::get(a, "start") == edn::record::get(b, "start")
 }
 
 fn child_present(child: Option<&Value>, owner: &dyn Fn(i64) -> Option<Owner>) -> bool {
@@ -166,8 +168,8 @@ fn child_absent(child: Option<&Value>, owner: &dyn Fn(i64) -> Option<Owner>) -> 
 
 fn stopped(state: &Value, reason: &str) -> Value {
     let mut result = state.clone();
-    record::put(&mut result, "phase", Value::keyword("failed"));
-    record::put(&mut result, "reason", Value::String(reason.to_owned()));
+    edn::record::put(&mut result, "phase", Value::keyword("failed"));
+    edn::record::put(&mut result, "reason", Value::String(reason.to_owned()));
     result
 }
 
@@ -207,8 +209,8 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
         && record::get_name(control, "cancel") == record::get_name(&reference, "token")
     {
         let mut result = state.clone();
-        record::put(&mut result, "phase", Value::keyword("cancelled"));
-        record::put(
+        edn::record::put(&mut result, "phase", Value::keyword("cancelled"));
+        edn::record::put(
             &mut result,
             "reason",
             Value::String("Viewer closed; recovery revoked".to_owned()),
@@ -236,23 +238,23 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
         }
         let generation = get_i64(state, "generation").unwrap_or(0) + 1;
         let mut pending = state.clone();
-        record::put(&mut pending, "phase", Value::keyword("submitting"));
-        record::put(&mut pending, "generation", Value::Integer(generation));
-        record::put(
+        edn::record::put(&mut pending, "phase", Value::keyword("submitting"));
+        edn::record::put(&mut pending, "generation", Value::Integer(generation));
+        edn::record::put(
             &mut pending,
             "attempts",
             Value::Integer(get_i64(state, "attempts").unwrap_or(0) + 1),
         );
-        record::put(&mut pending, "runner-token", Value::String((ctx.token)()));
-        record::put(
+        edn::record::put(&mut pending, "runner-token", Value::String((ctx.token)()));
+        edn::record::put(
             &mut pending,
             "runner-state",
             Value::String((ctx.runner_state)(generation)),
         );
-        record::put(&mut pending, "submitted-at", Value::Integer(now));
-        record::remove(&mut pending, "deadline");
-        record::remove(&mut pending, "uptime-since");
-        record::remove(&mut pending, "child");
+        edn::record::put(&mut pending, "submitted-at", Value::Integer(now));
+        edn::record::remove(&mut pending, "deadline");
+        edn::record::remove(&mut pending, "uptime-since");
+        edn::record::remove(&mut pending, "child");
         return Ok(Decision {
             state: pending,
             changed: true,
@@ -292,15 +294,15 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
     }
     match record::get_name(event, "phase").as_deref() {
         Some("started") => {
-            let child = record::get(event, "child");
+            let child = edn::record::get(event, "child");
             if child_present(child, ctx.owner) {
                 let mut result = state.clone();
                 let since = get_i64(state, "uptime-since").unwrap_or(now);
-                record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
-                record::put(&mut result, "uptime-since", Value::Integer(since));
-                record::remove(&mut result, "child-gone-since");
+                edn::record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
+                edn::record::put(&mut result, "uptime-since", Value::Integer(since));
+                edn::record::remove(&mut result, "child-gone-since");
                 if now - since >= RESET_MS {
-                    record::put(&mut result, "attempts", Value::Integer(0));
+                    edn::record::put(&mut result, "attempts", Value::Integer(0));
                 }
                 let changed = result != *state;
                 return Ok(Decision {
@@ -321,7 +323,7 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
                 });
             }
             let mut result = state.clone();
-            record::put(&mut result, "child-gone-since", Value::Integer(gone_since));
+            edn::record::put(&mut result, "child-gone-since", Value::Integer(gone_since));
             let changed = result != *state;
             Ok(Decision {
                 state: result,
@@ -331,13 +333,13 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
         }
         Some("exited") => {
             let exit = get_i64(event, "exit");
-            let child = record::get(event, "child");
+            let child = edn::record::get(event, "child");
             let valid = exit.is_some()
                 && child_absent(child, ctx.owner)
-                && (record::get(state, "child").is_none()
+                && (edn::record::get(state, "child").is_none()
                     || same_child(
                         child.unwrap_or(&Value::Nil),
-                        record::get(state, "child").unwrap(),
+                        edn::record::get(state, "child").unwrap(),
                     ));
             if !valid {
                 return Ok(Decision {
@@ -349,10 +351,10 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
             let exit = exit.unwrap_or(0);
             if exit == 0 {
                 let mut result = state.clone();
-                record::put(&mut result, "phase", Value::keyword("normal"));
-                record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
-                record::put(&mut result, "exit", Value::Integer(0));
-                record::put(
+                edn::record::put(&mut result, "phase", Value::keyword("normal"));
+                edn::record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
+                edn::record::put(&mut result, "exit", Value::Integer(0));
+                edn::record::put(
                     &mut result,
                     "reason",
                     Value::String("Companion exited normally".to_owned()),
@@ -366,7 +368,7 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
             let attempts = get_i64(state, "attempts").unwrap_or(0);
             if attempts >= BACKOFF_MS.len() as i64 {
                 let mut result = stopped(state, "Recovery exhausted after three retries");
-                record::put(&mut result, "exit", Value::Integer(exit));
+                edn::record::put(&mut result, "exit", Value::Integer(exit));
                 return Ok(Decision {
                     state: result,
                     changed: true,
@@ -374,10 +376,10 @@ pub fn decide(ctx: &Context) -> Result<Decision> {
                 });
             }
             let mut result = state.clone();
-            record::put(&mut result, "phase", Value::keyword("backoff"));
-            record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
-            record::put(&mut result, "exit", Value::Integer(exit));
-            record::put(
+            edn::record::put(&mut result, "phase", Value::keyword("backoff"));
+            edn::record::put(&mut result, "child", child.cloned().unwrap_or(Value::Nil));
+            edn::record::put(&mut result, "exit", Value::Integer(exit));
+            edn::record::put(
                 &mut result,
                 "deadline",
                 Value::Integer(now + BACKOFF_MS[attempts as usize]),
@@ -417,7 +419,7 @@ mod tests {
     fn registered(identity: &Value) -> Value {
         initial(
             identity,
-            &record::map(vec![
+            &edn::record::record(vec![
                 ("pid", Value::Integer(10)),
                 ("start", Value::String("start".to_owned())),
             ]),
@@ -426,12 +428,12 @@ mod tests {
     }
 
     fn exit_event(token: &str, code: i64) -> Value {
-        record::map(vec![
+        edn::record::record(vec![
             ("token", Value::String(token.to_owned())),
             ("phase", Value::keyword("exited")),
             (
                 "child",
-                record::map(vec![
+                edn::record::record(vec![
                     ("pid", Value::Integer(20)),
                     ("start", Value::String("child".to_owned())),
                 ]),
@@ -441,12 +443,12 @@ mod tests {
     }
 
     fn started_event(token: &str) -> Value {
-        record::map(vec![
+        edn::record::record(vec![
             ("token", Value::String(token.to_owned())),
             ("phase", Value::keyword("started")),
             (
                 "child",
-                record::map(vec![
+                edn::record::record(vec![
                     ("pid", Value::Integer(20)),
                     ("start", Value::String("child".to_owned())),
                 ]),
@@ -526,7 +528,7 @@ mod tests {
             assert_eq!(Some(attempts), get_i64(&submit.state, "attempts"));
             // A successful submission returns to running.
             let mut running = submit.state.clone();
-            record::put(&mut running, "phase", Value::keyword("running"));
+            edn::record::put(&mut running, "phase", Value::keyword("running"));
             state = running;
         }
         let event = exit_event(&record::get_name(&state, "runner-token").unwrap(), 37);
@@ -548,7 +550,7 @@ mod tests {
         let backoff = decide(&ctx(&identity, &state, Some(&event), 0, &no_owner)).unwrap();
         let submit = decide(&ctx(&identity, &backoff.state, None, 1000, &no_owner)).unwrap();
         let mut running = submit.state.clone();
-        record::put(&mut running, "phase", Value::keyword("running"));
+        edn::record::put(&mut running, "phase", Value::keyword("running"));
         let token = record::get_name(&running, "runner-token").unwrap();
         let alive = |pid: i64| {
             (pid == 20).then(|| Owner {
@@ -587,7 +589,7 @@ mod tests {
     fn normal_stale_or_unverifiable_exits_are_never_recovered() {
         for event in [exit_event("initial", 0), exit_event("stale", 37), {
             let mut e = exit_event("initial", 37);
-            record::remove(&mut e, "child");
+            edn::record::remove(&mut e, "child");
             e
         }] {
             let identity = identity();
@@ -662,7 +664,7 @@ mod tests {
             })
         };
         let next = decide(&ctx(&identity, &first.state, Some(&event), 100, &alive)).unwrap();
-        assert_eq!(None, record::get(&next.state, "child-gone-since"));
+        assert_eq!(None, edn::record::get(&next.state, "child-gone-since"));
         assert_eq!("running", phase(&next.state));
     }
 
@@ -672,7 +674,7 @@ mod tests {
         let state = registered(&identity);
         let event = exit_event("initial", 37);
         let backoff = decide(&ctx(&identity, &state, Some(&event), 0, &no_owner)).unwrap();
-        let control = record::map(vec![("cancel", Value::String("controller".to_owned()))]);
+        let control = edn::record::record(vec![("cancel", Value::String("controller".to_owned()))]);
         let mut context = ctx(&identity, &backoff.state, None, 1000, &no_owner);
         context.control = Some(&control);
         let decision = decide(&context).unwrap();
@@ -719,7 +721,7 @@ mod tests {
         let state = registered(&identity);
         assert!(matching(&identity, &state).is_ok());
         let mut foreign = state.clone();
-        record::put(
+        edn::record::put(
             &mut foreign,
             "session",
             Value::String("uml-viewer-B".to_owned()),

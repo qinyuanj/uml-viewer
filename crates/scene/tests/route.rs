@@ -5,11 +5,11 @@ use scene::geom::{self, Rect};
 use scene::route::route;
 
 fn points_of(scene: &edn::Value, edge: usize) -> Vec<[f64; 2]> {
-    let edges = match geom::get(scene, "edges").unwrap() {
+    let edges = match edn::record::get(scene, "edges").unwrap() {
         edn::Value::Vector(v) => v,
         _ => panic!(),
     };
-    let ps = match geom::get(&edges[edge], "points").unwrap() {
+    let ps = match edn::record::get(&edges[edge], "points").unwrap() {
         edn::Value::Vector(v) => v,
         _ => panic!(),
     };
@@ -37,18 +37,18 @@ fn drops_unlaid_endpoints_and_preserves_metadata_and_head_kinds() {
     )
     .unwrap();
     route(&mut s);
-    let edges = match geom::get(&s, "edges").unwrap() {
+    let edges = match edn::record::get(&s, "edges").unwrap() {
         edn::Value::Vector(v) => v,
         _ => panic!(),
     };
     assert_eq!(1, edges.len());
     assert_eq!(
         Some(&edn::Value::keyword("triangle")),
-        geom::get(&edges[0], "head")
+        edn::record::get(&edges[0], "head")
     );
     assert_eq!(
         Some(&edn::Value::Bool(true)),
-        geom::get(&edges[0], "dashed?")
+        edn::record::get(&edges[0], "dashed?")
     );
 }
 

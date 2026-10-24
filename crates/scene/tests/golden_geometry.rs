@@ -6,7 +6,7 @@ mod common;
 
 use common::{assert_close, assert_golden_tolerance, read_edn as read, repo};
 use edn::Value;
-use scene::geom::get;
+use edn::record::get;
 
 fn focuses(golden: &Value) -> Vec<Value> {
     match get(golden, "views") {
