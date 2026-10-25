@@ -294,29 +294,26 @@ fn hidden_edges_become_violation_aware_indicators() {
 }
 
 #[test]
-fn hide_edges_draws_indicators_for_any_lua_truthy_value() {
+fn hide_edges_draws_indicators_and_its_absence_draws_strokes() {
     // adapters/edges.lua: `if g(g(scene,'diagram'),'hide-edges') then` draw
-    // indicators, else strokes. `:yes` hides; an authored `false` draws edges.
-    // The triangles declutter computes the indicators; the scene's diagram
-    // then carries the authored flag value.
-    let commands_for = |hide: &str| {
-        let mut s = two_modules(
+    // indicators, else strokes. Through the scene interface the flag comes
+    // from the triangles declutter; the full view leaves it unset.
+    let commands_for = |declutter: &str| {
+        let s = two_modules(
             "[{:from :a :to :b :kind :dependency}]",
-            "{:declutter :triangles}",
+            &format!("{{:declutter {declutter}}}"),
         );
-        let mut diagram = edn::record::get(&s, "diagram").cloned().unwrap();
-        edn::record::put(&mut diagram, "hide-edges", edn::parse(hide).unwrap());
-        edn::record::put(&mut s, "diagram", diagram);
         commands::edge_commands(&s, None, None)
     };
-    let yes = commands_for(":yes");
-    assert_eq!(2, yes.len());
+    let hidden = commands_for(":triangles");
+    assert_eq!(2, hidden.len());
     assert!(
-        yes.iter()
+        hidden
+            .iter()
             .all(|c| matches!(c, EdgeCommand::Indicator { .. })),
-        "{yes:?}"
+        "{hidden:?}"
     );
-    let shown = commands_for("false");
+    let shown = commands_for(":full");
     assert!(
         shown
             .iter()
