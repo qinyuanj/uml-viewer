@@ -216,33 +216,6 @@ pub fn delete_proposal(
     )
 }
 
-/// A `{:op :rename :id :name}` record, or None for a blank name.
-pub fn rename_op(id: &Value, raw: Option<&str>) -> Option<Value> {
-    let name = raw?.trim();
-    if name.is_empty() {
-        return None;
-    }
-    Some(Value::Map(vec![
-        (Value::keyword("op"), Value::keyword("rename")),
-        (Value::keyword("id"), id.clone()),
-        (Value::keyword("name"), Value::String(name.to_owned())),
-    ]))
-}
-
-pub fn apply_proposal_op(s: &ViewState, op: &Value, boundary: Option<&dyn Boundary>) -> ViewState {
-    match get(op, "op").map(geom::name).as_deref() {
-        Some("rename") => {
-            let name = match get(op, "name") {
-                Some(Value::String(s)) => s.clone(),
-                _ => return s.clone(),
-            };
-            rename_proposal(s, get(op, "id"), &name, boundary)
-        }
-        Some("delete") => delete_proposal(s, get(op, "id"), boundary),
-        _ => s.clone(),
-    }
-}
-
 pub fn cycle_declutter(s: &ViewState) -> ViewState {
     let mut n = s.clone();
     let next = H::next_declutter(get(&s.extra, "declutter"));

@@ -180,12 +180,6 @@ impl Default for ViewState {
     }
 }
 
-impl ViewState {
-    pub fn has_document(&self) -> bool {
-        self.document.is_some()
-    }
-}
-
 /// A new loaded state (`document.new`): compile immediately at revision 1.
 pub fn new_state(
     doc: Value,
