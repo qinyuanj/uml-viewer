@@ -6,6 +6,9 @@
 //! navigation (`events`), search (`search`), highlighting (`highlight`)
 //! and proposal write-back (`document::write_proposals`) operations.
 //! The `scene` subcommand (`run`) exports scene geometry headlessly.
+//! The front end reads three queries from the root: the class-card
+//! neighbourhood (`class_card`), the quality rating of a box or card row
+//! (`rating`, `metric_rating`) and the proposal list (`proposals`).
 
 use std::ffi::OsString;
 use std::process::ExitCode;
