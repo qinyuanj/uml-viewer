@@ -2,7 +2,7 @@
 
 **Status**: accepted
 
-session 恢复契约采用显式路径、保存路径、旧会话 policy 输出的优先级。仅缺少保存路径时选择 policy：优先 `examples/<项目目录名>.policy.edn`，否则按文件名排序的第一个 `examples/*.policy.edn`，否则根目录 `policy.edn`，与公共 `./uml ir` 一致。`:out` 相对路径按项目根目录解析；缺省值沿用 IR 的 `examples/uml-viewer.edn`。policy 缺失、格式错误、输出无效或图无法加载均明确失败；保存或显式路径无效时不尝试其他图。恢复继续保留视图、discussion context 和邮箱游标，不修改 companion ownership。公共 wrapper 的旧 launcher/JVM 身份验证与等待、新 JVM 的 Herdr 验证及 companion 复用保持不变，不跨后端 restart，不将 legacy/未知 ownership 改标为 Herdr。
+session 恢复契约采用显式路径、保存路径、旧会话 policy 输出的优先级。仅缺少保存路径时选择 policy：优先 `examples/<项目目录名>.policy.edn`，否则按文件名排序的第一个 `examples/*.policy.edn`，否则根目录 `policy.edn`，与公共 `./uml ir` 一致。`:out` 相对路径按项目根目录解析；缺省值沿用 IR 的项目根目录 `diagram.edn`。policy 缺失、格式错误、输出无效或图无法加载均明确失败；保存或显式路径无效时不尝试其他图。恢复继续保留视图、discussion context 和邮箱游标，不修改 companion ownership。公共 wrapper 的旧 launcher/JVM 身份验证与等待、新 JVM 的 Herdr 验证及 companion 复用保持不变，不跨后端 restart，不将 legacy/未知 ownership 改标为 Herdr。
 
 增补（2026-10-21，spec #106）：下段的 Windows wrapper/JVM 时间比较是历史实现记录，随 JVM 与 Windows 原生支持一并退役（ADR 0007）。当前行为契约不变但表示不同：**进程创建身份是不透明文本，只做精确相等比较**。已退役的 Windows 实现曾用 FILETIME，当前 POSIX 实现用 `/proc/<pid>/stat` 的 starttime；不存在时间窗口容差，也不把一种平台的表示换算成另一种。安全 restart 由 `scripts/uml_launch.py` 实现：旧 launcher 与 LOVE 身份在 preflight 之前核对，替换前等待记录中那个进程真实退出，缺失、损坏、未知运行时、PID 复用一律拒绝。
 

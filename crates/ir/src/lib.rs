@@ -195,7 +195,7 @@ fn run_result(args: &[OsString]) -> Result<String, String> {
             Value::String(s) => Some(s.clone()),
             _ => None,
         })
-        .unwrap_or_else(|| "examples/uml-viewer.edn".into());
+        .unwrap_or_else(|| "diagram.edn".into());
     generate(
         &path,
         Some(positional[1].clone().unwrap_or(default_out)),

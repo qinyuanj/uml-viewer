@@ -355,7 +355,7 @@ without a saved path falls back to the policy output. Policy selection matches
 `./uml ir`: `examples/<project-directory>.policy.edn`, otherwise the first
 `examples/*.policy.edn` sorted by filename, otherwise root `policy.edn`.
 Relative `:out` paths resolve from the project root; absent `:out` uses the IR
-default `examples/uml-viewer.edn`. Missing or malformed policy, invalid output,
+default `diagram.edn` in the project root. Missing or malformed policy, invalid output,
 and unreadable diagrams fail explicitly. A saved or explicit path that fails
 to load does not trigger fallback. A launcher record from a removed runtime (`love` or
 `jvm`) is refused. Do not SIGKILL.

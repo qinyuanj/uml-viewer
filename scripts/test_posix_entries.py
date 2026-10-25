@@ -120,7 +120,7 @@ class PosixEntries(unittest.TestCase):
     def test_default_policy_selection(self):
         result = self.entry('ir')
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue((self.root / 'examples/uml-viewer.edn').exists())
+        self.assertTrue((self.root / 'diagram.edn').exists())
 
     def test_ir_failure_preserves_previous_output(self):
         output = self.root / 'result.edn'
