@@ -367,7 +367,7 @@ fn waiting_state_chrome_shows_only_the_status_line() {
 #[test]
 fn the_fit_rule_never_grows_past_the_nominal_size() {
     // Monospace estimate like the busted fake font: text_w/16*size.
-    let measure = |size: f64, text: &str| scene::layout::text_w(Some(text)) / 16.0 * size;
+    let measure = |size: f64, text: &str| scene::text_w(Some(text)) / 16.0 * size;
     assert_eq!(18.0, commands::fit(measure, 18.0, "短", 200.0, true, false));
     let shrunk = commands::fit(
         measure,

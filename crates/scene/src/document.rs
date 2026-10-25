@@ -136,7 +136,17 @@ pub struct ViewState {
     pub detail_scroll: f64,
     pub discussion_context: Option<Value>,
     pub quit_for_restart: bool,
-    pub drag: Option<crate::events::Drag>,
+    pub drag: Option<Drag>,
+}
+
+/// An in-flight canvas drag (press position, camera at press, moved flag).
+#[derive(Debug, Clone)]
+pub struct Drag {
+    pub x: f64,
+    pub y: f64,
+    pub cam_x: f64,
+    pub cam_y: f64,
+    pub moved: bool,
 }
 
 impl Default for ViewState {
@@ -394,6 +404,12 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
     s.detail_id = snap.detail_id.clone();
     s.discussion_context = snap.discussion_context.clone();
     drop_missing_detail(s)
+}
+
+/// The proposal list of an IR or policy document: `:proposals` in order,
+/// then the legacy singular `:proposal`.
+pub fn proposals(doc: &Value) -> Vec<Value> {
+    crate::policy::named_proposals(doc)
 }
 
 fn has_named(doc: &Value, pid: &Value) -> bool {

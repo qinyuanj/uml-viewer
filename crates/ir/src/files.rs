@@ -7,13 +7,7 @@ use std::path::Path;
 
 use edn::Value;
 
-use crate::graph::Scanner;
-
-/// A canonical source file and its raw bytes.
-pub struct SourceFile {
-    pub path: String,
-    pub source: Vec<u8>,
-}
+use crate::scan::{Scanner, SourceFile};
 
 /// The IO capability handed to IR orchestration; rooted at the canonical
 /// project root.

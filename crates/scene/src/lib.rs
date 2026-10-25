@@ -6,6 +6,9 @@
 //! navigation (`events`), search (`search`), highlighting (`highlight`)
 //! and proposal write-back (`document::write_proposals`) operations.
 //! The `scene` subcommand (`run`) exports scene geometry headlessly.
+//! The front end reads three queries from the root: the class-card
+//! neighbourhood (`class_card`), the quality rating of a box or card row
+//! (`rating`, `metric_rating`) and the proposal list (`proposals`).
 
 use std::ffi::OsString;
 use std::process::ExitCode;
@@ -15,6 +18,14 @@ pub fn run(args: &[OsString]) -> ExitCode {
     cli::run(args)
 }
 
+pub use card::{Neighbourhood, Relation, class_card, class_card_in};
+pub use config::{
+    Band, GRADE_BEST, GRADE_MID, GRADE_WORST, MetricRating, Rating, metric_rating, rating,
+};
+pub use document::proposals;
+pub use layout::{CHAR_W, text_w};
+
+mod card;
 pub mod compose;
 pub mod config;
 pub mod curve;

@@ -275,7 +275,8 @@ impl Gui {
         }
     }
 
-    fn card_for(
+    /// The cached card model and rows of class `id` in this view.
+    pub(crate) fn card_for(
         &mut self,
         state: &ViewState,
         id: &Value,

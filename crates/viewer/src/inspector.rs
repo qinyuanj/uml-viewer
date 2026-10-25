@@ -54,7 +54,7 @@ pub fn entries(state: &ViewState) -> Vec<Entry> {
         label: title,
         active: active.is_none(),
     }];
-    for p in scene::hierarchy::named_proposals(&doc) {
+    for p in scene::proposals(&doc) {
         let id = get(&p, "id").cloned().unwrap_or(Value::Nil);
         let label = match get(&p, "name") {
             Some(Value::String(n)) => n.clone(),
@@ -126,7 +126,12 @@ pub fn scroll(state: &ViewState, delta: f64, view_h: f64) -> ViewState {
         .and_then(|id| detail::for_state(state, &id))
         .map(|m| detail::rows(&m))
         .unwrap_or_default();
+    scroll_rows(state, &rows, delta, view_h)
+}
+
+/// [`scroll`] over card rows the caller already holds (the gui card cache).
+pub fn scroll_rows(state: &ViewState, rows: &[detail::Row], delta: f64, view_h: f64) -> ViewState {
     let mut next = state.clone();
-    next.detail_scroll = detail::scroll(&rows, view_h, state.detail_scroll, delta);
+    next.detail_scroll = detail::scroll(rows, view_h, state.detail_scroll, delta);
     next
 }

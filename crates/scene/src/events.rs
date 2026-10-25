@@ -1,7 +1,7 @@
 //! Pure application transitions (port of `love/uml/application/events.lua`):
 //! navigation, camera, selection, search location and proposal CRUD.
 
-use crate::document::{self, Boundary, ViewState};
+use crate::document::{self, Boundary, Drag, ViewState};
 use crate::geom;
 use crate::hierarchy as H;
 use crate::hit;
@@ -861,14 +861,4 @@ pub fn close_detail(s: &ViewState) -> ViewState {
     let mut n = s.clone();
     n.detail_id = None;
     n
-}
-
-/// An in-flight canvas drag (press position, camera at press, moved flag).
-#[derive(Debug, Clone)]
-pub struct Drag {
-    pub x: f64,
-    pub y: f64,
-    pub cam_x: f64,
-    pub cam_y: f64,
-    pub moved: bool,
 }

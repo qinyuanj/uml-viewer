@@ -514,3 +514,21 @@ impl document::MailBoundary for NoIo {
 
 #[allow(dead_code)]
 fn boundary_is_object_safe(_b: &dyn Boundary) {}
+
+#[test]
+fn lists_named_proposals_in_policy_order_then_the_legacy_singular() {
+    let doc = scene::ir::read_document(
+        r#"{:hierarchical true :classes [] :proposals [{:id :split :name "Split" :layers []} {:id :merge :name "Merge" :layers []}]}"#,
+    )
+    .unwrap();
+    let ids: Vec<Value> = scene::proposals(&doc)
+        .iter()
+        .filter_map(|p| get(p, "id").cloned())
+        .collect();
+    assert_eq!(vec![kw("split"), kw("merge")], ids);
+    let legacy = parse(r#"{:proposal {:name "Only" :layers []}}"#).unwrap();
+    let only = scene::proposals(&legacy);
+    assert_eq!(1, only.len());
+    assert_eq!(Some(&Value::String("Only".into())), get(&only[0], "name"));
+    assert!(scene::proposals(&parse("{:classes []}").unwrap()).is_empty());
+}
