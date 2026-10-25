@@ -76,7 +76,7 @@ fn mask(source: &[u8]) -> (Vec<u8>, Vec<(usize, usize)>) {
                     .unwrap_or(source.len() + 1),
             );
         } else if c == b'"' || c == b'\'' {
-            finish = Some(graph::scan_quoted(source, i, c, None));
+            finish = Some(text::scan_quoted(source, i, c, None));
             quoted = true;
         } else if c == b'[' {
             finish = long_end(source, i);

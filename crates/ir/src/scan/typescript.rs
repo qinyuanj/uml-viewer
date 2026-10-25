@@ -145,19 +145,19 @@ fn mask(s: &[u8]) -> (Vec<u8>, Vec<(usize, usize)>) {
     while i <= s.len() {
         let c = at(s, i);
         let nxt = at(s, i + 1);
-        if graph::line_comment(c, nxt) {
-            i = graph::mask_line_comment(s, &mut out, i, None);
+        if text::line_comment(c, nxt) {
+            i = text::mask_line_comment(s, &mut out, i, None);
             continue;
         }
-        if graph::block_comment(c, nxt) {
-            i = graph::mask_block_comment(s, &mut out, i, None);
+        if text::block_comment(c, nxt) {
+            i = text::mask_block_comment(s, &mut out, i, None);
             continue;
         }
         let mut finish = None;
         if c == Some(b'/') && nxt.is_some() && nxt != Some(b'*') {
             finish = regex_end(s, i);
         } else if matches!(c, Some(b'"') | Some(b'\'') | Some(b'`')) {
-            finish = Some(graph::scan_quoted(s, i, c.unwrap(), None));
+            finish = Some(text::scan_quoted(s, i, c.unwrap(), None));
         }
         if let Some(finish) = finish {
             out.extend_from_slice(&s[i - 1..finish - 1]);

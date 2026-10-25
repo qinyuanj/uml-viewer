@@ -8,7 +8,6 @@ use edn::Value;
 
 use crate::files::{Adapter, SourceFile};
 use crate::scan;
-use crate::text;
 use crate::value::{encode_key, id_name};
 use edn::record::{flag, get, record};
 
@@ -218,55 +217,4 @@ pub fn foreign_class(cid: &Value) -> Value {
         ("ns", Value::String(id_name(cid))),
         ("foreign", Value::Bool(true)),
     ])
-}
-
-/// `scan_quoted(source, i, quote)`: 1-based; returns one past the closing
-/// quote, or `n + 1` when unterminated.
-pub fn scan_quoted(source: &[u8], i: usize, quote: u8, n: Option<usize>) -> usize {
-    let n = n.unwrap_or(source.len());
-    let mut j = i + 1;
-    let mut escaped = false;
-    while j <= n {
-        let c = source[j - 1];
-        if escaped {
-            escaped = false;
-        } else if c == b'\\' {
-            escaped = true;
-        } else if c == quote {
-            return j + 1;
-        }
-        j += 1;
-    }
-    n + 1
-}
-
-/// `line_comment(c, nxt)`.
-pub fn line_comment(c: Option<u8>, nxt: Option<u8>) -> bool {
-    c == Some(b'/') && nxt == Some(b'/')
-}
-
-/// `block_comment(c, nxt)`.
-pub fn block_comment(c: Option<u8>, nxt: Option<u8>) -> bool {
-    c == Some(b'/') && nxt == Some(b'*')
-}
-
-/// `mask_line_comment`: blanks the comment, keeps the newline. Returns the
-/// position of the newline (or one past the end).
-pub fn mask_line_comment(source: &[u8], out: &mut Vec<u8>, i: usize, n: Option<usize>) -> usize {
-    let finish = text::find_plain(source, b"\n", i).unwrap_or(n.unwrap_or(source.len()) + 1);
-    out.extend(std::iter::repeat_n(b' ', finish - i));
-    finish
-}
-
-/// `mask_block_comment`: blanks everything but newlines through `*/`.
-pub fn mask_block_comment(source: &[u8], out: &mut Vec<u8>, i: usize, n: Option<usize>) -> usize {
-    let limit = n.unwrap_or(source.len()) + 1;
-    let close = text::find_plain(source, b"*/", i + 2);
-    let finish = close.map_or(limit, |c| limit.min(c + 2));
-    out.extend(
-        source[i - 1..finish - 1]
-            .iter()
-            .map(|&c| if c == b'\n' { c } else { b' ' }),
-    );
-    finish
 }

@@ -30,17 +30,17 @@ fn mask(source: &[u8]) -> (Vec<u8>, Vec<(usize, usize)>) {
     while i <= source.len() {
         let c = at(source, i);
         let n = at(source, i + 1);
-        if graph::line_comment(c, n) {
-            i = graph::mask_line_comment(source, &mut out, i, None);
+        if text::line_comment(c, n) {
+            i = text::mask_line_comment(source, &mut out, i, None);
             continue;
         }
-        if graph::block_comment(c, n) {
-            i = graph::mask_block_comment(source, &mut out, i, None);
+        if text::block_comment(c, n) {
+            i = text::mask_block_comment(source, &mut out, i, None);
             continue;
         }
         let mut finish = None;
         if c == Some(b'"') {
-            finish = Some(graph::scan_quoted(source, i, b'"', None));
+            finish = Some(text::scan_quoted(source, i, b'"', None));
         } else if c == Some(b'\'')
             && n.is_some()
             && n != Some(b'\\')
