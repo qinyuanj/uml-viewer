@@ -71,6 +71,30 @@ fn ir_is_ported_and_reports_bad_arguments_on_stderr() {
 }
 
 #[test]
+fn ir_refuses_an_ir_document_as_the_policy_with_a_usage_hint() {
+    // #166: a generated diagram passed as the sole positional argument is not
+    // a policy; ir fails fast instead of writing the default output.
+    let dir = std::env::temp_dir().join(format!("uml-dispatch-166-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("diagram.edn"),
+        "{:title \"UML\" :prefix \"app\" :policy-file \"policy.edn\" :classes [] :edges []}",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_uml-viewer"))
+        .args(["ir", "--root"])
+        .arg(&dir)
+        .arg("diagram.edn")
+        .output()
+        .unwrap();
+    assert_eq!(Some(1), output.status.code());
+    let err = stderr(&output);
+    assert!(err.contains("not a policy"), "{err}");
+    assert!(err.contains("ir <policy> [output]"), "{err}");
+}
+
+#[test]
 fn arguments_without_a_subcommand_go_to_the_viewer() {
     // #139 ports the viewer, so it is reached instead of EX_UNAVAILABLE. A
     // real positional path would open a window and block the test; an
