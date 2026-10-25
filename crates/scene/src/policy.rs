@@ -384,6 +384,7 @@ pub fn proposal_by_id(x: &Value, want: Option<&Value>) -> Option<Value> {
 }
 
 /// Layers of the first named proposal, else the normalized singular form.
+#[cfg(test)]
 pub fn proposal_layers(x: &Value) -> Vec<Value> {
     if let Some(first) = named_proposals(x).into_iter().next() {
         return seq(get(&first, "layers")).to_vec();
@@ -396,38 +397,6 @@ pub fn proposal_layers(x: &Value) -> Vec<Value> {
     normalize_proposal(value.as_ref())
         .map(|n| seq(get(&n, "layers")).to_vec())
         .unwrap_or_default()
-}
-
-/// `:levels` groups, or proposal layers when no explicit levels exist.
-pub fn level_groups(p: &Value) -> Vec<Vec<Value>> {
-    let levels = seq(get(p, "levels"));
-    if !levels.is_empty() {
-        return levels
-            .iter()
-            .map(|group| {
-                ids(seq(if matches!(group, Value::Map(_)) {
-                    get(group, "nses")
-                } else {
-                    Some(group)
-                }))
-            })
-            .collect();
-    }
-    proposal_layers(p)
-        .iter()
-        .map(|layer| nse_ids(get(layer, "nses")))
-        .collect()
-}
-
-/// Rank map: each id in a level group gets the group's 0-based rank.
-pub fn level_ranks(p: &Value) -> Value {
-    let mut r = Value::Map(vec![]);
-    for (i, group) in level_groups(p).iter().enumerate() {
-        for x in group {
-            r.assoc(x.clone(), Value::Integer(i as i64));
-        }
-    }
-    r
 }
 
 pub fn ranks_from_layers(layers: &[Value]) -> Value {
