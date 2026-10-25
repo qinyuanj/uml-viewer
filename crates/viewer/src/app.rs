@@ -343,11 +343,6 @@ struct Viewer {
     gui_pointer: egui::Pos2,
     /// A batch reached egui this frame and the GUI has not drawn it yet.
     gui_inflight: bool,
-    /// A normal quit (window close, SIGTERM, test duration) asked the helper
-    /// to stop without keeping it.
-    normal_stop: bool,
-    /// The deadline for a stopping helper; the viewer exits at it regardless.
-    stop_deadline: Option<Instant>,
     /// The change-only mailbox waker thread.
     waker: Option<mail_watch::Waker>,
 }
@@ -501,8 +496,6 @@ impl Viewer {
             gui_batches: Default::default(),
             gui_pointer: egui::Pos2::ZERO,
             gui_inflight: false,
-            normal_stop: false,
-            stop_deadline: None,
             waker: None,
         };
         app.publish();
@@ -963,35 +956,10 @@ impl Viewer {
         ])
     }
 
-    /// A normal close asks the helper to stop without keeping the companion;
-    /// the helper then cancels recovery, removes its Herdr session and clears
-    /// the ownership record. A viewer without a helper has nothing to stop.
+    /// A normal close: the session stops the helper without keeping it.
     fn begin_normal_quit(&mut self, ctx: &egui::Context) {
-        if self.normal_stop {
-            return;
-        }
-        self.normal_stop = true;
-        self.stop_deadline = Some(Instant::now() + Duration::from_secs(5));
-        if let Err(error) = self.session.stop_companion(false) {
-            eprintln!("uml viewer: could not stop the companion: {error}");
-        }
-        if self.session.companion_settled() {
-            self.quit = true;
-            ctx.send_viewport_cmd(ViewportCommand::Close);
-        }
-    }
-
-    /// Wait (bounded) for the helper to settle, then exit 0.
-    fn settle_normal_quit(&mut self, ctx: &egui::Context) {
-        let settled = self.session.poll_companion() || self.session.companion_settled();
-        let expired = self.stop_deadline.is_some_and(|at| Instant::now() >= at);
-        if settled || expired {
-            self.quit = true;
-            ctx.send_viewport_cmd(ViewportCommand::Close);
-        } else {
-            // Poll the helper's events while it stops.
-            ctx.request_repaint_after(POLL_INTERVAL);
-        }
+        let effects = self.session.process(Event::Quit, Now::read());
+        self.carry_out(effects, ctx);
     }
 
     fn request_screenshot(&self, ctx: &egui::Context, name: &str) {
@@ -1338,11 +1306,7 @@ impl eframe::App for Viewer {
         // A window close the frame loop did not see (WM quit): ask the
         // helper to stop without keeping the companion. It then releases the
         // session and ownership on its own.
-        if !self.session.companion_settled()
-            && let Err(error) = self.session.stop_companion(false)
-        {
-            eprintln!("uml viewer: could not stop the companion: {error}");
-        }
+        self.session.process(Event::WindowClosed, Now::read());
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -1472,9 +1436,8 @@ impl eframe::App for Viewer {
         if signal::terminated() && !self.quit {
             self.begin_normal_quit(ctx);
         }
-        if self.normal_stop {
-            self.settle_normal_quit(ctx);
-        }
+        let effects = self.session.process(Event::Quitting, Now::read());
+        self.carry_out(effects, ctx);
         if let Some(seconds) = self.test_seconds
             && self.started.elapsed().as_secs_f64() >= seconds
         {

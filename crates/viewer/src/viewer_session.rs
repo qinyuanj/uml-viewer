@@ -70,7 +70,18 @@ pub(crate) enum Event {
     /// the helper keeping the companion, poll it until it settled, then save
     /// the session snapshot (with this window chrome) and close with 0.
     RestartExit(Chrome),
+    /// A normal close (the close control, a termination signal, the test
+    /// duration): stop the helper without keeping the companion.
+    Quit,
+    /// The frame's normal-close checkpoint: close once the helper settled,
+    /// or at the deadline regardless.
+    Quitting,
+    /// The window closed without the frame loop seeing it (a WM quit).
+    WindowClosed,
 }
+
+/// How long a normal close waits for the helper to settle.
+pub const QUIT_DEADLINE: Duration = Duration::from_secs(5);
 
 /// What the inspector, class card and menus ask the session to do. Opening
 /// a source window is the shell's own (it is GUI state).
@@ -130,6 +141,8 @@ pub(crate) struct ViewerSession {
     force_refresh: bool,
     /// `:quit-for-restart` already asked the helper to stop with `keep`.
     restart_stop: bool,
+    /// A normal close stops the helper; the viewer exits at this deadline.
+    quit_deadline: Option<Instant>,
 }
 
 impl ViewerSession {
@@ -154,6 +167,7 @@ impl ViewerSession {
             last_poll: None,
             force_refresh: false,
             restart_stop: false,
+            quit_deadline: None,
         };
         session.load_initial(launch.restart, launch.backend)?;
         session.link = start_link();
@@ -185,6 +199,17 @@ impl ViewerSession {
                 Effects::default()
             }
             Event::RestartExit(chrome) => self.restart_exit(&chrome),
+            Event::Quit => self.begin_quit(now),
+            Event::Quitting => self.quitting(now),
+            Event::WindowClosed => {
+                // The helper then releases the session and ownership itself.
+                if !self.link.settled()
+                    && let Err(error) = self.link.stop(false)
+                {
+                    eprintln!("uml viewer: could not stop the companion: {error}");
+                }
+                Effects::default()
+            }
         }
     }
 
@@ -216,6 +241,43 @@ impl ViewerSession {
         Effects {
             close: Some(0),
             ..Effects::default()
+        }
+    }
+
+    /// A normal close asks the helper to stop without keeping the companion;
+    /// the helper then cancels recovery, removes its Herdr session and clears
+    /// the ownership record. A viewer without a helper has nothing to stop.
+    fn begin_quit(&mut self, now: Now) -> Effects {
+        if self.quit_deadline.is_some() {
+            return Effects::default();
+        }
+        self.quit_deadline = Some(now.at + QUIT_DEADLINE);
+        if let Err(error) = self.link.stop(false) {
+            eprintln!("uml viewer: could not stop the companion: {error}");
+        }
+        Effects {
+            close: self.link.settled().then_some(0),
+            ..Effects::default()
+        }
+    }
+
+    /// Wait (bounded) for the helper to settle, then exit 0.
+    fn quitting(&mut self, now: Now) -> Effects {
+        let Some(deadline) = self.quit_deadline else {
+            return Effects::default();
+        };
+        let settled = self.poll_link() || self.link.settled();
+        if settled || now.at >= deadline {
+            Effects {
+                close: Some(0),
+                ..Effects::default()
+            }
+        } else {
+            // Poll the helper's events while it stops.
+            Effects {
+                repaint: Repaint::After(POLL_INTERVAL),
+                ..Effects::default()
+            }
         }
     }
 
@@ -355,19 +417,6 @@ impl ViewerSession {
             self.link_status = Some(line);
         }
         polled.ready
-    }
-
-    /// Temporary pass-through for the shell's normal close (#164 moves it).
-    pub(crate) fn poll_companion(&mut self) -> bool {
-        self.poll_link()
-    }
-
-    pub(crate) fn stop_companion(&mut self, keep: bool) -> Result<(), String> {
-        self.link.stop(keep)
-    }
-
-    pub(crate) fn companion_settled(&self) -> bool {
-        self.link.settled()
     }
 
     fn load_initial(&mut self, restart: bool, backend: bool) -> Result<(), String> {
@@ -851,6 +900,83 @@ mod tests {
         );
         assert_eq!(Some(&Value::Integer(1)), get(&snapshot, "mail-seen"));
         assert_eq!(vec![true], calls.borrow().stops);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_normal_close_stops_without_keeping_and_exits_at_the_five_second_deadline() {
+        let dir = project("normal close");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, calls) = open(&dir, false);
+        let start = Instant::now();
+        assert_eq!(
+            Effects::default(),
+            session.process(Event::Quitting, at(start, 0)),
+            "before a close the checkpoint does nothing"
+        );
+        calls.borrow_mut().unsettled = true;
+        assert_eq!(
+            Effects::default(),
+            session.process(Event::Quit, at(start, 0))
+        );
+        session.process(Event::Quit, at(start, 100));
+        assert_eq!(vec![false], calls.borrow().stops, "one stop, not keeping");
+        for ms in [0, 1000, 4999] {
+            assert_eq!(
+                Effects {
+                    repaint: Repaint::After(POLL_INTERVAL),
+                    ..Effects::default()
+                },
+                session.process(Event::Quitting, at(start, ms)),
+                "still waiting for the helper at {ms} ms"
+            );
+        }
+        assert_eq!(
+            Some(0),
+            session.process(Event::Quitting, at(start, 5000)).close,
+            "the deadline closes regardless"
+        );
+        assert!(!dir.join(".uml-viewer/session.edn").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_normal_close_exits_as_soon_as_the_helper_settled() {
+        let dir = project("settled close");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, calls) = open(&dir, false);
+        let start = Instant::now();
+        assert_eq!(
+            Some(0),
+            session.process(Event::Quit, at(start, 0)).close,
+            "no helper to wait for"
+        );
+        let (mut session, calls2) = open(&dir, false);
+        calls2.borrow_mut().unsettled = true;
+        session.process(Event::Quit, at(start, 0));
+        assert_eq!(None, session.process(Event::Quitting, at(start, 250)).close);
+        calls2.borrow_mut().unsettled = false;
+        assert_eq!(
+            Some(0),
+            session.process(Event::Quitting, at(start, 500)).close
+        );
+        assert_eq!(vec![false], calls.borrow().stops);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_closed_window_stops_an_unsettled_helper_without_keeping_it() {
+        let dir = project("window closed");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, calls) = open(&dir, false);
+        session.process(Event::WindowClosed, at(Instant::now(), 0));
+        assert!(
+            calls.borrow().stops.is_empty(),
+            "a settled helper is left alone"
+        );
+        calls.borrow_mut().unsettled = true;
+        session.process(Event::WindowClosed, at(Instant::now(), 0));
+        assert_eq!(vec![false], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
