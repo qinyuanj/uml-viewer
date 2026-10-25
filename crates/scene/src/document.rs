@@ -284,7 +284,7 @@ fn selected_target(s: &ViewState, sel: &Value) -> bool {
 }
 
 /// Drop selection/detail targets that no longer resolve.
-pub fn drop_missing_detail(mut s: ViewState) -> ViewState {
+pub(crate) fn drop_missing_detail(mut s: ViewState) -> ViewState {
     if let Some(id) = s.detail_id.clone()
         && !card_target(&s, &id)
     {
@@ -498,7 +498,7 @@ pub fn policy_path_for(edn_path: &str, is_file: &dyn Fn(&str) -> bool) -> Option
 
 /// Authored proposal records for write-back: view annotations (`:notice`,
 /// `:proposal`) are dropped, everything else is preserved in order.
-pub fn proposal_records(doc: &Value) -> Value {
+pub(crate) fn proposal_records(doc: &Value) -> Value {
     let records: Vec<Value> = H::named_proposals(doc)
         .iter()
         .map(|p| geom::drop_keys(p, &["notice", "proposal"]))

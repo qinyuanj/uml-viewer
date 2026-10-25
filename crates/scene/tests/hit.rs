@@ -69,11 +69,6 @@ fn collapsed_leaf_indicators_sit_above_classes_and_dummies_are_skipped() {
     assert_eq!(Some(&Value::keyword("child")), edn::record::get(&h, "id"));
     assert_eq!(Some(&Value::Bool(true)), edn::record::get(&h, "violating"));
     assert!(hit::at(&s, 75.0, 75.0).is_none());
-    assert_eq!(
-        1,
-        hit::connected_edges(&s, &Value::keyword("container")).len()
-    );
-    assert_eq!(0, hit::connected_edges(&s, &Value::keyword("child")).len());
     assert!(hit::class_by_id(&s, &Value::keyword("child")).is_some());
     assert!(hit::class_by_id(&s, &Value::keyword("missing")).is_none());
 }

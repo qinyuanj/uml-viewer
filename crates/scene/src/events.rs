@@ -42,10 +42,10 @@ impl Dims {
     }
 }
 
-pub const ZOOM_MIN: f64 = 0.1;
-pub const ZOOM_MAX: f64 = 10.0;
+pub(crate) const ZOOM_MIN: f64 = 0.1;
+pub(crate) const ZOOM_MAX: f64 = 10.0;
 pub const ZOOM_STEP: f64 = 1.1;
-pub const DRAG_THRESHOLD: f64 = 3.0;
+pub(crate) const DRAG_THRESHOLD: f64 = 3.0;
 
 fn clamp_zoom(z: f64) -> f64 {
     z.clamp(ZOOM_MIN, ZOOM_MAX)
@@ -494,7 +494,7 @@ pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
 }
 
 /// Detail target identity of a class, child row or port hit.
-pub fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
+pub(crate) fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
     match get(hit_value, "kind").map(geom::name).as_deref() {
         Some("class") | Some("child") | Some("port") => get(hit_value, "id").cloned(),
@@ -513,7 +513,7 @@ pub fn select(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
     n
 }
 
-pub fn open_detail(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
+pub(crate) fn open_detail(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
     let mut n = select(s, hit_value);
     if let Some(id) = detail_id_for(hit_value) {
         n.detail_id = Some(id);
