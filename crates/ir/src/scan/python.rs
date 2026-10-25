@@ -3,7 +3,7 @@
 
 use edn::Value;
 
-use crate::graph::{self, Scanner};
+use crate::scan::{self, Scanner, SourceFile};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
 use crate::value::get_truthy as get;
 use edn::record::{record, seq};
@@ -536,7 +536,7 @@ impl Scanner for PythonScanner {
         &self,
         root: &str,
         opts: &Value,
-        files: &[crate::files::SourceFile],
+        files: &[SourceFile],
         cwd: &str,
     ) -> Result<Value, String> {
         let prefix = match get(opts, "prefix") {
@@ -547,9 +547,9 @@ impl Scanner for PythonScanner {
             Some(Value::String(s)) => s.clone(),
             _ => prefix.clone(),
         };
-        let mut sorted: Vec<&crate::files::SourceFile> = files
+        let mut sorted: Vec<&SourceFile> = files
             .iter()
-            .filter(|f| accepts(&graph::relative_path(&f.path, root)))
+            .filter(|f| accepts(&scan::relative_path(&f.path, root)))
             .collect();
         sorted.sort_by(|a, b| a.path.cmp(&b.path));
         struct Meta {
@@ -563,7 +563,7 @@ impl Scanner for PythonScanner {
         let mut by_ns: Vec<(String, Value)> = Vec::new();
         let mut by_rel: Vec<(String, Value)> = Vec::new();
         for f in &sorted {
-            let mut rel = graph::relative_path(&f.path, root);
+            let mut rel = scan::relative_path(&f.path, root);
             rel = rel.strip_suffix(".py").unwrap_or(&rel).to_owned();
             if rel == "__init__" {
                 rel = String::new();
@@ -574,9 +574,9 @@ impl Scanner for PythonScanner {
             let ns = if rel == ns_prefix || rel.starts_with(&format!("{ns_prefix}.")) {
                 rel.clone()
             } else {
-                graph::ns_join(&ns_prefix, &rel)
+                scan::ns_join(&ns_prefix, &rel)
             };
-            let id = graph::id_of(&ns, Some(&Value::String(prefix.clone())));
+            let id = scan::id_of(&ns, Some(&Value::String(prefix.clone())));
             let init = f.path.ends_with("/__init__.py");
             by_ns.push((ns.clone(), id.clone()));
             if !rel.is_empty() {
@@ -802,11 +802,11 @@ impl Scanner for PythonScanner {
             let mut c = record(vec![
                 ("id", m.id.clone()),
                 ("ns", Value::String(m.ns.clone())),
-                ("name", Value::String(graph::module_name(&m.id))),
+                ("name", Value::String(scan::module_name(&m.id))),
                 ("lang", Value::keyword("python")),
                 (
                     "file",
-                    Value::String(graph::relative_path(&m.file_path, cwd)),
+                    Value::String(scan::relative_path(&m.file_path, cwd)),
                 ),
             ]);
             if !ops.is_empty() {
@@ -842,7 +842,7 @@ impl Scanner for PythonScanner {
                 _ => String::new(),
             };
             if !project.contains(&name) {
-                classes.push(graph::foreign_class(&id));
+                classes.push(scan::foreign_class(&id));
             }
         }
         Ok(record(vec![

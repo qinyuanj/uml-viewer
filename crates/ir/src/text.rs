@@ -1,7 +1,8 @@
 //! Byte-string helpers mirroring the Lua string semantics the scanners were
 //! written against: 1-based inclusive `sub`, ASCII character classes and Lua
 //! `%s` whitespace. Sources are raw bytes; captures become `String` only at
-//! the EDN boundary.
+//! the EDN boundary. The lexical tools the scanners share (quote scanning,
+//! comment detection and masking) live here too.
 
 /// Lua `string.sub`: 1-based, inclusive; negative counts from the end.
 pub fn sub(s: &[u8], i: i64, j: i64) -> &[u8] {
@@ -68,4 +69,55 @@ pub fn trim(s: &[u8]) -> &[u8] {
     let start = s.iter().position(|&c| !is_space(c)).unwrap_or(s.len());
     let end = s.iter().rposition(|&c| !is_space(c)).map_or(0, |p| p + 1);
     &s[start..end.max(start)]
+}
+
+/// `scan_quoted(source, i, quote)`: 1-based; returns one past the closing
+/// quote, or `n + 1` when unterminated.
+pub fn scan_quoted(source: &[u8], i: usize, quote: u8, n: Option<usize>) -> usize {
+    let n = n.unwrap_or(source.len());
+    let mut j = i + 1;
+    let mut escaped = false;
+    while j <= n {
+        let c = source[j - 1];
+        if escaped {
+            escaped = false;
+        } else if c == b'\\' {
+            escaped = true;
+        } else if c == quote {
+            return j + 1;
+        }
+        j += 1;
+    }
+    n + 1
+}
+
+/// `line_comment(c, nxt)`.
+pub fn line_comment(c: Option<u8>, nxt: Option<u8>) -> bool {
+    c == Some(b'/') && nxt == Some(b'/')
+}
+
+/// `block_comment(c, nxt)`.
+pub fn block_comment(c: Option<u8>, nxt: Option<u8>) -> bool {
+    c == Some(b'/') && nxt == Some(b'*')
+}
+
+/// `mask_line_comment`: blanks the comment, keeps the newline. Returns the
+/// position of the newline (or one past the end).
+pub fn mask_line_comment(source: &[u8], out: &mut Vec<u8>, i: usize, n: Option<usize>) -> usize {
+    let finish = find_plain(source, b"\n", i).unwrap_or(n.unwrap_or(source.len()) + 1);
+    out.extend(std::iter::repeat_n(b' ', finish - i));
+    finish
+}
+
+/// `mask_block_comment`: blanks everything but newlines through `*/`.
+pub fn mask_block_comment(source: &[u8], out: &mut Vec<u8>, i: usize, n: Option<usize>) -> usize {
+    let limit = n.unwrap_or(source.len()) + 1;
+    let close = find_plain(source, b"*/", i + 2);
+    let finish = close.map_or(limit, |c| limit.min(c + 2));
+    out.extend(
+        source[i - 1..finish - 1]
+            .iter()
+            .map(|&c| if c == b'\n' { c } else { b' ' }),
+    );
+    finish
 }
