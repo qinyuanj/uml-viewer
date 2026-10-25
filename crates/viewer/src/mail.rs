@@ -1,26 +1,23 @@
-//! Mail delivery to the agent (#142): the viewer side of the companion
-//! worker (start, poll, `wake` with the delivery id) and the `:display`,
-//! `:context` and `:quit-for-restart` mail of `to-viewer.edn`. The durable
-//! queue stays authoritative: a command is popped only after it was applied,
-//! and a wake failure never loses mail (contract §5).
+//! The production companion link (#142, #161): the viewer side of the
+//! companion worker (start, poll, stop, `wake` with the delivery id), and the
+//! boundary `:display` mail loads diagrams through. The viewer session owns
+//! the `to-viewer.edn` queue; a wake failure never loses mail (contract §5).
 
 use std::path::{Path, PathBuf};
 
-use companion::mailbox::Mailbox;
 use companion::worker::{self, Worker};
 use edn::Value;
 use scene::document::{self, MailBoundary, ViewState};
 
-/// Everything the frame loop needs from the mail side. IO is the worker's
-/// real file/process boundary; `wake` records the ids asked for.
+use crate::viewer_session::{CompanionLink, LinkPoll};
+
+/// The real worker behind the session's companion link. A launch without
+/// `--backend`, or whose helper did not start, has no worker: mail is still
+/// consumed, and a wake leaves the delivery to the durable queue.
 pub struct Companion {
-    root: PathBuf,
-    inbox: Mailbox,
-    pub worker: Option<Worker>,
-    /// Delivery ids handed to the worker's `wake` command.
-    pub woken: Vec<i64>,
-    /// One diagnosis line for the status bar (the Lua `mail_status`).
-    pub status: Option<String>,
+    worker: Option<Worker>,
+    /// The launch diagnosis line (the Lua `mail_status`).
+    status: Option<String>,
 }
 
 fn worker_error(error: companion::Failure) -> String {
@@ -28,43 +25,44 @@ fn worker_error(error: companion::Failure) -> String {
 }
 
 impl Companion {
-    /// A backend launch: capture the cursor before the companion exists, so a
-    /// `:display` written during startup is consumed rather than skipped
-    /// (the Lua `Mailbox.last_id` capture).
+    /// A backend launch: start the helper. The session built its view and
+    /// mail cursor before calling this, so a `:display` written during
+    /// startup is consumed rather than skipped (the Lua `Mailbox.last_id`
+    /// capture).
     pub fn start(root: &Path, restart: bool) -> Companion {
-        let mut companion = Companion::mail_only(root);
         match worker::start(&root.to_string_lossy(), restart) {
-            Ok(started) => {
-                companion.status = Some("Companion: starting".into());
-                companion.worker = Some(started);
-            }
-            Err(error) => {
-                // The queue is authoritative; a viewer without a helper still
-                // consumes mail, and the launch keeps the project's identity.
-                companion.status = Some(format!("Companion: {}", worker_error(error)));
-            }
+            Ok(started) => Companion {
+                worker: Some(started),
+                status: Some("Companion: starting".into()),
+            },
+            // The queue is authoritative; a viewer without a helper still
+            // consumes mail, and the launch keeps the project's identity.
+            Err(error) => Companion {
+                worker: None,
+                status: Some(format!("Companion: {}", worker_error(error))),
+            },
         }
-        companion
     }
 
-    /// The mail queue without a helper process (a launch whose helper is
-    /// absent, and the seam the mail semantics are tested at).
-    pub fn mail_only(root: &Path) -> Companion {
+    /// The mail queue without a helper process.
+    pub fn mail_only() -> Companion {
         Companion {
-            root: root.to_path_buf(),
-            inbox: Mailbox::inbox(root),
             worker: None,
-            woken: Vec::new(),
             status: None,
         }
     }
+}
 
-    /// Consume up to 32 worker events and report a phase change. Returns
-    /// whether the worker reached `ready` on this poll (the identity record
-    /// is written once, after ready).
-    pub fn poll_worker(&mut self) -> bool {
+impl CompanionLink for Companion {
+    fn launch_status(&self) -> Option<String> {
+        self.status.clone()
+    }
+
+    /// Consume up to 32 worker events and report a phase change, and
+    /// whether the worker reached `ready` on this poll.
+    fn poll(&mut self) -> LinkPoll {
         let Some(worker) = &mut self.worker else {
-            return false;
+            return LinkPoll::default();
         };
         let before = (worker.seen, worker.phase.clone());
         let host = worker::PollHost::real();
@@ -74,24 +72,18 @@ impl Companion {
         }
         let changed =
             before.0 != worker.seen || worker.phase == "failed" || before.1 != worker.phase;
-        if changed {
-            self.status = Some(match &worker.message {
-                Some(message) => format!("Companion: {message}"),
-                None => format!("Companion: {}", worker.phase),
-            });
+        let status = changed.then(|| match &worker.message {
+            Some(message) => format!("Companion: {message}"),
+            None => format!("Companion: {}", worker.phase),
+        });
+        LinkPoll {
+            ready: changed && worker.phase == "ready" && before.1 != "ready",
+            status,
         }
-        changed && worker.phase == "ready" && before.1 != "ready"
-    }
-
-    /// `true` once the helper settled (stopped or failed) and exited.
-    pub fn settled(&self) -> bool {
-        self.worker
-            .as_ref()
-            .is_none_or(|w| matches!(w.phase.as_str(), "stopped" | "failed") && w.exited)
     }
 
     /// Ask the helper to stop; `keep` retains the companion session.
-    pub fn stop(&mut self, keep: bool) -> Result<(), String> {
+    fn stop(&mut self, keep: bool) -> Result<(), String> {
         match &mut self.worker {
             Some(worker) => worker::command(worker, "stop", keep).map_err(worker_error),
             None => Ok(()),
@@ -99,52 +91,20 @@ impl Companion {
     }
 
     /// `Worker.command(companion,'wake',{id=cmd.id})`: the delivery id is the
-    /// token the wake contract acknowledges. Without a helper the request is
-    /// only recorded; the durable queue already holds the mail.
-    pub fn wake(&mut self, id: i64) -> Result<(), String> {
-        self.woken.push(id);
+    /// token the wake contract acknowledges. Without a helper the durable
+    /// queue already holds the mail.
+    fn wake(&mut self, id: i64) -> Result<(), String> {
         match &mut self.worker {
             Some(worker) => worker::wake(worker, id).map_err(worker_error),
             None => Ok(()),
         }
     }
 
-    /// Take and apply every queued `to-viewer.edn` command, oldest first.
-    /// `boundary` loads `:display` diagrams; `state` is the view a
-    /// same-diagram display reapplies.
-    pub fn consume(&mut self, state: &ViewState) -> (ViewState, bool) {
-        let boundary = self.boundary();
-        let mut current = state.clone();
-        let mut changed = false;
-        loop {
-            let command = match self.inbox.take() {
-                Ok(Some(command)) => command,
-                Ok(None) => break,
-                Err(error) => {
-                    self.status = Some(format!("Mailbox: {error}"));
-                    break;
-                }
-            };
-            current = document::apply_mail(&current, &command, &boundary);
-            changed = true;
-        }
-        (current, changed)
-    }
-
-    /// The `:display` boundary: resolve against the project root, canonical
-    /// compare, and load a fresh state from the IR.
-    pub fn boundary(&self) -> DisplayBoundary {
-        DisplayBoundary {
-            root: self.root.clone(),
-        }
-    }
-
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
-    pub fn inbox_path(&self) -> &Path {
-        self.inbox.path()
+    /// `true` once the helper settled (stopped or failed) and exited.
+    fn settled(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(|w| matches!(w.phase.as_str(), "stopped" | "failed") && w.exited)
     }
 }
 
@@ -153,6 +113,15 @@ impl Companion {
 /// project, so a diagram elsewhere still joins its own snapshots.
 pub struct DisplayBoundary {
     root: PathBuf,
+}
+
+impl DisplayBoundary {
+    /// Relative `:display` paths resolve against the project `root`.
+    pub fn new(root: &Path) -> DisplayBoundary {
+        DisplayBoundary {
+            root: root.to_path_buf(),
+        }
+    }
 }
 
 impl MailBoundary for DisplayBoundary {
@@ -192,21 +161,6 @@ impl MailBoundary for DisplayBoundary {
     }
 }
 
-/// The discussion-context mail for a proposal choice (`mail.send_context`).
-pub fn context_mail(context: &Value) -> Vec<(Value, Value)> {
-    match context {
-        Value::Map(entries) => entries.clone(),
-        _ => Vec::new(),
-    }
-}
-
-/// Did the consumed mail ask for a restart? The durable queue's
-/// `:quit-for-restart` is the only trigger; the app then stops the helper
-/// with `keep`, saves the session and exits 0.
-pub fn quit_requested(state: &ViewState) -> bool {
-    state.quit_for_restart
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,14 +180,7 @@ mod tests {
         let directory = scratch("uml mail");
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("second.edn"), "{:title \"Second\"}").unwrap();
-        let companion = Companion {
-            root: directory.clone(),
-            inbox: Mailbox::inbox(&directory),
-            worker: None,
-            woken: Vec::new(),
-            status: None,
-        };
-        let boundary = companion.boundary();
+        let boundary = DisplayBoundary::new(&directory);
         let root = directory.to_string_lossy().into_owned();
         assert_eq!(
             format!("{root}/second.edn"),
@@ -269,45 +216,12 @@ mod tests {
     }
 
     #[test]
-    fn consuming_mail_pops_each_command_after_applying_it() {
-        let directory = scratch("uml mail consume");
-        std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
-        std::fs::write(
-            directory.join(".uml-viewer/to-viewer.edn"),
-            "{:next-id 3 :queue [{:id 1 :op :context :context :real} {:id 2 :op :quit-for-restart}]}",
-        )
-        .unwrap();
-        let mut companion = Companion::mail_only(&directory);
-        let mut state = document::new_state(Value::Map(vec![]), None, None, None, &[], None);
-        let (next, changed) = companion.consume(&state);
-        assert!(changed);
-        state = next;
-        assert_eq!(
-            Some(&Value::keyword("real")),
-            state
-                .discussion_context
-                .as_ref()
-                .and_then(|c| get(c, "context"))
-        );
-        assert!(super::quit_requested(&state));
-        assert_eq!(2, state.mail_seen);
-        let rest = companion.inbox.read();
-        assert!(companion::mailbox::queue(&rest).is_empty());
-        let (unchanged, changed) = companion.consume(&state);
-        assert!(!changed);
-        assert_eq!(2, unchanged.mail_seen);
-        let _ = std::fs::remove_dir_all(directory);
-    }
-
-    #[test]
-    fn a_wake_without_a_helper_is_recorded_and_keeps_the_mail() {
-        let directory = scratch("uml mail wake");
-        std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
-        let mut companion = Companion::mail_only(&directory);
-        companion.wake(4).unwrap();
-        assert_eq!(vec![4], companion.woken);
-        assert!(companion.settled());
-        assert!(companion.stop(false).is_ok());
-        let _ = std::fs::remove_dir_all(directory);
+    fn a_mail_only_link_wakes_stops_and_is_settled_without_a_helper() {
+        let mut link = Companion::mail_only();
+        assert_eq!(None, link.launch_status());
+        assert!(link.wake(4).is_ok());
+        assert!(link.settled());
+        assert!(link.stop(false).is_ok());
+        assert_eq!(LinkPoll::default(), link.poll());
     }
 }
