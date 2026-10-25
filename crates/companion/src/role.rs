@@ -3,7 +3,7 @@
 //! `companion-preflight <root> [args...]`, `companion-worker <request.edn>`,
 //! `companion-runner <manifest.edn>`, `companion-controller <manifest.edn>`.
 
-use crate::herdr::{Config, ControllerSpec, Herdr, RunnerLauncher};
+use crate::herdr::{Config, ControllerSpec, Herdr};
 use crate::host::Host;
 use crate::record;
 use crate::vocab::{Failure, Result};
@@ -64,17 +64,9 @@ pub fn controller(args: &[OsString]) -> ExitCode {
                     false,
                 )?);
             }
-            let executable = std::env::current_exe().map_err(|error| {
-                Failure::new(format!("cannot resolve the uml-viewer binary: {error}"))
-            })?;
             let config = Config::controller_relaunch(
                 selected.borrow().clone(),
-                RunnerLauncher {
-                    argv: vec![
-                        executable.to_string_lossy().into_owned(),
-                        "companion-runner".to_owned(),
-                    ],
-                },
+                crate::lifecycle::runner_launcher()?,
             );
             let mut backend = Herdr::new(Some(submission.clone()), host.clone(), config);
             backend.relaunch(submission)
@@ -123,19 +115,11 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
         let selected =
             crate::preflight::select(&root, &["--backend".to_owned(), "herdr".to_owned()], false)?;
         println!("SMOKE STEP preflight");
-        let executable = std::env::current_exe().map_err(|error| {
-            Failure::new(format!("cannot resolve the uml-viewer binary: {error}"))
-        })?;
         let config = Config::smoke(
             selected,
-            RunnerLauncher {
-                argv: vec![
-                    executable.to_string_lossy().into_owned(),
-                    "companion-runner".to_owned(),
-                ],
-            },
+            crate::lifecycle::runner_launcher()?,
             ControllerSpec {
-                executable: executable.to_string_lossy().into_owned(),
+                executable: crate::lifecycle::current_exe()?,
                 argv: vec!["companion-controller".to_owned()],
             },
         );

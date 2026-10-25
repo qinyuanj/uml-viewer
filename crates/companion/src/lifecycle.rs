@@ -103,7 +103,7 @@ pub fn claude_executable(host: &Host) -> String {
         .unwrap_or_else(|| "claude".to_owned())
 }
 
-fn current_exe() -> Result<String> {
+pub(crate) fn current_exe() -> Result<String> {
     std::env::current_exe()
         .map(|path| path.to_string_lossy().into_owned())
         .map_err(|error| Failure::new(format!("cannot resolve the uml-viewer binary: {error}")))
@@ -112,6 +112,13 @@ fn current_exe() -> Result<String> {
 /// The role argv for this binary: `[exe, role, manifest]`.
 fn role_launcher(role: &str) -> Result<Vec<String>> {
     Ok(vec![current_exe()?, role.to_owned()])
+}
+
+/// This binary's runner role, as the pane launches it.
+pub(crate) fn runner_launcher() -> Result<RunnerLauncher> {
+    Ok(RunnerLauncher {
+        argv: role_launcher("companion-runner")?,
+    })
 }
 
 /// Read-only backend selection used before any resource is created.
@@ -125,9 +132,7 @@ fn config(selected: Selected, progress: Option<ProgressFn>) -> Result<Config> {
     Ok(Config::lifecycle(
         selected,
         progress,
-        RunnerLauncher {
-            argv: role_launcher("companion-runner")?,
-        },
+        runner_launcher()?,
         ControllerSpec {
             executable: current_exe()?,
             argv: vec!["companion-controller".to_owned()],
