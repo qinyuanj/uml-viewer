@@ -67,8 +67,7 @@ impl Companion {
             return false;
         };
         let before = (worker.seen, worker.phase.clone());
-        let host = worker::PollHost::real();
-        if let Err(error) = worker::poll(worker, &host) {
+        if let Err(error) = worker::poll(worker) {
             worker.phase = "failed".into();
             worker.message = Some(worker_error(error));
         }

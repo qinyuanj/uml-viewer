@@ -89,8 +89,9 @@ pub fn controller(args: &[OsString]) -> ExitCode {
 /// `companion-worker <request.edn>`: one isolated helper per project.
 pub fn worker(args: &[OsString]) -> ExitCode {
     let request = text(args, 0);
-    let attach = std::env::var("UML_COMPANION_NO_ATTACH").as_deref() != Ok("1");
-    match crate::worker::run(&request, attach) {
+    let host = crate::host::Host::posix();
+    let attach = (host.variable)("UML_COMPANION_NO_ATTACH").as_deref() != Some("1");
+    match crate::worker::run(&request, attach, &host) {
         Ok(code) => ExitCode::from(u8::try_from(code.clamp(0, 255)).unwrap_or(1)),
         Err(error) => {
             eprintln!("{}", error.message);
