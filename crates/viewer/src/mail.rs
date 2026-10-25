@@ -9,7 +9,7 @@ use companion::worker::{self, Worker};
 use edn::Value;
 use scene::document::{self, MailBoundary, ViewState};
 
-use crate::viewer_session::{CompanionLink, LinkPoll};
+use crate::viewer_session::{CompanionLink, LinkPoll, Stop};
 
 /// The real worker behind the session's companion link. A launch without
 /// `--backend`, or whose helper did not start, has no worker: mail is still
@@ -81,10 +81,12 @@ impl CompanionLink for Companion {
         }
     }
 
-    /// Ask the helper to stop; `keep` retains the companion session.
-    fn stop(&mut self, keep: bool) -> Result<(), String> {
+    /// Ask the helper to stop, keeping the companion session or releasing it.
+    fn stop(&mut self, stop: Stop) -> Result<(), String> {
         match &mut self.worker {
-            Some(worker) => worker::command(worker, "stop", keep).map_err(worker_error),
+            Some(worker) => {
+                worker::command(worker, "stop", stop == Stop::KeepCompanion).map_err(worker_error)
+            }
             None => Ok(()),
         }
     }
@@ -220,7 +222,7 @@ mod tests {
         assert_eq!(None, link.launch_status());
         assert!(link.wake(4).is_ok());
         assert!(link.settled());
-        assert!(link.stop(false).is_ok());
+        assert!(link.stop(Stop::ReleaseCompanion).is_ok());
         assert_eq!(LinkPoll::default(), link.poll());
     }
 }

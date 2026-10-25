@@ -41,12 +41,22 @@ pub(crate) trait CompanionLink {
     fn launch_status(&self) -> Option<String>;
     /// Consume pending worker events.
     fn poll(&mut self) -> LinkPoll;
-    /// Ask the helper to stop; `keep` retains the companion.
-    fn stop(&mut self, keep: bool) -> Result<(), String>;
+    /// Ask the helper to stop, keeping the companion or releasing it.
+    fn stop(&mut self, stop: Stop) -> Result<(), String>;
     /// Wake the helper for the delivery `id` (the durable queue holds it).
     fn wake(&mut self, id: i64) -> Result<(), String>;
     /// `true` once the helper stopped or failed and exited (or never ran).
     fn settled(&self) -> bool;
+}
+
+/// How the helper stops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stop {
+    /// The restart exit: the companion stays for the replacement viewer.
+    KeepCompanion,
+    /// A normal close: cancel recovery, remove the Herdr session and clear
+    /// the ownership record.
+    ReleaseCompanion,
 }
 
 /// One worker poll: did the helper reach ready on it, and its new status
@@ -370,7 +380,7 @@ impl ViewerSession {
             Event::WindowClosed => {
                 // The helper then releases the session and ownership itself.
                 if !self.link.settled()
-                    && let Err(error) = self.link.stop(false)
+                    && let Err(error) = self.link.stop(Stop::ReleaseCompanion)
                 {
                     eprintln!("uml viewer: could not stop the companion: {error}");
                 }
@@ -388,7 +398,7 @@ impl ViewerSession {
             return Effects::default();
         }
         if !self.restart_stop {
-            if let Err(error) = self.link.stop(true) {
+            if let Err(error) = self.link.stop(Stop::KeepCompanion) {
                 eprintln!("uml viewer: could not stop the companion: {error}");
             }
             self.restart_stop = true;
@@ -483,7 +493,7 @@ impl ViewerSession {
             return Effects::default();
         }
         self.close_deadline = Some(now.at + NORMAL_CLOSE_DEADLINE);
-        if let Err(error) = self.link.stop(false) {
+        if let Err(error) = self.link.stop(Stop::ReleaseCompanion) {
             eprintln!("uml viewer: could not stop the companion: {error}");
         }
         Effects {
@@ -894,7 +904,7 @@ impl CompanionLink for NoLink {
     fn poll(&mut self) -> LinkPoll {
         LinkPoll::default()
     }
-    fn stop(&mut self, _keep: bool) -> Result<(), String> {
+    fn stop(&mut self, _stop: Stop) -> Result<(), String> {
         Ok(())
     }
     fn wake(&mut self, _id: i64) -> Result<(), String> {
@@ -918,7 +928,7 @@ mod tests {
     #[derive(Default)]
     struct Calls {
         woken: Vec<i64>,
-        stops: Vec<bool>,
+        stops: Vec<Stop>,
         wake_fails: bool,
         /// The helper has not settled yet (it is still stopping).
         unsettled: bool,
@@ -943,8 +953,8 @@ mod tests {
                 status: None,
             }
         }
-        fn stop(&mut self, keep: bool) -> Result<(), String> {
-            self.0.borrow_mut().stops.push(keep);
+        fn stop(&mut self, stop: Stop) -> Result<(), String> {
+            self.0.borrow_mut().stops.push(stop);
             Ok(())
         }
         fn wake(&mut self, id: i64) -> Result<(), String> {
@@ -1217,7 +1227,7 @@ mod tests {
             assert!(!saved.exists(), "no snapshot before the helper settled");
         }
         assert_eq!(
-            vec![true],
+            vec![Stop::KeepCompanion],
             calls.borrow().stops,
             "one stop, keeping the companion"
         );
@@ -1232,7 +1242,7 @@ mod tests {
             get(&snapshot, "inspector-width")
         );
         assert_eq!(Some(&Value::Integer(1)), get(&snapshot, "mail-seen"));
-        assert_eq!(vec![true], calls.borrow().stops);
+        assert_eq!(vec![Stop::KeepCompanion], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1253,7 +1263,11 @@ mod tests {
             session.process(Event::NormalClose, at(start, 0))
         );
         session.process(Event::NormalClose, at(start, 100));
-        assert_eq!(vec![false], calls.borrow().stops, "one stop, not keeping");
+        assert_eq!(
+            vec![Stop::ReleaseCompanion],
+            calls.borrow().stops,
+            "one stop, not keeping"
+        );
         for ms in [0, 1000, 4999] {
             assert_eq!(
                 Effects {
@@ -1302,7 +1316,7 @@ mod tests {
                 .process(Event::NormalCloseCheckpoint, at(start, 500))
                 .close
         );
-        assert_eq!(vec![false], calls.borrow().stops);
+        assert_eq!(vec![Stop::ReleaseCompanion], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1318,7 +1332,7 @@ mod tests {
         );
         calls.borrow_mut().unsettled = true;
         session.process(Event::WindowClosed, at(Instant::now(), 0));
-        assert_eq!(vec![false], calls.borrow().stops);
+        assert_eq!(vec![Stop::ReleaseCompanion], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
     }
 
