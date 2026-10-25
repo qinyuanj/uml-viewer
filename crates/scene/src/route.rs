@@ -617,3 +617,6 @@ pub fn route(scene: &mut Value) {
     }
     edn::record::put(scene, "edges", Value::Vector(out));
 }
+
+#[cfg(test)]
+mod tests;

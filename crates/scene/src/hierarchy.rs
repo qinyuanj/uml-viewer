@@ -1086,3 +1086,6 @@ pub fn apply_declutter(view: &Value, mode: Option<&Value>) -> Value {
     }
     view
 }
+
+#[cfg(test)]
+mod tests;

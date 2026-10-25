@@ -381,3 +381,6 @@ pub fn pool_mutants(classes: &[Value]) -> Option<Value> {
     }
     Some(r)
 }
+
+#[cfg(test)]
+mod tests;

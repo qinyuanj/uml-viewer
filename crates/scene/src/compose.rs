@@ -336,3 +336,6 @@ pub fn compile_document(doc: &Value) -> Value {
     prepare_scene(&mut scene);
     scene
 }
+
+#[cfg(test)]
+mod tests;

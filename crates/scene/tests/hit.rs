@@ -1,7 +1,6 @@
 //! Hit testing — the edges_spec.lua hit oracle.
 
 use edn::{Value, parse};
-use scene::geom;
 use scene::hit::{self, dep_indicators};
 
 fn close(expected: &Value, actual: &Value, path: &str) {
@@ -107,24 +106,3 @@ fn selects_child_rows_outgoing_ports_class_boundaries_and_package_frames() {
     );
     assert!(hit::package_by_id(&s, &Value::keyword("pkg")).is_some());
 }
-
-#[test]
-fn clipped_strokes_never_hit_the_hidden_gap() {
-    // prepare_scene geometry without compose: build the strokes directly.
-    let ps: Vec<[f64; 2]> = vec![[0.0, 0.0], [100.0, 0.0]];
-    let strokes = geom::gap_polyline(&ps, &[Rect::new(40.0, -10.0, 20.0, 20.0)], 5.0);
-    assert_eq!(2, strokes.len());
-    assert!(
-        !geom::near_polyline([50.0, 0.0], &ps, 1.0)
-            || !strokes
-                .iter()
-                .any(|s| geom::near_polyline([50.0, 0.0], s, 1.0))
-    );
-    assert!(
-        strokes
-            .iter()
-            .any(|s| geom::near_polyline([20.0, 0.0], s, 1.0))
-    );
-}
-
-use scene::geom::Rect;

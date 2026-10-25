@@ -1,8 +1,8 @@
 //! Rectangle and gap geometry, ported from the `edges_spec`/`viewer_spec`
 //! gap and hit geometry examples (the Lua busted suite is the oracle).
 
+use crate::geom::{self, Rect};
 use edn::{Value, parse};
-use scene::geom::{self, Rect};
 
 fn rects(text: &str) -> Vec<Rect> {
     let Value::Vector(items) = parse(text).unwrap() else {
@@ -59,4 +59,23 @@ fn rect_algebra_matches_the_lua_helpers() {
         geom::union(&[Some(r), Some(other)]).unwrap()
     );
     assert_eq!(None, geom::union(&[]));
+}
+
+#[test]
+fn clipped_strokes_never_hit_the_hidden_gap() {
+    // prepare_scene geometry without compose: build the strokes directly.
+    let ps: Vec<[f64; 2]> = vec![[0.0, 0.0], [100.0, 0.0]];
+    let strokes = geom::gap_polyline(&ps, &[Rect::new(40.0, -10.0, 20.0, 20.0)], 5.0);
+    assert_eq!(2, strokes.len());
+    assert!(
+        !geom::near_polyline([50.0, 0.0], &ps, 1.0)
+            || !strokes
+                .iter()
+                .any(|s| geom::near_polyline([50.0, 0.0], s, 1.0))
+    );
+    assert!(
+        strokes
+            .iter()
+            .any(|s| geom::near_polyline([20.0, 0.0], s, 1.0))
+    );
 }
