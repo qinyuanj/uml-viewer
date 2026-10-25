@@ -12,11 +12,15 @@ use std::time::{Duration, Instant};
 
 use companion::mailbox::Mailbox;
 use edn::Value;
+use edn::record::{get, local_name};
 use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
+use scene::geom::Rect;
+use scene::hit;
 
 use crate::clock::{self, Now};
 use crate::commands::{self, Command};
+use crate::driver::ViewRecord;
 use crate::mail::DisplayBoundary;
 use crate::session::{self, Chrome};
 use crate::{
@@ -606,14 +610,11 @@ impl ViewerSession {
     pub(crate) fn mail_record(&self) -> Value {
         let kw = Value::keyword;
         let s = &self.state;
-        let title = s
-            .document
-            .as_ref()
-            .and_then(|d| edn::record::get(d, "title"));
+        let title = s.document.as_ref().and_then(|d| get(d, "title"));
         let context = s
             .discussion_context
             .as_ref()
-            .and_then(|c| edn::record::get(c, "context"));
+            .and_then(|c| get(c, "context"));
         Value::Map(vec![
             (kw("seen"), Value::Integer(s.mail_seen)),
             (kw("waiting"), Value::Bool(s.waiting)),
@@ -650,6 +651,72 @@ impl ViewerSession {
                 )),
                 _ => None,
             })
+    }
+
+    /// The navigation record the driver asserts (`:assert-view`); `anchor`
+    /// is a screen point whose world position it carries. The search box is
+    /// the shell's, so its part is left at the default for the shell to fill.
+    pub(crate) fn view_record(&self, anchor: Option<[f64; 2]>) -> ViewRecord {
+        let s = &self.state;
+        let name = |v: &Value| local_name(v).unwrap_or_default().to_owned();
+        ViewRecord {
+            focus: s.focus.iter().map(name).collect(),
+            zoom: events::zoom_of(s),
+            cam_x: s.cam_x,
+            cam_y: s.cam_y,
+            selected: s
+                .selected
+                .as_ref()
+                .map(|v| get(v, "id").map(name).unwrap_or_else(|| name(v))),
+            detail: s.detail_id.as_ref().map(name),
+            declutter: get(&s.extra, "declutter")
+                .map(name)
+                .unwrap_or_else(|| "full".into()),
+            dragging: s.drag.is_some(),
+            anchor: anchor.map(|[x, y]| events::world_xy(s, x, y)),
+            ..ViewRecord::default()
+        }
+    }
+
+    /// Does the view equal a fresh fit of the canvas `dims` describe?
+    pub(crate) fn is_fitted(&self, dims: &Dims) -> bool {
+        let s = &self.state;
+        let fitted = events::fit(s, dims);
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        !s.fit_pending
+            && near(fitted.zoom, s.zoom)
+            && near(fitted.cam_x, s.cam_x)
+            && near(fitted.cam_y, s.cam_y)
+    }
+
+    /// No scene element under this screen point (the GUI's areas are the
+    /// shell's to add).
+    pub(crate) fn is_blank(&self, x: f64, y: f64) -> bool {
+        let (wx, wy) = events::world_xy(&self.state, x, y);
+        hit::at(&self.state.scene, wx, wy).is_none()
+    }
+
+    /// The screen point a few units inside a rendered class box (Lua
+    /// `on_class`). The compiled scene prefixes ids per section (`d0-`);
+    /// the authored IR id the driver names resolves through the suffix.
+    pub(crate) fn class_point(&self, id: &str) -> Result<(f64, f64), String> {
+        let s = &self.state;
+        let wanted = Value::keyword(id);
+        let suffix = format!("-{id}");
+        let class = hit::class_by_id(&s.scene, &wanted)
+            .or_else(|| {
+                edn::record::seq(get(&s.scene, "classes")).iter().find(|c| {
+                    get(c, "id")
+                        .and_then(local_name)
+                        .is_some_and(|n| n.ends_with(&suffix))
+                })
+            })
+            .ok_or_else(|| format!("no class {id} on the scene"))?;
+        let r = get(class, "rect")
+            .and_then(Rect::from_value)
+            .ok_or_else(|| format!("class {id} has no rect"))?;
+        let z = events::zoom_of(s);
+        Ok(((r.x + 6.0 - s.cam_x) * z, (r.y + 6.0 - s.cam_y) * z))
     }
 
     /// The canvas hint (a missing diagram), if any.
@@ -822,7 +889,6 @@ impl CompanionLink for NoLink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use edn::record::get;
     use std::cell::RefCell;
     use std::path::Path;
     use std::rc::Rc;
@@ -1494,6 +1560,36 @@ mod tests {
         session.process(Event::RestartExit(chrome()), at(Instant::now(), 0));
         let saved = std::fs::read_to_string(dir.join(".uml-viewer/session.edn")).unwrap();
         assert_eq!(expected, edn::parse(&saved).unwrap());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_driver_geometry_queries_answer_from_the_view_state() {
+        let dir = project("geometry");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, false);
+        let now = at(Instant::now(), 0);
+        assert!(!session.is_fitted(&dims()), "a pending fit is not fitted");
+        session.process(Event::Canvas(Canvas::Fit, dims()), now);
+        assert!(session.is_fitted(&dims()));
+        // The driver names the authored IR id; the scene prefixes it.
+        let (x, y) = session.class_point("target").unwrap();
+        assert_eq!(Ok((x, y)), session.class_point("d0-target"));
+        assert!(!session.is_blank(x, y), "the class is under its own point");
+        assert!(session.is_blank(-500.0, -500.0));
+        assert!(session.class_point("nowhere").is_err());
+        let record = session.view_record(Some([x, y]));
+        assert_eq!(None, record.selected);
+        assert_eq!("full", record.declutter);
+        session.process(Event::Canvas(Canvas::Click(x, y), dims()), now);
+        session.process(
+            Event::Canvas(Canvas::Wheel { dx: 40.0, dy: 0.0 }, dims()),
+            now,
+        );
+        assert!(!session.is_fitted(&dims()), "a pan leaves the fit");
+        let record = session.view_record(None);
+        assert_eq!(Some("d0-target".to_string()), record.selected);
+        assert!(!record.dragging);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
