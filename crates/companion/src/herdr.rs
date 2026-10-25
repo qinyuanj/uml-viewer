@@ -907,36 +907,6 @@ impl Herdr {
         Ok(())
     }
 
-    /// Recovery toggling: enable only verifies the existing durable
-    /// supervisor; disable cancels it. Without a supervisor there is nothing
-    /// to adopt and no replacement is ever invented. No role calls it today;
-    /// it stays with its tests (#160).
-    #[cfg(test)]
-    pub fn recovery(&self, session: &str, pane: Option<&str>, enabled: bool) -> Result<bool> {
-        let identity = self
-            .identity
-            .as_ref()
-            .ok_or_else(|| Failure::new("Incomplete Herdr ownership"))?
-            .clone();
-        let pane = pane
-            .map(str::to_owned)
-            .or_else(|| record::get_name(&identity, "pane"))
-            .unwrap_or_default();
-        self.observe(&identity, session, &pane)?;
-        if edn::record::get(&identity, "supervisor").is_some() {
-            if enabled {
-                recovery::verify(&identity, &self.host)?;
-                return Ok(true);
-            }
-            self.cancel_recovery(&identity)?;
-            return Ok(false);
-        }
-        if enabled {
-            return self.fail("No durable supervisor registered; refusing replacement");
-        }
-        Ok(false)
-    }
-
     /// Cleanup: cancel recovery first, then destroy only the recorded
     /// resources, checkpointing before each destructive step so an interrupted
     /// cleanup resumes where it stopped (contract §2, §6).

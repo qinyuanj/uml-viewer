@@ -574,15 +574,6 @@ fn stale_or_malformed_runner_state_is_ignored() {
 }
 
 #[test]
-fn automatic_recovery_without_a_durable_supervisor_is_refused() {
-    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
-    let state: Shared = Rc::new(RefCell::new(FakeState::default()));
-    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
-    assert!(!backend.recovery("uml-viewer-A", None, false).unwrap());
-    assert!(backend.recovery("uml-viewer-A", None, true).is_err());
-}
-
-#[test]
 fn socket_paths_over_the_measured_limit_are_refused_before_any_command() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let recorded = calls.clone();
@@ -1213,14 +1204,14 @@ mod supervised {
         }
     }
 
-    /// A backend over `supervised` whose process table also holds the
-    /// registered controller while `alive`.
-    fn backend_over(
+    /// A fake host over `supervised` whose process table also holds the
+    /// registered controller while `alive`; the controller is registered.
+    fn host_over(
         supervised: &Supervised,
         state: Shared,
         calls: Calls,
         alive: Rc<Cell<bool>>,
-    ) -> Herdr {
+    ) -> Host {
         let owner_state = state.clone();
         let host = fixture_host(
             fake_cli(calls, state),
@@ -1237,20 +1228,31 @@ mod supervised {
             ("start", Value::String("ctl".to_owned())),
         ]);
         recovery::register(&supervised.record, &controller, &host).unwrap();
+        host
+    }
+
+    /// A backend over `supervised` (see [`host_over`]).
+    fn backend_over(
+        supervised: &Supervised,
+        state: Shared,
+        calls: Calls,
+        alive: Rc<Cell<bool>>,
+    ) -> Herdr {
+        let host = host_over(supervised, state, calls, alive);
         Herdr::new(Some(supervised.record.clone()), host, config())
     }
 
     #[test]
-    fn enabling_recovery_verifies_the_registered_controller_through_the_host() {
+    fn the_supervisor_verify_checks_the_registered_controller_through_the_host() {
         let supervised = supervised();
         let state: Shared = Rc::new(RefCell::new(FakeState::default()));
         let calls: Calls = Rc::new(RefCell::new(Vec::new()));
         let alive = Rc::new(Cell::new(true));
-        let backend = backend_over(&supervised, state, calls, alive.clone());
-        assert!(backend.recovery("uml-viewer-A", None, true).unwrap());
+        let host = host_over(&supervised, state, calls, alive.clone());
+        assert!(recovery::verify(&supervised.record, &host).is_ok());
         // A vanished controller is never adopted or replaced.
         alive.set(false);
-        let error = backend.recovery("uml-viewer-A", None, true).unwrap_err();
+        let error = recovery::verify(&supervised.record, &host).unwrap_err();
         assert_eq!(
             "Recovery controller disappeared; refusing replacement",
             error.message
