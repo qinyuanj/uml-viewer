@@ -17,7 +17,7 @@ pub mod gui;
 pub mod identity;
 pub mod inspector;
 pub mod lod;
-pub mod mail;
+mod mail;
 pub mod mail_watch;
 pub mod mailbox;
 pub mod metrics;
@@ -30,6 +30,7 @@ pub mod signal;
 pub mod source;
 pub mod strings;
 pub mod theme;
+mod viewer_session;
 pub mod watch;
 
 use std::ffi::OsString;
