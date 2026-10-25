@@ -8,6 +8,7 @@
 pub mod domain;
 pub mod herdr;
 pub mod herdr_domain;
+pub mod host;
 pub mod json;
 pub mod lifecycle;
 pub mod mailbox;

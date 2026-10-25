@@ -234,7 +234,7 @@ pub fn restart(root: &str) -> Result<(Value, Herdr)> {
     let pane = record::get_name(&plain, "pane").unwrap_or_default();
     backend.probe(&session)?;
     backend.bind(&session, &pane)?;
-    recovery::verify(&plain, &recovery::real_host())?;
+    recovery::verify(&plain, &crate::host::Host::posix())?;
     Ok((plain, backend))
 }
 

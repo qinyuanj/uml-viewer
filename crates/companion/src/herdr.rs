@@ -436,7 +436,7 @@ impl Herdr {
                     .collect(),
             ),
         );
-        recovery::write_state(Path::new(&manifest), &copy, &recovery::real_host())?;
+        recovery::write_state(Path::new(&manifest), &copy, &crate::host::Host::posix())?;
         let runner = self
             .options
             .runner
@@ -536,7 +536,7 @@ impl Herdr {
         if let Some(cancel) = &self.options.cancel_recovery {
             return cancel(record);
         }
-        recovery::cancel(record, &recovery::real_host())
+        recovery::cancel(record, &crate::host::Host::posix())
     }
 
     /// Herdr derives its API socket from XDG_CONFIG_HOME and the session
@@ -791,28 +791,32 @@ impl Herdr {
         match start_recovery {
             Some(start) => start(&owned, self.options.recovery.as_ref())?,
             None => {
-                recovery::start(&owned, &recovery::real_host(), &|identity, manifest| {
-                    let controller = self.options.recovery.as_ref().ok_or_else(|| {
-                        Failure::new("A detached controller launcher is required")
-                    })?;
-                    let mut argv: Vec<std::ffi::OsString> = controller
-                        .argv
-                        .iter()
-                        .map(std::ffi::OsString::from)
-                        .collect();
-                    argv.push(std::ffi::OsString::from(manifest));
-                    let log = crate::recovery_domain::state_file(identity)
-                        .replace("recovery.edn", "recovery.log");
-                    posix::spawn_detached(
-                        std::ffi::OsStr::new(&controller.executable),
-                        &argv,
-                        Path::new(&canonical_cwd),
-                        Some(Path::new(&log)),
-                        Some(Path::new(&format!("{log}.err"))),
-                        &[],
-                    )?;
-                    Ok(())
-                })?;
+                recovery::start(
+                    &owned,
+                    &crate::host::Host::posix(),
+                    &|identity, manifest| {
+                        let controller = self.options.recovery.as_ref().ok_or_else(|| {
+                            Failure::new("A detached controller launcher is required")
+                        })?;
+                        let mut argv: Vec<std::ffi::OsString> = controller
+                            .argv
+                            .iter()
+                            .map(std::ffi::OsString::from)
+                            .collect();
+                        argv.push(std::ffi::OsString::from(manifest));
+                        let log = crate::recovery_domain::state_file(identity)
+                            .replace("recovery.edn", "recovery.log");
+                        posix::spawn_detached(
+                            std::ffi::OsStr::new(&controller.executable),
+                            &argv,
+                            Path::new(&canonical_cwd),
+                            Some(Path::new(&log)),
+                            Some(Path::new(&format!("{log}.err"))),
+                            &[],
+                        )?;
+                        Ok(())
+                    },
+                )?;
             }
         }
         self.progress("committed")?;
@@ -925,7 +929,7 @@ impl Herdr {
         self.observe(&identity, session, &pane)?;
         if edn::record::get(&identity, "supervisor").is_some() {
             if enabled {
-                recovery::verify(&identity, &recovery::real_host())?;
+                recovery::verify(&identity, &crate::host::Host::posix())?;
                 return Ok(true);
             }
             self.cancel_recovery(&identity)?;

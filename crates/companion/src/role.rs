@@ -21,7 +21,7 @@ pub fn runner(args: &[OsString]) -> ExitCode {
     let manifest = text(args, 0);
     let outcome = (|| -> Result<i32> {
         let identity = read_manifest(&manifest)?;
-        let exit = crate::recovery::run_child(&identity)?;
+        let exit = crate::recovery::run_child(&identity, &crate::host::Host::posix())?;
         Ok(exit.unwrap_or(1))
     })();
     match outcome {
@@ -75,7 +75,7 @@ pub fn controller(args: &[OsString]) -> ExitCode {
             let mut backend = crate::herdr::Herdr::new(Some(submission.clone()), options);
             backend.relaunch(submission)
         };
-        crate::recovery::controller_loop(&identity, &crate::recovery::real_host(), &launch)
+        crate::recovery::controller_loop(&identity, &crate::host::Host::posix(), &launch)
     })();
     match outcome {
         Ok(_) => ExitCode::SUCCESS,
