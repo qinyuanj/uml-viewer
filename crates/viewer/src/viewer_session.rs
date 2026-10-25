@@ -17,6 +17,7 @@ use scene::events::{self, Dims};
 
 use crate::clock::{self, Now};
 use crate::mail::DisplayBoundary;
+use crate::session::{self, Chrome};
 use crate::{identity, inspector, mail_watch, mailbox, metrics, project_files, strings, watch};
 
 /// What the session needs from the companion helper: poll its events, stop
@@ -65,6 +66,10 @@ pub(crate) enum Event {
     Tick,
     /// `R`: reload on the next tick regardless of the cadence.
     ForceRefresh,
+    /// The frame's restart-exit checkpoint: after `:quit-for-restart`, stop
+    /// the helper keeping the companion, poll it until it settled, then save
+    /// the session snapshot (with this window chrome) and close with 0.
+    RestartExit(Chrome),
 }
 
 /// What the inspector, class card and menus ask the session to do. Opening
@@ -93,6 +98,8 @@ pub(crate) enum Repaint {
     #[default]
     None,
     Now,
+    /// Draw again after this long (a stopping helper is polled).
+    After(Duration),
 }
 
 /// The side effects an event asks the shell for.
@@ -101,6 +108,8 @@ pub(crate) struct Effects {
     pub repaint: Repaint,
     /// The inspector and card caches are stale (new document or proposals).
     pub invalidate_gui: bool,
+    /// Close the window with this exit code.
+    pub close: Option<u8>,
 }
 
 pub(crate) struct ViewerSession {
@@ -119,6 +128,8 @@ pub(crate) struct ViewerSession {
     /// When the IR and metrics stamps were last polled; `None` is due.
     last_poll: Option<Instant>,
     force_refresh: bool,
+    /// `:quit-for-restart` already asked the helper to stop with `keep`.
+    restart_stop: bool,
 }
 
 impl ViewerSession {
@@ -142,6 +153,7 @@ impl ViewerSession {
             identity_recorded: false,
             last_poll: None,
             force_refresh: false,
+            restart_stop: false,
         };
         session.load_initial(launch.restart, launch.backend)?;
         session.link = start_link();
@@ -172,6 +184,38 @@ impl ViewerSession {
                 self.force_refresh = true;
                 Effects::default()
             }
+            Event::RestartExit(chrome) => self.restart_exit(&chrome),
+        }
+    }
+
+    /// `:quit-for-restart`: stop the helper with `keep` (a failed helper needs
+    /// no stop and must not strand the restart), poll until it settled so the
+    /// replacement viewer binds the companion that is actually there, then
+    /// save the snapshot and exit 0.
+    fn restart_exit(&mut self, chrome: &Chrome) -> Effects {
+        if !self.state.quit_for_restart && !self.restart_stop {
+            return Effects::default();
+        }
+        if !self.restart_stop {
+            if let Err(error) = self.link.stop(true) {
+                eprintln!("uml viewer: could not stop the companion: {error}");
+            }
+            self.restart_stop = true;
+        }
+        self.poll_link();
+        if !self.link.settled() {
+            return Effects {
+                repaint: Repaint::After(POLL_INTERVAL),
+                ..Effects::default()
+            };
+        }
+        let snapshot = session::snapshot(&self.state, chrome);
+        if let Err(error) = session::save(&self.project_root, &snapshot) {
+            eprintln!("uml viewer: could not save the session: {error}");
+        }
+        Effects {
+            close: Some(0),
+            ..Effects::default()
         }
     }
 
@@ -181,7 +225,7 @@ impl ViewerSession {
         let outbox = Mailbox::outbox(&self.project_root);
         let mut effects = Effects {
             repaint: Repaint::Now,
-            invalidate_gui: false,
+            ..Effects::default()
         };
         let state = &self.state;
         match action {
@@ -304,14 +348,18 @@ impl ViewerSession {
         self.status = Some(status);
     }
 
-    /// Poll the helper outside the mail loop (a stopping helper); `true`
-    /// when it reached ready on this poll.
-    pub(crate) fn poll_companion(&mut self) -> bool {
+    /// Poll the helper; `true` when it reached ready on this poll.
+    fn poll_link(&mut self) -> bool {
         let polled = self.link.poll();
         if let Some(line) = polled.status {
             self.link_status = Some(line);
         }
         polled.ready
+    }
+
+    /// Temporary pass-through for the shell's normal close (#164 moves it).
+    pub(crate) fn poll_companion(&mut self) -> bool {
+        self.poll_link()
     }
 
     pub(crate) fn stop_companion(&mut self, keep: bool) -> Result<(), String> {
@@ -377,7 +425,7 @@ impl ViewerSession {
         let found = self.mail_watch.poll(&self.project_root);
         let mut changed = false;
         if found.worker {
-            let ready = self.poll_companion();
+            let ready = self.poll_link();
             changed = true;
             if ready && !self.identity_recorded {
                 // Identity is written once, after the companion is ready.
@@ -473,6 +521,11 @@ mod tests {
         woken: Vec<i64>,
         stops: Vec<bool>,
         wake_fails: bool,
+        /// The helper has not settled yet (it is still stopping).
+        unsettled: bool,
+        /// The next poll reports the helper reached ready.
+        ready_next: bool,
+        polls: usize,
     }
 
     /// The test adapter: no helper process; it records calls and fails a
@@ -484,7 +537,12 @@ mod tests {
             None
         }
         fn poll(&mut self) -> LinkPoll {
-            LinkPoll::default()
+            let mut calls = self.0.borrow_mut();
+            calls.polls += 1;
+            LinkPoll {
+                ready: std::mem::take(&mut calls.ready_next),
+                status: None,
+            }
         }
         fn stop(&mut self, keep: bool) -> Result<(), String> {
             self.0.borrow_mut().stops.push(keep);
@@ -500,7 +558,7 @@ mod tests {
             }
         }
         fn settled(&self) -> bool {
-            true
+            !self.0.borrow().unsettled
         }
     }
 
@@ -583,7 +641,8 @@ mod tests {
         assert_eq!(
             Effects {
                 repaint: Repaint::Now,
-                invalidate_gui: true
+                invalidate_gui: true,
+                close: None,
             },
             effects
         );
@@ -736,6 +795,62 @@ mod tests {
             std::fs::read_to_string(dir.join(".uml-viewer/to-agent.edn")).unwrap()
         );
         assert_eq!(vec![1, 2], calls.borrow().woken);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn chrome() -> Chrome {
+        Chrome {
+            window_w: Some(1100.0),
+            window_h: Some(700.0),
+            inspector_w: Some(340.0),
+        }
+    }
+
+    #[test]
+    fn the_restart_exit_keeps_the_companion_and_saves_the_snapshot_only_once_it_settled() {
+        let dir = project("restart exit");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, calls) = open(&dir, false);
+        let start = Instant::now();
+        assert_eq!(
+            Effects::default(),
+            session.process(Event::RestartExit(chrome()), at(start, 0)),
+            "without :quit-for-restart the checkpoint does nothing"
+        );
+        assert!(calls.borrow().stops.is_empty());
+        calls.borrow_mut().unsettled = true;
+        write_inbox(&dir, "{:next-id 2 :queue [{:id 1 :op :quit-for-restart}]}");
+        session.process(Event::MailDue, at(start, 0));
+        let saved = dir.join(".uml-viewer/session.edn");
+        for ms in [0, 250, 500] {
+            let effects = session.process(Event::RestartExit(chrome()), at(start, ms));
+            assert_eq!(
+                Effects {
+                    repaint: Repaint::After(POLL_INTERVAL),
+                    ..Effects::default()
+                },
+                effects,
+                "a stopping helper is polled on the cadence at {ms} ms"
+            );
+            assert!(!saved.exists(), "no snapshot before the helper settled");
+        }
+        assert_eq!(
+            vec![true],
+            calls.borrow().stops,
+            "one stop, keeping the companion"
+        );
+        assert!(calls.borrow().polls >= 3, "the stopping helper is polled");
+        calls.borrow_mut().unsettled = false;
+        let effects = session.process(Event::RestartExit(chrome()), at(start, 750));
+        assert_eq!(Some(0), effects.close);
+        let snapshot = edn::parse(&std::fs::read_to_string(&saved).unwrap()).unwrap();
+        assert_eq!(Some(&Value::Integer(1100)), get(&snapshot, "window-w"));
+        assert_eq!(
+            Some(&Value::Integer(340)),
+            get(&snapshot, "inspector-width")
+        );
+        assert_eq!(Some(&Value::Integer(1)), get(&snapshot, "mail-seen"));
+        assert_eq!(vec![true], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -343,8 +343,6 @@ struct Viewer {
     gui_pointer: egui::Pos2,
     /// A batch reached egui this frame and the GUI has not drawn it yet.
     gui_inflight: bool,
-    /// `:quit-for-restart` already asked the helper to stop with `keep`.
-    restart_stop: bool,
     /// A normal quit (window close, SIGTERM, test duration) asked the helper
     /// to stop without keeping it.
     normal_stop: bool,
@@ -503,7 +501,6 @@ impl Viewer {
             gui_batches: Default::default(),
             gui_pointer: egui::Pos2::ZERO,
             gui_inflight: false,
-            restart_stop: false,
             normal_stop: false,
             stop_deadline: None,
             waker: None,
@@ -820,6 +817,24 @@ impl Viewer {
         match effects.repaint {
             Repaint::None => {}
             Repaint::Now => ctx.request_repaint(),
+            Repaint::After(delay) => ctx.request_repaint_after(delay),
+        }
+        // The first close wins: a failed driver's exit code stays.
+        if let Some(code) = effects.close
+            && !self.quit
+        {
+            self.exit.store(code, Ordering::SeqCst);
+            self.quit = true;
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    /// The window chrome a session snapshot saves.
+    fn chrome(&self) -> session::Chrome {
+        session::Chrome {
+            window_w: Some(self.window_w),
+            window_h: Some(self.window_h),
+            inspector_w: Some(self.gui.inspector_width()),
         }
     }
 
@@ -977,36 +992,6 @@ impl Viewer {
             // Poll the helper's events while it stops.
             ctx.request_repaint_after(POLL_INTERVAL);
         }
-    }
-
-    /// `:quit-for-restart`: stop the helper with `keep` (a failed helper needs
-    /// no stop and must not strand the restart), save the session, exit 0.
-    fn quit_for_restart(&mut self, ctx: &egui::Context) {
-        if !self.restart_stop {
-            if let Err(error) = self.session.stop_companion(true) {
-                eprintln!("uml viewer: could not stop the companion: {error}");
-            }
-            self.restart_stop = true;
-        }
-        // Poll until the helper settled, so the replacement viewer binds
-        // the companion that is actually there.
-        self.session.poll_companion();
-        if !self.session.companion_settled() {
-            ctx.request_repaint_after(POLL_INTERVAL);
-            return;
-        }
-        let chrome = session::Chrome {
-            window_w: Some(self.window_w),
-            window_h: Some(self.window_h),
-            inspector_w: Some(self.gui.inspector_width()),
-        };
-        let snapshot = session::snapshot(self.session.state(), &chrome);
-        if let Err(error) = session::save(&self.project_root, &snapshot) {
-            eprintln!("uml viewer: could not save the session: {error}");
-        }
-        self.exit.store(0, Ordering::SeqCst);
-        self.quit = true;
-        ctx.send_viewport_cmd(ViewportCommand::Close);
     }
 
     fn request_screenshot(&self, ctx: &egui::Context, name: &str) {
@@ -1427,9 +1412,11 @@ impl eframe::App for Viewer {
         }
         // A restart request saves the session and exits; a stopped helper
         // keeps being polled so the replacement viewer never binds a ghost.
-        if self.session.state().quit_for_restart || self.restart_stop {
-            self.quit_for_restart(ctx);
-        }
+        let chrome = self.chrome();
+        let effects = self
+            .session
+            .process(Event::RestartExit(chrome), Now::read());
+        self.carry_out(effects, ctx);
         if self.session.state().fit_pending {
             let dims = self.dims(ctx);
             *self.session.state_mut() = events::settle(self.session.state(), &dims);
@@ -1826,12 +1813,7 @@ impl driver::Host for Viewer {
     }
 
     fn session_record(&self) -> Value {
-        let chrome = session::Chrome {
-            window_w: Some(self.window_w),
-            window_h: Some(self.window_h),
-            inspector_w: Some(self.gui.inspector_width()),
-        };
-        session::snapshot(self.session.state(), &chrome)
+        session::snapshot(self.session.state(), &self.chrome())
     }
 
     fn display_record(&self) -> Value {
