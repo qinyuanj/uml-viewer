@@ -3,7 +3,7 @@
 //! a new document, and the screen area that captures canvas input.
 
 use edn::Value;
-use scene::geom::Rect;
+use scene::Rect;
 use viewer::search_box::SearchBox;
 
 fn doc() -> Value {

@@ -4,8 +4,8 @@
 
 use edn::record::get;
 use edn::{Value, parse};
+use scene::Snapshot;
 use scene::document::{self, Boundary, MemoryBoundary, ViewState};
-use scene::overlay::Snapshot;
 
 fn kw(s: &str) -> Value {
     Value::keyword(s)

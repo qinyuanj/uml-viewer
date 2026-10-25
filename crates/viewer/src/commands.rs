@@ -8,8 +8,8 @@ use edn::Value;
 use edn::record::{flag, get, local_name, seq};
 use egui::Color32;
 use scene::document::ViewState;
-use scene::geom::{self, Rect};
 use scene::highlight::Highlight;
+use scene::{Rect, vec2};
 
 use crate::strings;
 use crate::theme::{self, Rgb, fonts};
@@ -743,7 +743,7 @@ fn edge_style(violating: bool, hot: bool, warm: bool) -> (Rgb, f32) {
 }
 
 fn points_of(v: Option<&Value>) -> Vec<[f64; 2]> {
-    seq(v).iter().filter_map(geom::vec2).collect()
+    seq(v).iter().filter_map(vec2).collect()
 }
 
 /// The edge strokes, arrowheads and collapsed dependency indicators.
@@ -793,8 +793,8 @@ pub fn edge_commands(
         }
         if let (Some(head), Some(tip), Some(behind)) = (
             get(e, "head"),
-            geom::vec2(get(e, "tip").unwrap_or(&Value::Nil)),
-            geom::vec2(get(e, "behind").unwrap_or(&Value::Nil)),
+            vec2(get(e, "tip").unwrap_or(&Value::Nil)),
+            vec2(get(e, "behind").unwrap_or(&Value::Nil)),
         ) {
             out.push(EdgeCommand::Head {
                 from,

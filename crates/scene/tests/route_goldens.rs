@@ -40,8 +40,8 @@ mod common;
 use common::{assert_close, assert_golden_tolerance, items, read_edn};
 use edn::record::get;
 use edn::{Value, parse};
+use scene::Rect;
 use scene::events::{self, Dims};
-use scene::geom;
 use std::path::PathBuf;
 
 const SCENARIOS: [&str; 8] = [
@@ -104,7 +104,7 @@ fn curves(scenario: &str, scene: &Value) -> Vec<Value> {
             .iter()
             .find(|c| get(c, "id") == id)
             .and_then(|c| get(c, "rect"))
-            .and_then(geom::Rect::from_value)
+            .and_then(Rect::from_value)
     };
     edges
         .iter()
@@ -190,7 +190,7 @@ fn edge(scene: &Value, from: &str, to: &str) -> Value {
         .unwrap_or_else(|| panic!("edge {from} -> {to}"))
 }
 
-fn rect(scene: &Value, id: &str) -> geom::Rect {
+fn rect(scene: &Value, id: &str) -> Rect {
     items(get(scene, "classes"))
         .into_iter()
         .find(|c| {
@@ -199,7 +199,7 @@ fn rect(scene: &Value, id: &str) -> geom::Rect {
                 .as_deref()
                 == Some(id)
         })
-        .and_then(|c| get(&c, "rect").and_then(geom::Rect::from_value))
+        .and_then(|c| get(&c, "rect").and_then(Rect::from_value))
         .unwrap_or_else(|| panic!("class {id}"))
 }
 

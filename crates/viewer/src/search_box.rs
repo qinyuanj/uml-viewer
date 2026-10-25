@@ -7,7 +7,7 @@
 
 use edn::Value;
 use edn::record::local_name;
-use scene::geom::Rect;
+use scene::Rect;
 use scene::search::{self, Match};
 
 /// The search box as the driver observes it.

@@ -4,7 +4,7 @@
 
 use edn::Value;
 use edn::record::{get, num};
-use scene::overlay::Snapshot;
+use scene::Snapshot;
 use scene::{class_card, class_card_in};
 
 fn kw(s: &str) -> Value {

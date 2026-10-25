@@ -4,8 +4,8 @@
 //! zoom only change the paint transform.
 
 use edn::Value;
+use scene::Rect;
 use scene::document::ViewState;
-use scene::geom::Rect;
 
 use crate::commands::{self, Command, EdgeCommand};
 use crate::lod::{self, Tier};

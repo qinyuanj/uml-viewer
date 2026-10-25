@@ -156,7 +156,7 @@ fn hits_hovers_and_selects_in_world_coordinates_without_touching_the_card() {
     let c = scene::hit::class_by_id(&s.scene, &kw("source"))
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let (x, y) = ((r.x + 5.0 - 10.0) * 2.0, (r.y + 5.0 - 20.0) * 2.0);
     let moved = events::on_move(&s, x, y);
     let pressed = events::on_press(&moved, x, y);
@@ -459,7 +459,7 @@ fn a_drag_starting_on_a_class_does_nothing_but_the_press_selects() {
     let c = scene::hit::class_by_id(&s.scene, &kw("source"))
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let z = events::zoom_of(&s);
     let (x, y) = ((r.x + 5.0 - s.cam_x) * z, (r.y + 5.0 - s.cam_y) * z);
     let a = events::on_left_press(&s, x, y);
@@ -539,7 +539,7 @@ fn locate_enters_the_namespace_selects_opens_the_card_and_centres() {
     let c = scene::hit::class_by_id(&a.scene, a.detail_id.as_ref().unwrap())
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let (x, y) = events::world_xy(&a, 400.0, 300.0);
     assert_eq!(r.cx(), x);
     assert_eq!(r.cy(), y);

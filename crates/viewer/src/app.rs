@@ -11,9 +11,9 @@ use edn::Value;
 use edn::record::{get, local_name};
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
+use scene::Rect;
 use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
-use scene::geom::Rect;
 use scene::hit;
 
 use crate::bench;
