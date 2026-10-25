@@ -152,6 +152,10 @@ fn canonical(path: &Path) -> PathBuf {
 
 /// Something the shell hands the session.
 pub(crate) enum Event {
+    /// The shell's own fallible startup (the bench) succeeded: a launch
+    /// without a companion records its identity now, so a refused startup
+    /// never overwrites an existing one.
+    Started,
     /// A front-end action, with the canvas geometry at the time it was made.
     Action(Action, Dims),
     /// The mail watcher saw a change (or the startup frames).
@@ -283,7 +287,9 @@ pub(crate) struct ViewerSession {
     link_status: Option<String>,
     inbox: Mailbox,
     mail_watch: mail_watch::Watch,
-    /// The identity was recorded once the helper reached ready.
+    /// A `--backend` launch: the identity waits for the helper's ready.
+    backend: bool,
+    /// The identity was recorded (at startup, or once the helper was ready).
     identity_recorded: bool,
     /// When the IR and metrics stamps were last polled; `None` is due.
     last_poll: Option<Instant>,
@@ -312,22 +318,19 @@ impl ViewerSession {
             link: Box::new(NoLink),
             link_status: None,
             mail_watch: mail_watch::Watch::new(),
+            backend: launch.backend,
             identity_recorded: false,
             last_poll: None,
             force_refresh: false,
             restart_stop: false,
             close_deadline: None,
         };
-        let launch_backend = launch.backend;
         session.load_initial(launch.restart, launch.backend, launch.snapshot.as_ref())?;
         session.link = start_link();
         session.link_status = session.link.launch_status();
         session.mail_watch.baseline(&session.project_root);
-        // A refused or invalid startup (an `Err` above) never overwrites an
-        // existing identity. With a companion it is recorded once it is ready.
-        if !launch_backend {
-            session.record_identity();
-        }
+        // The identity waits for `Event::Started` (or, with a companion, its
+        // ready): a refused or invalid startup never overwrites an existing one.
         Ok(session)
     }
 
@@ -348,6 +351,12 @@ impl ViewerSession {
     /// Apply one event at `now`.
     pub(crate) fn process(&mut self, event: Event, now: Now) -> Effects {
         match event {
+            Event::Started => {
+                if !self.backend {
+                    self.record_identity();
+                }
+                Effects::default()
+            }
             Event::Action(action, dims) => self.apply(action, &dims, now),
             Event::MailDue => self.poll_mail(),
             Event::Tick => {
@@ -1368,6 +1377,11 @@ mod tests {
             "no identity before the companion is ready"
         );
         let start = Instant::now();
+        session.process(Event::Started, at(start, 0));
+        assert!(
+            !identity_file(&dir).exists(),
+            "a companion launch waits for ready, not for the shell"
+        );
         session.process(Event::Tick, at(start, 0));
         assert!(session.state().waiting, "hot reload does not end the wait");
         session.process(Event::MailDue, at(start, 0));
@@ -1385,11 +1399,16 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_without_a_companion_records_its_identity_at_open() {
+    fn a_launch_without_a_companion_records_its_identity_only_once_the_shell_started() {
         let dir = project("identity open");
         std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
-        let (session, _) = open(&dir, false);
+        let (mut session, _) = open(&dir, false);
         assert!(!session.state().waiting);
+        assert!(
+            !identity_file(&dir).exists(),
+            "a shell startup that fails after open (the bench) must not overwrite the identity"
+        );
+        session.process(Event::Started, at(Instant::now(), 0));
         let text = std::fs::read_to_string(identity_file(&dir)).unwrap();
         assert!(
             text.starts_with(&format!("{{\"pid\":{},", std::process::id())),

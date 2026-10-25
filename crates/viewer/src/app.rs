@@ -449,6 +449,9 @@ impl Viewer {
             let dims = Dims::default();
             app.canvas(Canvas::HoldCamera, dims);
         }
+        // Only now is the startup sure to succeed: a failed bench start must
+        // not overwrite an existing identity.
+        app.session.process(Event::Started, Now::read());
         Ok(app)
     }
 
