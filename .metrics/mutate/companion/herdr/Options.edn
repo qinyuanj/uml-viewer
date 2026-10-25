@@ -1,1 +1,0 @@
-{:version 1 :tested-at "2026-10-23T20:37:15+08:00" :source "crates/companion/src/herdr.rs" :namespace "companion::herdr::Options" :outcomes {} :forms [{:id "defn/real" :kind "defn" :file "crates/companion/src/herdr.rs" :line 87 :end-line 116 :hash "9cff152ed8c875a0bd01d67430ac66aeb72b321457e8a51a6716f2d80a380d01" :killed 0 :survived 0 :uncovered 4 :sites 4}]}
