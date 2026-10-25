@@ -3,6 +3,8 @@
 //! `companion-preflight <root> [args...]`, `companion-worker <request.edn>`,
 //! `companion-runner <manifest.edn>`, `companion-controller <manifest.edn>`.
 
+use crate::herdr::{Config, ControllerSpec, Herdr, RunnerLauncher};
+use crate::host::Host;
 use crate::record;
 use crate::vocab::{Failure, Result};
 use std::ffi::OsString;
@@ -21,7 +23,7 @@ pub fn runner(args: &[OsString]) -> ExitCode {
     let manifest = text(args, 0);
     let outcome = (|| -> Result<i32> {
         let identity = read_manifest(&manifest)?;
-        let exit = crate::recovery::run_child(&identity, &crate::host::Host::posix())?;
+        let exit = crate::recovery::run_child(&identity, &Host::posix())?;
         Ok(exit.unwrap_or(1))
     })();
     match outcome {
@@ -51,6 +53,7 @@ pub fn controller(args: &[OsString]) -> ExitCode {
     let manifest = text(args, 0);
     let outcome = (|| -> Result<String> {
         let identity = read_manifest(&manifest)?;
+        let host = Host::posix();
         let root = record::get_name(&identity, "cwd").unwrap_or_default();
         let selected = std::cell::RefCell::new(None);
         let launch = |submission: &edn::Value| -> Result<()> {
@@ -64,18 +67,19 @@ pub fn controller(args: &[OsString]) -> ExitCode {
             let executable = std::env::current_exe().map_err(|error| {
                 Failure::new(format!("cannot resolve the uml-viewer binary: {error}"))
             })?;
-            let mut options = crate::herdr::Options::real();
-            options.selected = selected.borrow().clone();
-            options.runner = Some(crate::herdr::RunnerLauncher {
-                argv: vec![
-                    executable.to_string_lossy().into_owned(),
-                    "companion-runner".to_owned(),
-                ],
-            });
-            let mut backend = crate::herdr::Herdr::new(Some(submission.clone()), options);
+            let config = Config::controller_relaunch(
+                selected.borrow().clone(),
+                RunnerLauncher {
+                    argv: vec![
+                        executable.to_string_lossy().into_owned(),
+                        "companion-runner".to_owned(),
+                    ],
+                },
+            );
+            let mut backend = Herdr::new(Some(submission.clone()), host.clone(), config);
             backend.relaunch(submission)
         };
-        crate::recovery::controller_loop(&identity, &crate::host::Host::posix(), &launch)
+        crate::recovery::controller_loop(&identity, &host, &launch)
     })();
     match outcome {
         Ok(_) => ExitCode::SUCCESS,
@@ -89,7 +93,7 @@ pub fn controller(args: &[OsString]) -> ExitCode {
 /// `companion-worker <request.edn>`: one isolated helper per project.
 pub fn worker(args: &[OsString]) -> ExitCode {
     let request = text(args, 0);
-    let host = crate::host::Host::posix();
+    let host = Host::posix();
     let attach = (host.variable)("UML_COMPANION_NO_ATTACH").as_deref() != Some("1");
     match crate::worker::run(&request, attach, &host) {
         Ok(code) => ExitCode::from(u8::try_from(code.clamp(0, 255)).unwrap_or(1)),
@@ -114,6 +118,7 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
         if root.is_empty() || fake.is_empty() {
             return Err(Failure::new("usage: companion-smoke <root> <fake-cmd>"));
         }
+        let host = Host::posix();
         println!("SMOKE STEP paths");
         let selected =
             crate::preflight::select(&root, &["--backend".to_owned(), "herdr".to_owned()], false)?;
@@ -121,23 +126,28 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
         let executable = std::env::current_exe().map_err(|error| {
             Failure::new(format!("cannot resolve the uml-viewer binary: {error}"))
         })?;
-        let mut options = crate::herdr::Options::real();
-        options.selected = Some(selected);
-        options.runner = Some(crate::herdr::RunnerLauncher {
-            argv: vec![
-                executable.to_string_lossy().into_owned(),
-                "companion-runner".to_owned(),
-            ],
-        });
-        options.recovery = Some(crate::herdr::ControllerSpec {
-            executable: executable.to_string_lossy().into_owned(),
-            argv: vec!["companion-controller".to_owned()],
-        });
+        let config = Config::smoke(
+            selected,
+            RunnerLauncher {
+                argv: vec![
+                    executable.to_string_lossy().into_owned(),
+                    "companion-runner".to_owned(),
+                ],
+            },
+            ControllerSpec {
+                executable: executable.to_string_lossy().into_owned(),
+                argv: vec!["companion-controller".to_owned()],
+            },
+        );
         println!("SMOKE STEP backend");
-        let session = crate::lifecycle::session_name(&root, &crate::recovery::new_token(), None)?;
+        let session = crate::lifecycle::session_name(
+            &root,
+            &(host.token)(),
+            &crate::lifecycle::config_root(&host),
+        )?;
         println!("SMOKE STEP session");
-        let canonical = crate::posix::canonical(&root).unwrap_or_else(|_| root.clone());
-        let mut backend = crate::herdr::Herdr::new(None, options);
+        let canonical = (host.canonical)(&root);
+        let mut backend = Herdr::new(None, host.clone(), config);
         println!("SMOKE STEP create");
         let owned = backend.create(
             &session,
@@ -150,7 +160,7 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
             ],
         )?;
         println!("SMOKE STEP record");
-        let recorded = crate::ownership::read(&root)?
+        let recorded = crate::ownership::read_in(&host, &root)?
             .ok_or_else(|| Failure::new("ownership record missing"))?;
         if record::get_name(&owned, "session").as_deref() != Some(session.as_str()) {
             return Err(Failure::new("session identity changed"));
@@ -159,9 +169,9 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
             return Err(Failure::new("ownership record missing"));
         }
         println!("SMOKE STEP cleanup");
-        let cleaner = crate::herdr::Herdr::new(Some(owned.clone()), backend_options(&root)?);
+        let cleaner = Herdr::new(Some(owned.clone()), host.clone(), backend_config(&root)?);
         cleaner.cleanup(&session)?;
-        crate::ownership::write(&root, &edn::Value::Map(vec![]))?;
+        crate::ownership::write(&host, &root, &edn::Value::Map(vec![]))?;
         Ok(session)
     })();
     match outcome {
@@ -176,12 +186,10 @@ pub fn smoke(args: &[OsString]) -> ExitCode {
     }
 }
 
-fn backend_options(root: &str) -> Result<crate::herdr::Options> {
+fn backend_config(root: &str) -> Result<Config> {
     let selected =
         crate::preflight::select(root, &["--backend".to_owned(), "herdr".to_owned()], false)?;
-    let mut options = crate::herdr::Options::real();
-    options.selected = Some(selected);
-    Ok(options)
+    Ok(Config::backend(selected))
 }
 
 #[cfg(test)]

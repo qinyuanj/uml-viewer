@@ -184,6 +184,10 @@ pub(crate) mod memory {
                 .insert(path.as_ref().to_path_buf(), text.to_owned());
         }
 
+        pub fn get(&self, path: impl AsRef<Path>) -> Option<String> {
+            self.files.borrow().get(path.as_ref()).cloned()
+        }
+
         /// `host` with read, write and remove declared over this store.
         pub fn serve(&self, host: Host) -> Host {
             let read = self.files.clone();

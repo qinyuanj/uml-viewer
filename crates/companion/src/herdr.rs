@@ -3,8 +3,8 @@
 //! this process. Ownership is EDN on disk and EDN maps in memory.
 
 use crate::herdr_domain as domain;
+use crate::host::{Detached, Host};
 use crate::json::Json;
-use crate::posix;
 use crate::record;
 use crate::recovery;
 use crate::text::shell_word;
@@ -40,20 +40,8 @@ pub struct ControllerSpec {
     pub argv: Vec<String>,
 }
 
-/// Injected boundaries. The backend owns every external command; these seams
-/// let a test answer the Herdr protocol and drive the journal without a real
-/// server or filesystem.
-type RunFn = Rc<dyn Fn(&[String], Option<i64>) -> RunOut>;
-type OwnerFn = Rc<dyn Fn(i64) -> Option<Owner>>;
-type ClockFn = Rc<dyn Fn() -> i64>;
-type SleepFn = Rc<dyn Fn(i64)>;
-type CanonicalFn = Rc<dyn Fn(&str) -> String>;
-type CompanionWrite = Rc<dyn Fn(&str, &Value) -> Result<()>>;
-type CompanionRead = Rc<dyn Fn(&str) -> Result<Option<Value>>>;
-/// (executable, argv, cwd, inherited variables to remove).
+/// Server spawn hook: (executable, argv, cwd, inherited variables to remove).
 type ServerSpawn = Rc<dyn Fn(&str, &[String], &str, &[String]) -> Result<Option<Owner>>>;
-/// Names of the variables this process would pass to a child.
-type EnvironmentFn = Rc<dyn Fn() -> Vec<String>>;
 type RunnerStateFn = Rc<dyn Fn(&Value) -> Option<Value>>;
 type StartRecovery = Rc<dyn Fn(&Value, Option<&ControllerSpec>) -> Result<()>>;
 type CancelRecovery = Rc<dyn Fn(&Value) -> Result<()>>;
@@ -63,72 +51,90 @@ type CancelRecovery = Rc<dyn Fn(&Value) -> Result<()>>;
 pub type ProgressFn = Rc<dyn Fn(&str) -> Result<()>>;
 type SelectFn = Rc<dyn Fn() -> Result<Selected>>;
 
+/// What one backend is configured to do, apart from its host: the selected
+/// Herdr, the runner and recovery controller launchers, the measured socket
+/// bound, the progress callback and a deferred selection.
 #[derive(Clone)]
-pub struct Options {
-    pub run: RunFn,
-    pub owner: OwnerFn,
-    pub clock: ClockFn,
-    pub sleep: SleepFn,
-    pub canonical: CanonicalFn,
+pub struct Config {
     /// The selected Herdr for this process; every CLI call uses it.
     pub selected: Option<Selected>,
-    pub write_companion: CompanionWrite,
-    pub read_companion: CompanionRead,
-    pub spawn_server: Option<ServerSpawn>,
     pub runner: Option<RunnerLauncher>,
-    pub runner_state: Option<RunnerStateFn>,
-    pub start_recovery: Option<StartRecovery>,
-    pub cancel_recovery: Option<CancelRecovery>,
     pub recovery: Option<ControllerSpec>,
+    pub max_socket_bytes: usize,
     pub progress: Option<ProgressFn>,
     pub select: Option<SelectFn>,
-    pub max_socket_bytes: usize,
-    pub environment: EnvironmentFn,
 }
 
-impl Options {
-    /// The production host: real POSIX process boundary, ownership file and
-    /// recovery adapter.
-    pub fn real() -> Options {
-        Options {
-            run: Rc::new(|argv, timeout| {
-                let argv: Vec<std::ffi::OsString> =
-                    argv.iter().map(std::ffi::OsString::from).collect();
-                posix::run(&argv, timeout, &[])
-            }),
-            owner: Rc::new(|pid| {
-                if pid < 1 || pid > i32::MAX as i64 {
-                    return None;
-                }
-                posix::identity(pid as i32).ok().flatten()
-            }),
-            clock: Rc::new(posix::monotonic_ms),
-            sleep: Rc::new(posix::sleep),
-            canonical: Rc::new(|path| posix::canonical(path).unwrap_or_else(|_| path.to_owned())),
-            selected: None,
-            write_companion: Rc::new(crate::ownership::write),
-            read_companion: Rc::new(crate::ownership::read),
-            spawn_server: None,
+impl Config {
+    fn plain(selected: Option<Selected>) -> Config {
+        Config {
+            selected,
             runner: None,
-            runner_state: None,
-            start_recovery: None,
-            cancel_recovery: None,
             recovery: None,
+            max_socket_bytes: crate::lifecycle::MAX_SOCKET_BYTES,
             progress: None,
             select: None,
-            max_socket_bytes: 101,
-            environment: Rc::new(|| {
-                std::env::vars_os()
-                    .map(|(name, _)| name.to_string_lossy().into_owned())
-                    .collect()
-            }),
+        }
+    }
+
+    /// The detached controller's relaunch backend: the selected Herdr and the
+    /// runner role only. It carries no recovery controller launcher, exactly
+    /// as before #160; whether that is intended is a separate question.
+    pub fn controller_relaunch(selected: Option<Selected>, runner: RunnerLauncher) -> Config {
+        Config {
+            runner: Some(runner),
+            ..Config::plain(selected)
+        }
+    }
+
+    /// The `companion-smoke` create backend: runner and recovery controller.
+    pub fn smoke(selected: Selected, runner: RunnerLauncher, recovery: ControllerSpec) -> Config {
+        Config {
+            runner: Some(runner),
+            recovery: Some(recovery),
+            ..Config::plain(Some(selected))
+        }
+    }
+
+    /// A cleanup-only backend: the selected Herdr and nothing else.
+    pub fn backend(selected: Selected) -> Config {
+        Config::plain(Some(selected))
+    }
+
+    /// The lifecycle backend (create, restart, shutdown): runner, recovery
+    /// controller and the worker's progress callback.
+    pub fn lifecycle(
+        selected: Selected,
+        progress: Option<ProgressFn>,
+        runner: RunnerLauncher,
+        recovery: ControllerSpec,
+    ) -> Config {
+        Config {
+            runner: Some(runner),
+            recovery: Some(recovery),
+            progress,
+            ..Config::plain(Some(selected))
         }
     }
 }
 
+/// Test hooks over whole backend steps, kept from before #160 (server spawn,
+/// runner state, recovery start and cancel). Production leaves them all
+/// absent; an absent hook runs the real step on the backend's host.
+#[derive(Clone, Default)]
+pub struct Hooks {
+    pub spawn_server: Option<ServerSpawn>,
+    pub runner_state: Option<RunnerStateFn>,
+    pub start_recovery: Option<StartRecovery>,
+    pub cancel_recovery: Option<CancelRecovery>,
+}
+
 pub struct Herdr {
     pub identity: Option<Value>,
-    pub options: Options,
+    /// Every capability, including the one recovery runs on.
+    pub host: Host,
+    pub config: Config,
+    pub hooks: Hooks,
     selected: Option<Selected>,
 }
 
@@ -137,11 +143,13 @@ fn strings(argv: &[&str]) -> Vec<String> {
 }
 
 impl Herdr {
-    pub fn new(identity: Option<Value>, options: Options) -> Herdr {
-        let selected = options.selected.clone();
+    pub fn new(identity: Option<Value>, host: Host, config: Config) -> Herdr {
+        let selected = config.selected.clone();
         Herdr {
             identity,
-            options,
+            host,
+            config,
+            hooks: Hooks::default(),
             selected,
         }
     }
@@ -157,7 +165,7 @@ impl Herdr {
         if let Some(selected) = &self.selected {
             return Ok(selected.clone());
         }
-        if let Some(select) = &self.options.select {
+        if let Some(select) = &self.config.select {
             self.selected = Some(select()?);
             return Ok(self.selected.clone().unwrap());
         }
@@ -169,7 +177,7 @@ impl Herdr {
     }
 
     fn checked(&self, argv: &[String], timeout_ms: Option<i64>) -> Result<RunOut> {
-        let result = (self.options.run)(argv, timeout_ms);
+        let result = (self.host.run)(argv, timeout_ms);
         if result.timeout || result.exit != Some(0) {
             return self.fail(format!(
                 "Companion command failed: {}: {}",
@@ -272,7 +280,7 @@ impl Herdr {
         let pid: i64 = text
             .parse()
             .map_err(|_| Failure::new("Invalid owned process PID"))?;
-        Ok((self.options.owner)(pid))
+        Ok((self.host.owner)(pid))
     }
 
     pub fn owner_matches(&self, pid: &Value, start: &str) -> Result<Owner> {
@@ -290,13 +298,13 @@ impl Herdr {
         probe: &dyn Fn() -> Option<T>,
         message: &str,
     ) -> Result<T> {
-        let deadline = (self.options.clock)() + timeout_ms;
+        let deadline = (self.host.clock)() + timeout_ms;
         loop {
             if let Some(value) = probe() {
                 return Ok(value);
             }
-            if (self.options.clock)() < deadline {
-                (self.options.sleep)(interval_ms);
+            if (self.host.clock)() < deadline {
+                (self.host.sleep)(interval_ms);
             } else {
                 return self.fail(message);
             }
@@ -306,8 +314,8 @@ impl Herdr {
     pub fn launch_server(&self, session: &str, cwd: &str) -> Result<Owner> {
         // Server diagnostics belong beside the project's other lifecycle
         // journals; without them a failed start is an unexplained timeout.
-        let remove = domain::inherited_pane_env(&(self.options.environment)());
-        let owner = match &self.options.spawn_server {
+        let remove = domain::inherited_pane_env(&(self.host.variables)());
+        let owner = match &self.hooks.spawn_server {
             Some(spawn) => spawn(
                 &self.herdr(),
                 &strings(&["--session", session, "server"]),
@@ -315,19 +323,19 @@ impl Herdr {
                 &remove,
             )?,
             None => {
-                let log = Path::new(cwd).join(".uml-viewer/herdr-server.log");
-                let argv: Vec<std::ffi::OsString> = strings(&["--session", session, "server"])
-                    .iter()
-                    .map(std::ffi::OsString::from)
-                    .collect();
-                Some(posix::spawn_detached(
-                    std::ffi::OsStr::new(&self.herdr()),
-                    &argv,
-                    Path::new(cwd),
-                    Some(&log),
-                    Some(Path::new(&format!("{}.err", log.display()))),
-                    &remove.iter().map(String::as_str).collect::<Vec<_>>(),
-                )?)
+                let log = Path::new(cwd)
+                    .join(".uml-viewer/herdr-server.log")
+                    .to_string_lossy()
+                    .into_owned();
+                let err = format!("{log}.err");
+                (self.host.spawn_detached)(&Detached {
+                    executable: &self.herdr(),
+                    argv: &strings(&["--session", session, "server"]),
+                    cwd,
+                    stdout: Some(&log),
+                    stderr: Some(&err),
+                    remove: &remove,
+                })?
             }
         };
         owner.ok_or_else(|| Failure::new("Detached Herdr server exited"))
@@ -360,7 +368,7 @@ impl Herdr {
             &status,
             &snapshot,
             process_info,
-            &*self.options.canonical,
+            &*self.host.canonical,
         )?;
         let shell_pid = edn::record::get(expected, "shell-pid")
             .cloned()
@@ -373,11 +381,11 @@ impl Herdr {
     /// The runner's state file, parsed as EDN (or JSON for older records);
     /// only the current generation token counts.
     pub fn runner_state(&self, record: &Value) -> Option<Value> {
-        if let Some(injected) = &self.options.runner_state {
+        if let Some(injected) = &self.hooks.runner_state {
             return injected(record);
         }
         let path = record::get_name(record, "runner-state")?;
-        let text = std::fs::read_to_string(path).ok()?;
+        let text = (self.host.read)(Path::new(&path)).ok().flatten()?;
         let value = edn::parse(&text)
             .ok()
             .or_else(|| crate::json::decode(&text).ok().map(json_to_edn))?;
@@ -399,15 +407,16 @@ impl Herdr {
         }
         let mut resolved = first.clone();
         if !first.contains('/') {
-            for directory in std::env::var("PATH").unwrap_or_default().split(':') {
+            let path = (self.host.variable)("PATH").unwrap_or_default();
+            for directory in path.split(':') {
                 let candidate = format!("{directory}/{first}");
-                if std::fs::File::open(&candidate).is_ok() {
+                if (self.host.openable)(Path::new(&candidate)) {
                     resolved = candidate;
                     break;
                 }
             }
         }
-        if std::fs::File::open(&resolved).is_err() {
+        if !(self.host.openable)(Path::new(&resolved)) {
             return self.fail(format!("Companion executable not found on PATH: {first}"));
         }
         Ok(resolved)
@@ -436,9 +445,9 @@ impl Herdr {
                     .collect(),
             ),
         );
-        recovery::write_state(Path::new(&manifest), &copy, &crate::host::Host::posix())?;
+        recovery::write_state(Path::new(&manifest), &copy, &self.host)?;
         let runner = self
-            .options
+            .config
             .runner
             .as_ref()
             .ok_or_else(|| Failure::new("Herdr runner launcher is not configured"))?;
@@ -459,15 +468,15 @@ impl Herdr {
             pane.to_owned(),
             text.to_owned(),
         ];
-        let deadline = (self.options.clock)() + 10000;
+        let deadline = (self.host.clock)() + 10000;
         loop {
-            let result = (self.options.run)(&argv, None);
+            let result = (self.host.run)(&argv, None);
             if result.exit == Some(0) && !result.timeout {
                 return Ok(());
             }
             let output = format!("{}{}", result.out, result.err);
-            if (self.options.clock)() < deadline && output.contains("canonical mode") {
-                (self.options.sleep)(100);
+            if (self.host.clock)() < deadline && output.contains("canonical mode") {
+                (self.host.sleep)(100);
             } else {
                 return self.fail("Herdr pane run failed");
             }
@@ -487,7 +496,7 @@ impl Herdr {
             &pane,
             &format!("printf %s {}", shell_word(RESET_SEQUENCE)),
         )?;
-        (self.options.sleep)(250);
+        (self.host.sleep)(250);
         self.checked(
             &[
                 self.herdr(),
@@ -500,7 +509,7 @@ impl Herdr {
             ],
             None,
         )?;
-        (self.options.sleep)(150);
+        (self.host.sleep)(150);
         Ok(())
     }
 
@@ -533,10 +542,10 @@ impl Herdr {
     }
 
     fn cancel_recovery(&self, record: &Value) -> Result<()> {
-        if let Some(cancel) = &self.options.cancel_recovery {
+        if let Some(cancel) = &self.hooks.cancel_recovery {
             return cancel(record);
         }
-        recovery::cancel(record, &crate::host::Host::posix())
+        recovery::cancel(record, &self.host)
     }
 
     /// Herdr derives its API socket from XDG_CONFIG_HOME and the session
@@ -544,15 +553,15 @@ impl Herdr {
     /// the failure surfaces only later as a closed-channel error on workspace
     /// create, so refuse up front with the actual cause.
     pub fn socket_check(&self, session: &str) -> Result<()> {
-        let root = std::env::var("XDG_CONFIG_HOME")
-            .ok()
+        let variable = &self.host.variable;
+        let root = variable("XDG_CONFIG_HOME")
             .filter(|root| !root.is_empty())
-            .unwrap_or_else(|| format!("{}/.config", std::env::var("HOME").unwrap_or_default()));
+            .unwrap_or_else(|| format!("{}/.config", variable("HOME").unwrap_or_default()));
         let path = format!(
             "{}/herdr/sessions/{session}/herdr.sock",
             root.trim_end_matches('/')
         );
-        let limit = self.options.max_socket_bytes;
+        let limit = self.config.max_socket_bytes;
         if path.len() > limit {
             return self.fail(format!(
                 "Herdr socket path exceeds the Unix socket limit ({} > {limit}): {path}; set a shorter XDG_CONFIG_HOME or project path",
@@ -580,7 +589,7 @@ impl Herdr {
             15000,
             100,
             &|| {
-                let result = (self.options.run)(&argv, None);
+                let result = (self.host.run)(&argv, None);
                 (result.exit == Some(0) && !result.timeout && !result.out.trim().is_empty())
                     .then_some(())
             },
@@ -620,10 +629,10 @@ impl Herdr {
                 return self.fail("Herdr named session already exists");
             }
         }
-        let canonical_cwd = (self.options.canonical)(cwd);
+        let canonical_cwd = (self.host.canonical)(cwd);
         let mut base =
             domain::ownership_base(self.identity.as_ref(), session, &canonical_cwd, &command);
-        (self.options.write_companion)(&canonical_cwd, &base)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         self.progress("server")?;
         let owner = self.launch_server(session, &canonical_cwd)?;
         edn::record::put(
@@ -636,7 +645,7 @@ impl Herdr {
             "server-start",
             Value::String(owner.start.clone()),
         );
-        (self.options.write_companion)(&canonical_cwd, &base)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         let status = self.poll(
             5000,
             50,
@@ -658,7 +667,7 @@ impl Herdr {
                     .to_owned(),
             ),
         );
-        (self.options.write_companion)(&canonical_cwd, &base)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         self.progress("workspace")?;
         let created = self.cli_within(
             Some(BOOTSTRAP_MS),
@@ -698,7 +707,7 @@ impl Herdr {
                     .to_owned(),
             ),
         );
-        (self.options.write_companion)(&canonical_cwd, &base)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         let pane_id = record::get_name(&base, "pane").unwrap_or_default();
         let info = self.cli(session, &["pane", "process-info", "--pane", &pane_id])?;
         let process_info = info
@@ -718,7 +727,7 @@ impl Herdr {
         edn::record::put(
             &mut base,
             "runner-token",
-            Value::String(recovery::new_token()),
+            Value::String((self.host.token)()),
         );
         let root = format!("{canonical_cwd}/.uml-viewer/");
         let runner_state = format!("{root}{session}-runner.edn");
@@ -727,7 +736,7 @@ impl Herdr {
             &mut base,
             "supervisor",
             edn::record::record(vec![
-                ("token", Value::String(recovery::new_token())),
+                ("token", Value::String((self.host.token)())),
                 (
                     "manifest",
                     Value::String(format!("{root}recovery-launch.edn")),
@@ -747,7 +756,7 @@ impl Herdr {
                 ),
             ]),
         );
-        (self.options.write_companion)(&canonical_cwd, &base)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         self.observe(&base, session, &pane_id)?;
         self.progress("runner")?;
         self.await_pane_ready(session, &pane_id)?;
@@ -785,38 +794,31 @@ impl Herdr {
         }
         self.observe(&base, session, &pane_id)?;
         let owned = domain::committed(&base);
-        (self.options.write_companion)(&canonical_cwd, &owned)?;
+        crate::ownership::write(&self.host, &canonical_cwd, &owned)?;
         self.progress("recovery")?;
-        let start_recovery = self.options.start_recovery.clone();
+        let start_recovery = self.hooks.start_recovery.clone();
         match start_recovery {
-            Some(start) => start(&owned, self.options.recovery.as_ref())?,
+            Some(start) => start(&owned, self.config.recovery.as_ref())?,
             None => {
-                recovery::start(
-                    &owned,
-                    &crate::host::Host::posix(),
-                    &|identity, manifest| {
-                        let controller = self.options.recovery.as_ref().ok_or_else(|| {
-                            Failure::new("A detached controller launcher is required")
-                        })?;
-                        let mut argv: Vec<std::ffi::OsString> = controller
-                            .argv
-                            .iter()
-                            .map(std::ffi::OsString::from)
-                            .collect();
-                        argv.push(std::ffi::OsString::from(manifest));
-                        let log = crate::recovery_domain::state_file(identity)
-                            .replace("recovery.edn", "recovery.log");
-                        posix::spawn_detached(
-                            std::ffi::OsStr::new(&controller.executable),
-                            &argv,
-                            Path::new(&canonical_cwd),
-                            Some(Path::new(&log)),
-                            Some(Path::new(&format!("{log}.err"))),
-                            &[],
-                        )?;
-                        Ok(())
-                    },
-                )?;
+                recovery::start(&owned, &self.host, &|identity, manifest| {
+                    let controller = self.config.recovery.as_ref().ok_or_else(|| {
+                        Failure::new("A detached controller launcher is required")
+                    })?;
+                    let mut argv = controller.argv.clone();
+                    argv.push(manifest.to_owned());
+                    let log = crate::recovery_domain::state_file(identity)
+                        .replace("recovery.edn", "recovery.log");
+                    let err = format!("{log}.err");
+                    (self.host.spawn_detached)(&Detached {
+                        executable: &controller.executable,
+                        argv: &argv,
+                        cwd: &canonical_cwd,
+                        stdout: Some(&log),
+                        stderr: Some(&err),
+                        remove: &[],
+                    })?;
+                    Ok(())
+                })?;
             }
         }
         self.progress("committed")?;
@@ -929,7 +931,7 @@ impl Herdr {
         self.observe(&identity, session, &pane)?;
         if edn::record::get(&identity, "supervisor").is_some() {
             if enabled {
-                recovery::verify(&identity, &crate::host::Host::posix())?;
+                recovery::verify(&identity, &self.host)?;
                 return Ok(true);
             }
             self.cancel_recovery(&identity)?;
@@ -958,7 +960,7 @@ impl Herdr {
             self.cancel_recovery(&record)?;
         }
         let cwd = record::get_name(&record, "cwd").unwrap_or_default();
-        let saved = (self.options.read_companion)(&cwd)?;
+        let saved = crate::ownership::read_in(&self.host, &cwd)?;
         if let Some(saved) = &saved
             && !record::is_empty_map(saved)
             && domain::ownership_changed(&record, saved)
@@ -968,7 +970,7 @@ impl Herdr {
         let checkpoint = |record: &Value, phase: &str| -> Result<()> {
             let mut value = record.clone();
             edn::record::put(&mut value, "cleanup-phase", Value::keyword(phase));
-            (self.options.write_companion)(&cwd, &value)
+            crate::ownership::write(&self.host, &cwd, &value)
         };
         let mut phase = saved
             .as_ref()
@@ -1133,7 +1135,7 @@ impl Herdr {
     }
 
     fn progress(&self, stage: &str) -> Result<()> {
-        match &self.options.progress {
+        match &self.config.progress {
             Some(progress) => progress(stage),
             None => Ok(()),
         }

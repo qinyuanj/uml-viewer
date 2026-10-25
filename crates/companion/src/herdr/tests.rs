@@ -2,6 +2,7 @@
 //! protocol exactly and every call selects the recorded session.
 
 use super::*;
+use crate::host::memory::Files;
 use crate::json::Json;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -299,27 +300,67 @@ fn fake_owner(state: Shared) -> impl Fn(i64) -> Option<Owner> {
     }
 }
 
+fn selected() -> Selected {
+    Selected {
+        path: "herdr".to_owned(),
+        release: "0.9.3".to_owned(),
+    }
+}
+
+fn config() -> Config {
+    Config::plain(Some(selected()))
+}
+
+/// The fixture host over the fake CLI and process table: a fixed clock, no
+/// sleeping, literal canonical paths and an in-memory file store. Every other
+/// capability stays undeclared, so a test that reaches one fails by name.
+fn fixture_host(
+    run: impl Fn(&[String], Option<i64>) -> RunOut + 'static,
+    owner: impl Fn(i64) -> Option<Owner> + 'static,
+    files: &Files,
+) -> Host {
+    files.serve(Host {
+        run: Rc::new(run),
+        owner: Rc::new(owner),
+        clock: Rc::new(|| 0),
+        sleep: Rc::new(|_| {}),
+        canonical: Rc::new(|path| path.to_owned()),
+        ..Host::fake()
+    })
+}
+
 fn backend(
     run: impl Fn(&[String], Option<i64>) -> RunOut + 'static,
     owner: impl Fn(i64) -> Option<Owner> + 'static,
 ) -> Herdr {
     Herdr::new(
         Some(owned()),
-        Options {
-            run: Rc::new(run),
-            owner: Rc::new(owner),
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.to_owned()),
-            selected: Some(Selected {
-                path: "herdr".to_owned(),
-                release: "0.9.3".to_owned(),
-            }),
-            write_companion: Rc::new(|_, _| Ok(())),
-            read_companion: Rc::new(|_| Ok(None)),
-            ..Options::real()
-        },
+        fixture_host(run, owner, &Files::new()),
+        config(),
     )
+}
+
+/// The fixture project and the companion executable inside it. Neither
+/// exists on disk: the host answers for them.
+const ROOT: &str = "/opt/fixture/project";
+const EXECUTABLE: &str = "/opt/fixture/claude 中文";
+
+/// Declare what `create` reads before the CLI: a `$HOME/.config` root, a
+/// PATH, an openable `executable`, the inherited variable names and fresh
+/// generation tokens.
+fn creatable(backend: &mut Herdr, executable: &'static str) {
+    backend.host.variable = Rc::new(|name| match name {
+        "HOME" => Some("/home/person".to_owned()),
+        "PATH" => Some("/usr/local/bin:/usr/bin".to_owned()),
+        _ => None,
+    });
+    backend.host.openable = Rc::new(move |path| path == Path::new(executable));
+    backend.host.variables = Rc::new(|| strings(&["PATH", "HOME"]));
+    let serial = Rc::new(std::cell::Cell::new(0));
+    backend.host.token = Rc::new(move || {
+        serial.set(serial.get() + 1);
+        format!("token-{}", serial.get())
+    });
 }
 
 fn ops(calls: &Calls) -> Vec<String> {
@@ -510,31 +551,26 @@ fn wake_rejects_preexisting_acknowledgements_and_missing_tokens() {
 
 #[test]
 fn stale_or_malformed_runner_state_is_ignored() {
-    let directory = std::env::temp_dir().join(format!(
-        "uml herdr test {} {}",
-        std::process::id(),
-        posix::monotonic_ms()
-    ));
-    std::fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("runner.edn");
-    std::fs::write(&path, r#"{"token":"stale","phase":"started"}"#).unwrap();
+    let path = "/opt/fixture/project/.uml-viewer/runner.edn";
+    let files = Files::new();
+    files.put(path, r#"{"token":"stale","phase":"started"}"#);
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
-    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+    let backend = Herdr::new(
+        Some(owned()),
+        fixture_host(fake_cli(calls, state.clone()), fake_owner(state), &files),
+        config(),
+    );
     let record = edn::record::record(vec![
-        (
-            "runner-state",
-            Value::String(path.to_string_lossy().into_owned()),
-        ),
+        ("runner-state", Value::String(path.to_owned())),
         ("runner-token", Value::String("current".to_owned())),
     ]);
     assert!(backend.runner_state(&record).is_none());
-    std::fs::write(&path, "broken JSON").unwrap();
+    files.put(path, "broken JSON");
     assert!(backend.runner_state(&record).is_none());
-    std::fs::write(&path, r#"{"token":"current","phase":"exited","exit":37}"#).unwrap();
+    files.put(path, r#"{"token":"current","phase":"exited","exit":37}"#);
     let value = backend.runner_state(&record).unwrap();
     assert_eq!(Some(37), record::get_i64(&value, "exit"));
-    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]
@@ -561,13 +597,14 @@ fn socket_paths_over_the_measured_limit_are_refused_before_any_command() {
     };
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let mut backend = backend(run, fake_owner(state));
+    creatable(&mut backend, EXECUTABLE);
     backend.identity = Some(edn::record::record(vec![(
         "provisional",
         Value::Bool(true),
     )]));
-    backend.options.max_socket_bytes = 1;
+    backend.config.max_socket_bytes = 1;
     let error = backend
-        .create("uml-viewer-fixture", "/tmp", &["claude".to_owned()])
+        .create("uml-viewer-fixture", ROOT, &["claude".to_owned()])
         .unwrap_err();
     assert!(
         error.message.contains("Unix socket limit"),
@@ -596,7 +633,7 @@ fn pane_run_retries_only_canonical_mode_rejections_within_the_deadline() {
         },
         |_| None,
     );
-    first.options.sleep = Rc::new(move |_| *slept.borrow_mut() += 1);
+    first.host.sleep = Rc::new(move |_| *slept.borrow_mut() += 1);
     assert!(first.pane_run("uml-viewer-A", "w1:p1", "text").is_err());
     assert_eq!(1, *attempts.borrow());
     assert_eq!(0, *sleeps.borrow());
@@ -618,7 +655,7 @@ fn pane_run_retries_only_canonical_mode_rejections_within_the_deadline() {
         },
         |_| None,
     );
-    canonical_backend.options.clock = Rc::new(move || {
+    canonical_backend.host.clock = Rc::new(move || {
         let mut ticks = clock_ticks.borrow_mut();
         if ticks.len() > 1 {
             ticks.remove(0)
@@ -645,9 +682,14 @@ fn create_reads_the_recorded_provisional_as_a_lua_truthy_flag() {
             ..FakeState::default()
         }));
         let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+        creatable(&mut backend, "/bin/sh");
+        // A provisional record proceeds to the server; stop there.
+        backend.hooks.spawn_server = Some(Rc::new(|_, _, _, _| {
+            Err(Failure::new("no server in this test"))
+        }));
         backend.identity = Some(edn::parse(&format!("{{:session \"s\" {provisional}}}")).unwrap());
         backend
-            .create("uml-viewer-A", "/tmp", &["/bin/sh".to_owned()])
+            .create("uml-viewer-A", ROOT, &["/bin/sh".to_owned()])
             .err()
             .is_some_and(|e| e.message.contains("existing Herdr ownership"))
     };
@@ -667,6 +709,7 @@ fn create_refuses_a_command_that_is_not_resolvable() {
         ..FakeState::default()
     }));
     let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+    creatable(&mut backend, EXECUTABLE);
     backend.identity = Some(edn::record::record(vec![(
         "provisional",
         Value::Bool(true),
@@ -674,7 +717,7 @@ fn create_refuses_a_command_that_is_not_resolvable() {
     let error = backend
         .create(
             "uml-viewer-A",
-            "/tmp",
+            ROOT,
             &["definitely-not-on-path-106".to_owned()],
         )
         .unwrap_err();
@@ -690,50 +733,48 @@ fn a_command_without_argv_is_refused() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let mut backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+    creatable(&mut backend, EXECUTABLE);
     backend.identity = Some(edn::record::record(vec![(
         "provisional",
         Value::Bool(true),
     )]));
-    assert!(backend.create("uml-viewer-A", "/tmp", &[]).is_err());
+    assert!(backend.create("uml-viewer-A", ROOT, &[]).is_err());
 }
 
+type Checkpoints = Rc<RefCell<Vec<Value>>>;
+
+/// A create backend over the fixture host: every ownership checkpoint is
+/// recorded in order, the server and runner are answered by hooks, and the
+/// runner launcher is configured. `recovered` receives the ownership passed
+/// to the recovery start hook.
 fn create_backend(
     state: Shared,
     calls: Calls,
-    checkpoints: Calls2,
+    files: &Files,
+    checkpoints: Checkpoints,
     recovered: Rc<RefCell<Option<Value>>>,
 ) -> Herdr {
-    let run_state = state.clone();
-    let run_calls = calls.clone();
-    Herdr::new(
+    let mut host = fixture_host(
+        fake_cli(calls, state.clone()),
+        fake_owner(state.clone()),
+        files,
+    );
+    let inner = host.write.clone();
+    host.write = Rc::new(move |path, bytes| {
+        if path.ends_with("companion.edn") {
+            checkpoints
+                .borrow_mut()
+                .push(edn::parse(&String::from_utf8_lossy(bytes)).unwrap());
+        }
+        inner(path, bytes)
+    });
+    let mut backend = Herdr::new(
         Some(edn::record::record(vec![(
             "provisional",
             Value::Bool(true),
         )])),
-        Options {
-            run: Rc::new(move |argv, timeout| {
-                fake_cli(run_calls.clone(), run_state.clone())(argv, timeout)
-            }),
-            owner: Rc::new(fake_owner(state.clone())),
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.to_owned()),
-            selected: Some(Selected {
-                path: "herdr".to_owned(),
-                release: "0.9.3".to_owned(),
-            }),
-            write_companion: Rc::new(move |_, record| {
-                checkpoints.borrow_mut().push(record.clone());
-                Ok(())
-            }),
-            read_companion: Rc::new(|_| Ok(None)),
-            spawn_server: Some(Rc::new(|_, _, _, _| {
-                Ok(Some(Owner {
-                    pid: 41,
-                    start: "server-start".to_owned(),
-                    name: "herdr".to_owned(),
-                }))
-            })),
+        host,
+        Config {
             runner: Some(RunnerLauncher {
                 argv: vec![
                     "love".to_owned(),
@@ -741,60 +782,68 @@ fn create_backend(
                     "companion-runner".to_owned(),
                 ],
             }),
-            runner_state: Some(Rc::new(|record| {
-                Some(edn::record::record(vec![
-                    (
-                        "token",
-                        edn::record::get(record, "runner-token")
-                            .cloned()
-                            .unwrap_or(Value::Nil),
-                    ),
-                    ("phase", Value::keyword("started")),
-                ]))
-            })),
-            start_recovery: Some(Rc::new(move |record, _| {
-                *recovered.borrow_mut() = Some(record.clone());
-                Ok(())
-            })),
-            ..Options::real()
+            ..config()
         },
-    )
+    );
+    creatable(&mut backend, EXECUTABLE);
+    backend.hooks = Hooks {
+        spawn_server: Some(Rc::new(|_, _, _, _| {
+            Ok(Some(Owner {
+                pid: 41,
+                start: "server-start".to_owned(),
+                name: "herdr".to_owned(),
+            }))
+        })),
+        runner_state: Some(Rc::new(|record| {
+            Some(edn::record::record(vec![
+                (
+                    "token",
+                    edn::record::get(record, "runner-token")
+                        .cloned()
+                        .unwrap_or(Value::Nil),
+                ),
+                ("phase", Value::keyword("started")),
+            ]))
+        })),
+        start_recovery: Some(Rc::new(move |record, _| {
+            *recovered.borrow_mut() = Some(record.clone());
+            Ok(())
+        })),
+        cancel_recovery: None,
+    };
+    backend
 }
 
-type Calls2 = Rc<RefCell<Vec<Value>>>;
+fn create_state() -> Shared {
+    Rc::new(RefCell::new(FakeState {
+        empty_sessions: true,
+        cwd: Some(ROOT.to_owned()),
+        ..FakeState::default()
+    }))
+}
 
 /// Full create flow with the fake CLI: provisional checkpoints land before
 /// the runner is submitted, and the committed ownership keeps the original
 /// command argv.
 #[test]
 fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
-    let bin = std::env::temp_dir().join(format!(
-        "uml herdr create {} {}",
-        std::process::id(),
-        posix::monotonic_ms()
-    ));
-    std::fs::create_dir_all(&bin).unwrap();
-    let exe = bin.join("claude 中文");
-    std::fs::write(&exe, "").unwrap();
-    let root = bin.join("project");
-    std::fs::create_dir_all(&root).unwrap();
-    let state: Shared = Rc::new(RefCell::new(FakeState {
-        empty_sessions: true,
-        cwd: Some(root.to_string_lossy().into_owned()),
-        ..FakeState::default()
-    }));
+    let state = create_state();
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
-    let checkpoints: Calls2 = Rc::new(RefCell::new(Vec::new()));
+    let checkpoints: Checkpoints = Rc::new(RefCell::new(Vec::new()));
     let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
-    let mut backend = create_backend(state.clone(), calls, checkpoints.clone(), recovered.clone());
+    let mut backend = create_backend(
+        state.clone(),
+        calls,
+        &Files::new(),
+        checkpoints.clone(),
+        recovered.clone(),
+    );
     let original = vec![
-        exe.to_string_lossy().into_owned(),
+        EXECUTABLE.to_owned(),
         "space $ & ' 中文".to_owned(),
         String::new(),
     ];
-    let identity = backend
-        .create("uml-viewer-A", &root.to_string_lossy(), &original)
-        .unwrap();
+    let identity = backend.create("uml-viewer-A", ROOT, &original).unwrap();
     assert_eq!(
         original,
         record::string_vec(edn::record::seq(edn::record::get(&identity, "command")))
@@ -824,24 +873,11 @@ fn create_persists_provisional_identity_before_run_and_returns_original_argv() {
     assert!(state.borrow().run_text.is_some());
     let recovered = recovered.borrow().clone().expect("recovery registered");
     assert_eq!(None, edn::record::get(&recovered, "provisional"));
-    let _ = std::fs::remove_dir_all(&bin);
 }
 
 #[test]
 fn create_waits_for_a_server_bootstrap_beyond_the_ordinary_bound() {
-    let root = std::env::temp_dir().join(format!(
-        "uml herdr bootstrap {} {}",
-        std::process::id(),
-        posix::monotonic_ms()
-    ));
-    std::fs::create_dir_all(&root).unwrap();
-    let exe = root.join("claude");
-    std::fs::write(&exe, "").unwrap();
-    let state: Shared = Rc::new(RefCell::new(FakeState {
-        empty_sessions: true,
-        cwd: Some(root.to_string_lossy().into_owned()),
-        ..FakeState::default()
-    }));
+    let state = create_state();
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let run_state = state.clone();
     let run_calls = calls.clone();
@@ -859,22 +895,17 @@ fn create_waits_for_a_server_bootstrap_beyond_the_ordinary_bound() {
         }
         fake_cli(run_calls.clone(), run_state.clone())(argv, timeout_ms)
     };
-    let checkpoints: Calls2 = Rc::new(RefCell::new(Vec::new()));
+    let checkpoints: Checkpoints = Rc::new(RefCell::new(Vec::new()));
     let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
-    let mut backend = create_backend(state, calls, checkpoints, recovered);
-    backend.options.run = Rc::new(slow);
+    let mut backend = create_backend(state, calls, &Files::new(), checkpoints, recovered);
+    backend.host.run = Rc::new(slow);
     let identity = backend
-        .create(
-            "uml-viewer-A",
-            &root.to_string_lossy(),
-            &[exe.to_string_lossy().into_owned()],
-        )
+        .create("uml-viewer-A", ROOT, &[EXECUTABLE.to_owned()])
         .unwrap();
     assert_eq!(
         Some("w1:p1".to_owned()),
         record::get_name(&identity, "pane")
     );
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// Launched from inside a Herdr pane, the companion inherits that pane's
@@ -883,24 +914,12 @@ fn create_waits_for_a_server_bootstrap_beyond_the_ordinary_bound() {
 /// The person's own `HERDR_CONFIG_PATH` is not pane context and stays.
 #[test]
 fn create_starts_the_server_without_the_inherited_herdr_pane_context() {
-    let root = std::env::temp_dir().join(format!(
-        "uml herdr env {} {}",
-        std::process::id(),
-        posix::monotonic_ms()
-    ));
-    std::fs::create_dir_all(&root).unwrap();
-    let exe = root.join("claude");
-    std::fs::write(&exe, "").unwrap();
-    let state: Shared = Rc::new(RefCell::new(FakeState {
-        empty_sessions: true,
-        cwd: Some(root.to_string_lossy().into_owned()),
-        ..FakeState::default()
-    }));
+    let state = create_state();
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
-    let checkpoints: Calls2 = Rc::new(RefCell::new(Vec::new()));
+    let checkpoints: Checkpoints = Rc::new(RefCell::new(Vec::new()));
     let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
-    let mut backend = create_backend(state, calls, checkpoints, recovered);
-    backend.options.environment = Rc::new(|| {
+    let mut backend = create_backend(state, calls, &Files::new(), checkpoints, recovered);
+    backend.host.variables = Rc::new(|| {
         strings(&[
             "PATH",
             "HERDR_STARTUP_CWD",
@@ -912,7 +931,7 @@ fn create_starts_the_server_without_the_inherited_herdr_pane_context() {
     });
     let removed: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
     let seen = removed.clone();
-    backend.options.spawn_server = Some(Rc::new(move |_, _, _, remove| {
+    backend.hooks.spawn_server = Some(Rc::new(move |_, _, _, remove| {
         *seen.borrow_mut() = Some(remove.to_vec());
         Ok(Some(Owner {
             pid: 41,
@@ -921,11 +940,7 @@ fn create_starts_the_server_without_the_inherited_herdr_pane_context() {
         }))
     }));
     backend
-        .create(
-            "uml-viewer-A",
-            &root.to_string_lossy(),
-            &[exe.to_string_lossy().into_owned()],
-        )
+        .create("uml-viewer-A", ROOT, &[EXECUTABLE.to_owned()])
         .unwrap();
     assert_eq!(
         Some(strings(&[
@@ -935,7 +950,115 @@ fn create_starts_the_server_without_the_inherited_herdr_pane_context() {
         ])),
         removed.borrow().clone()
     );
-    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// The recovery controller fixture: pid 77, started at `ctl`.
+fn controller_owner() -> Owner {
+    Owner {
+        pid: 77,
+        start: "ctl".to_owned(),
+        name: "uml-viewer".to_owned(),
+    }
+}
+
+/// One detached spawn as observed: executable, argv, cwd and stdout log.
+type Spawned = (String, Vec<String>, String, Option<String>);
+
+/// Without a start hook, create registers the durable controller through the
+/// backend's own host: the manifest is journalled first, then the configured
+/// controller is spawned detached beside the recovery log, and create
+/// returns only once that controller's journal verifies.
+#[test]
+fn create_starts_the_durable_recovery_controller_through_its_host() {
+    let state = create_state();
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let files = Files::new();
+    let checkpoints: Checkpoints = Rc::new(RefCell::new(Vec::new()));
+    let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
+    let mut backend = create_backend(state.clone(), calls, &files, checkpoints, recovered);
+    backend.hooks.start_recovery = None;
+    backend.config.recovery = Some(ControllerSpec {
+        executable: "/opt/fixture/uml-viewer".to_owned(),
+        argv: vec!["companion-controller".to_owned()],
+    });
+    let owner_state = state.clone();
+    backend.host.owner = Rc::new(move |pid| {
+        if pid == 77 {
+            return Some(controller_owner());
+        }
+        fake_owner(owner_state.clone())(pid)
+    });
+    // The spawned controller registers its journal from the manifest it was
+    // handed, exactly as `companion-controller` does.
+    let spawned: Rc<RefCell<Vec<Spawned>>> = Rc::new(RefCell::new(Vec::new()));
+    let seen = spawned.clone();
+    let journal_host = backend.host.clone();
+    let journal_files = files.clone();
+    backend.host.spawn_detached = Rc::new(move |request: &Detached| {
+        seen.borrow_mut().push((
+            request.executable.to_owned(),
+            request.argv.to_vec(),
+            request.cwd.to_owned(),
+            request.stdout.map(str::to_owned),
+        ));
+        let manifest = journal_files
+            .get(request.argv.last().unwrap())
+            .expect("manifest journalled before the spawn");
+        let identity = edn::parse(&manifest).unwrap();
+        let controller = edn::record::record(vec![
+            ("pid", Value::Integer(77)),
+            ("start", Value::String("ctl".to_owned())),
+        ]);
+        recovery::register(&identity, &controller, &journal_host)?;
+        Ok(Some(controller_owner()))
+    });
+    let owned = backend
+        .create("uml-viewer-A", ROOT, &[EXECUTABLE.to_owned()])
+        .unwrap();
+    let manifest = format!("{ROOT}/.uml-viewer/recovery-launch.edn");
+    assert_eq!(
+        vec![(
+            "/opt/fixture/uml-viewer".to_owned(),
+            strings(&["companion-controller", &manifest]),
+            ROOT.to_owned(),
+            Some(format!("{ROOT}/.uml-viewer/recovery.log")),
+        )],
+        spawned.borrow().clone()
+    );
+    let journal = edn::parse(
+        &files
+            .get(format!("{ROOT}/.uml-viewer/recovery.edn"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        Some("running".to_owned()),
+        record::get_name(&journal, "phase")
+    );
+    assert_eq!(
+        record::get_name(&owned, "session"),
+        record::get_name(&journal, "session")
+    );
+}
+
+#[test]
+fn create_without_a_controller_launcher_never_spawns_recovery() {
+    let state = create_state();
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let files = Files::new();
+    let checkpoints: Checkpoints = Rc::new(RefCell::new(Vec::new()));
+    let recovered: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
+    let mut backend = create_backend(state, calls, &files, checkpoints, recovered);
+    backend.hooks.start_recovery = None;
+    let error = backend
+        .create("uml-viewer-A", ROOT, &[EXECUTABLE.to_owned()])
+        .unwrap_err();
+    assert_eq!("A detached controller launcher is required", error.message);
+    assert!(
+        files
+            .get(format!("{ROOT}/.uml-viewer/recovery.edn"))
+            .is_none()
+    );
 }
 
 #[test]
@@ -945,47 +1068,32 @@ fn cleanup_resumes_after_workspace_closure_only_under_the_same_server_identity()
         fail: Some(("session".to_owned(), "stop".to_owned())),
         ..FakeState::default()
     }));
-    let checkpoint: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
-    let checkpoint_into = checkpoint.clone();
-    let checkpoint_out = checkpoint.clone();
-    let run_state = state.clone();
-    let run_calls = calls.clone();
+    let files = Files::new();
     let backend = Herdr::new(
         Some(owned()),
-        Options {
-            run: Rc::new(move |argv, timeout| {
-                fake_cli(run_calls.clone(), run_state.clone())(argv, timeout)
-            }),
-            owner: Rc::new(fake_owner(state.clone())),
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.to_owned()),
-            selected: Some(Selected {
-                path: "herdr".to_owned(),
-                release: "0.9.3".to_owned(),
-            }),
-            write_companion: Rc::new(move |_, record| {
-                *checkpoint_into.borrow_mut() = Some(record.clone());
-                Ok(())
-            }),
-            read_companion: Rc::new(move |_| Ok(checkpoint_out.borrow().clone())),
-            ..Options::real()
-        },
+        fixture_host(
+            fake_cli(calls.clone(), state.clone()),
+            fake_owner(state.clone()),
+            &files,
+        ),
+        config(),
     );
     assert!(backend.cleanup("uml-viewer-A").is_err());
+    let cwd = record::get_name(&owned(), "cwd").unwrap();
+    let checkpoint = files
+        .get(crate::ownership::path(&cwd))
+        .map(|text| edn::parse(&text).unwrap());
     assert_eq!(
         Some("server-stopping".to_owned()),
         checkpoint
-            .borrow()
             .as_ref()
             .and_then(|record| record::get_name(record, "cleanup-phase"))
     );
     // The stop failure cleared, the journaled checkpoint resumes the cleanup
     // and the workspace close is not repeated.
     state.borrow_mut().fail = None;
-    let close_count = calls.clone();
     backend.cleanup("uml-viewer-A").unwrap();
-    let closes = ops(&close_count)
+    let closes = ops(&calls)
         .iter()
         .filter(|op| *op == "workspace close")
         .count();
@@ -1006,56 +1114,230 @@ fn cleanup_cancels_recovery_before_destroying_any_resource() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
     let run_state = state.clone();
-    let backend = Herdr::new(
+    let mut backend = Herdr::new(
         Some(record.clone()),
-        Options {
-            run: Rc::new(move |argv, timeout| {
+        fixture_host(
+            move |argv: &[String], timeout: Option<i64>| {
                 order_run.borrow_mut().push(format!(
                     "{} {}",
                     argv[3],
                     argv.get(4).cloned().unwrap_or_default()
                 ));
                 fake_cli(calls.clone(), run_state.clone())(argv, timeout)
-            }),
-            owner: Rc::new(fake_owner(state.clone())),
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.to_owned()),
-            selected: Some(Selected {
-                path: "herdr".to_owned(),
-                release: "0.9.3".to_owned(),
-            }),
-            write_companion: Rc::new(|_, _| Ok(())),
-            read_companion: Rc::new(|_| Ok(None)),
-            cancel_recovery: Some(Rc::new(move |_| {
-                order_cancel.borrow_mut().push("cancel".to_owned());
-                Ok(())
-            })),
-            ..Options::real()
-        },
+            },
+            fake_owner(state.clone()),
+            &Files::new(),
+        ),
+        config(),
     );
+    backend.hooks.cancel_recovery = Some(Rc::new(move |_| {
+        order_cancel.borrow_mut().push("cancel".to_owned());
+        Ok(())
+    }));
     backend.cleanup("uml-viewer-A").unwrap();
     assert_eq!("cancel", order.borrow()[0]);
 
-    let backend = Herdr::new(
+    let mut backend = Herdr::new(
         Some(record),
-        Options {
-            run: Rc::new(|_, _| panic!("must not execute")),
-            owner: Rc::new(|_| None),
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            canonical: Rc::new(|path| path.to_owned()),
-            selected: Some(Selected {
-                path: "herdr".to_owned(),
-                release: "0.9.3".to_owned(),
-            }),
-            write_companion: Rc::new(|_, _| Ok(())),
-            read_companion: Rc::new(|_| Ok(None)),
-            cancel_recovery: Some(Rc::new(|_| Err(Failure::new("cannot confirm release")))),
-            ..Options::real()
-        },
+        fixture_host(
+            |_: &[String], _: Option<i64>| panic!("must not execute"),
+            |_| None,
+            &Files::new(),
+        ),
+        config(),
     );
+    backend.hooks.cancel_recovery = Some(Rc::new(|_| Err(Failure::new("cannot confirm release"))));
     assert!(backend.cleanup("uml-viewer-A").is_err());
+}
+
+/// The durable recovery journal of [`owned`] with a supervisor. Journals live
+/// in the host's file store; only the start/cancel gate is a real lock file,
+/// because the gate is the POSIX `flock` of ADR 0007.
+mod supervised {
+    use super::*;
+    use std::cell::Cell;
+
+    pub(super) struct Supervised {
+        pub record: Value,
+        pub files: Files,
+        gate: std::path::PathBuf,
+    }
+
+    impl Drop for Supervised {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.gate);
+        }
+    }
+
+    pub(super) fn supervised() -> Supervised {
+        static SERIAL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let gate = std::env::temp_dir().join(format!(
+            "uml herdr gate {} {}",
+            std::process::id(),
+            SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&gate).unwrap();
+        let mut record = owned();
+        edn::record::put(
+            &mut record,
+            "supervisor",
+            edn::record::record(vec![
+                ("token", Value::String("controller".to_owned())),
+                (
+                    "manifest",
+                    Value::String("/s/recovery-launch.edn".to_owned()),
+                ),
+                ("state-file", Value::String("/s/recovery.edn".to_owned())),
+                (
+                    "control-file",
+                    Value::String("/s/recovery-control.edn".to_owned()),
+                ),
+                (
+                    "gate-file",
+                    Value::String(
+                        gate.join("recovery-gate.lock")
+                            .to_string_lossy()
+                            .into_owned(),
+                    ),
+                ),
+                (
+                    "lock-file",
+                    Value::String("/s/recovery-controller.lock".to_owned()),
+                ),
+            ]),
+        );
+        Supervised {
+            record,
+            files: Files::new(),
+            gate,
+        }
+    }
+
+    /// A backend over `supervised` whose process table also holds the
+    /// registered controller while `alive`.
+    fn backend_over(
+        supervised: &Supervised,
+        state: Shared,
+        calls: Calls,
+        alive: Rc<Cell<bool>>,
+    ) -> Herdr {
+        let owner_state = state.clone();
+        let host = fixture_host(
+            fake_cli(calls, state),
+            move |pid| {
+                if pid == 77 {
+                    return alive.get().then(controller_owner);
+                }
+                fake_owner(owner_state.clone())(pid)
+            },
+            &supervised.files,
+        );
+        let controller = edn::record::record(vec![
+            ("pid", Value::Integer(77)),
+            ("start", Value::String("ctl".to_owned())),
+        ]);
+        recovery::register(&supervised.record, &controller, &host).unwrap();
+        Herdr::new(Some(supervised.record.clone()), host, config())
+    }
+
+    #[test]
+    fn enabling_recovery_verifies_the_registered_controller_through_the_host() {
+        let supervised = supervised();
+        let state: Shared = Rc::new(RefCell::new(FakeState::default()));
+        let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+        let alive = Rc::new(Cell::new(true));
+        let backend = backend_over(&supervised, state, calls, alive.clone());
+        assert!(backend.recovery("uml-viewer-A", None, true).unwrap());
+        // A vanished controller is never adopted or replaced.
+        alive.set(false);
+        let error = backend.recovery("uml-viewer-A", None, true).unwrap_err();
+        assert_eq!(
+            "Recovery controller disappeared; refusing replacement",
+            error.message
+        );
+    }
+
+    /// Contract §2/§6: the cancel is journalled and acknowledged by the
+    /// controller before the first destructive command.
+    #[test]
+    fn cleanup_cancels_the_durable_controller_before_releasing_resources() {
+        let supervised = supervised();
+        let state: Shared = Rc::new(RefCell::new(FakeState::default()));
+        let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+        let alive = Rc::new(Cell::new(true));
+        let mut backend = backend_over(&supervised, state.clone(), calls.clone(), alive.clone());
+        // The controller acknowledges a journalled cancel: terminal phase,
+        // then exit.
+        let order: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let inner = backend.host.write.clone();
+        let files = supervised.files.clone();
+        let cancelled = order.clone();
+        backend.host.write = Rc::new(move |path, bytes| {
+            inner(path, bytes)?;
+            if path == Path::new("/s/recovery-control.edn") {
+                cancelled.borrow_mut().push("cancel".to_owned());
+                let mut journal = edn::parse(&files.get("/s/recovery.edn").unwrap()).unwrap();
+                edn::record::put(&mut journal, "phase", Value::keyword("cancelled"));
+                inner(
+                    Path::new("/s/recovery.edn"),
+                    edn::encode(&journal).unwrap().as_bytes(),
+                )?;
+                alive.set(false);
+            }
+            Ok(())
+        });
+        let inner_run = backend.host.run.clone();
+        let destroyed = order.clone();
+        backend.host.run = Rc::new(move |argv, timeout| {
+            destroyed.borrow_mut().push(format!(
+                "{} {}",
+                argv[3],
+                argv.get(4).cloned().unwrap_or_default()
+            ));
+            inner_run(argv, timeout)
+        });
+        backend.cleanup("uml-viewer-A").unwrap();
+        let order = order.borrow();
+        let cancel = order.iter().position(|op| op == "cancel").unwrap();
+        let close = order.iter().position(|op| op == "workspace close").unwrap();
+        assert!(cancel < close, "{order:?}");
+        assert!(state.borrow().deleted);
+        let control =
+            edn::parse(&supervised.files.get("/s/recovery-control.edn").unwrap()).unwrap();
+        assert_eq!(
+            Some("controller".to_owned()),
+            record::get_name(&control, "cancel")
+        );
+    }
+
+    #[test]
+    fn an_unacknowledged_cancel_retains_every_resource() {
+        let supervised = supervised();
+        let state: Shared = Rc::new(RefCell::new(FakeState::default()));
+        let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+        let mut backend = backend_over(
+            &supervised,
+            state.clone(),
+            calls.clone(),
+            Rc::new(Cell::new(true)),
+        );
+        let now = Rc::new(Cell::new(0i64));
+        let clock = now.clone();
+        backend.host.clock = Rc::new(move || clock.get());
+        backend.host.sleep = Rc::new(move |ms| now.set(now.get() + ms));
+        let error = backend.cleanup("uml-viewer-A").unwrap_err();
+        assert!(
+            error
+                .message
+                .starts_with("Recovery cancellation was not acknowledged; resources retained"),
+            "{}",
+            error.message
+        );
+        let seen = ops(&calls).join(",");
+        assert!(!seen.contains("workspace close"), "{seen}");
+        assert!(!seen.contains("session stop"), "{seen}");
+        assert!(!state.borrow().deleted);
+    }
 }
 
 /// Relaunch: the reset sequence runs before ctrl+c before the submission, a
@@ -1072,16 +1354,12 @@ mod relaunch {
             "runner-token",
             Value::String("gen-token".to_owned()),
         );
-        let directory = std::env::temp_dir().join(format!(
-            "uml herdr relaunch {} {}",
-            std::process::id(),
-            crate::posix::monotonic_ms()
-        ));
-        std::fs::create_dir_all(&directory).unwrap();
         edn::record::put(
             &mut identity,
             "runner-state",
-            Value::String(directory.join("runner.edn").to_string_lossy().into_owned()),
+            Value::String(
+                "/nonexistent-uml-viewer-fixture/project/.uml-viewer/runner.edn".to_owned(),
+            ),
         );
         identity
     }
@@ -1110,29 +1388,27 @@ mod relaunch {
                 fake_cli(run_calls.clone(), run_state.clone())(argv, timeout)
             })
         });
+        let mut host = fixture_host(
+            move |argv: &[String], timeout: Option<i64>| run(argv, timeout),
+            fake_owner(state.clone()),
+            &Files::new(),
+        );
+        // The recorded `claude` resolves on PATH.
+        host.variable = Rc::new(|name| (name == "PATH").then(|| "/usr/local/bin".to_owned()));
+        host.openable = Rc::new(|path| path == Path::new("/usr/local/bin/claude"));
         let mut backend = Herdr::new(
             Some(identity.clone()),
-            Options {
-                run,
-                owner: Rc::new(fake_owner(state.clone())),
-                clock: Rc::new(|| 0),
-                sleep: Rc::new(|_| {}),
-                canonical: Rc::new(|path| path.to_owned()),
-                selected: Some(Selected {
-                    path: "herdr".to_owned(),
-                    release: "0.9.3".to_owned(),
-                }),
-                write_companion: Rc::new(|_, _| Ok(())),
-                read_companion: Rc::new(|_| Ok(None)),
-                runner: Some(RunnerLauncher {
+            host,
+            Config::controller_relaunch(
+                Some(selected()),
+                RunnerLauncher {
                     argv: vec![
                         "love".to_owned(),
                         "/game".to_owned(),
                         "companion-runner".to_owned(),
                     ],
-                }),
-                ..Options::real()
-            },
+                },
+            ),
         );
         backend.relaunch(&identity)?;
         Ok((calls, identity))

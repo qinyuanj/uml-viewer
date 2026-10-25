@@ -3,8 +3,9 @@
 //! and ownership checks are pure; all process work stays in adapters.
 
 use crate::domain;
-use crate::herdr::{ControllerSpec, Herdr, Options, ProgressFn, RunnerLauncher, Selected};
+use crate::herdr::{Config, ControllerSpec, Herdr, ProgressFn, RunnerLauncher, Selected};
 use crate::herdr_domain;
+use crate::host::Host;
 use crate::ownership;
 use crate::posix;
 use crate::record;
@@ -20,8 +21,8 @@ use edn::Value;
 pub const MAX_SOCKET_BYTES: usize = 101;
 pub const MAX_NAME_BYTES: usize = 64;
 
-pub fn config_root() -> String {
-    config_root_in(&|name| std::env::var(name).ok())
+pub fn config_root(host: &Host) -> String {
+    config_root_in(&*host.variable)
 }
 
 fn config_root_in(var: &dyn Fn(&str) -> Option<String>) -> String {
@@ -33,7 +34,7 @@ fn config_root_in(var: &dyn Fn(&str) -> Option<String>) -> String {
 
 /// `uml-viewer-<project>-<hash8>-<uuid8>`: the project name is the only part
 /// that may shrink, so the socket path stays inside the measured limit.
-pub fn session_name(root: &str, uuid: &str, config_root: Option<&str>) -> Result<String> {
+pub fn session_name(root: &str, uuid: &str, config_root: &str) -> Result<String> {
     let base: String = root
         .trim_end_matches('/')
         .rsplit('/')
@@ -54,11 +55,7 @@ pub fn session_name(root: &str, uuid: &str, config_root: Option<&str>) -> Result
     });
     let uuid_digits: String = uuid.replace('-', "").chars().take(8).collect();
     let fixed = format!("uml-viewer-%s-{hash:08x}-{uuid_digits}");
-    let resolved_config_root = match config_root {
-        Some(root) => root.to_owned(),
-        None => self::config_root(),
-    };
-    let socket_prefix = format!("{resolved_config_root}/herdr/sessions/");
+    let socket_prefix = format!("{config_root}/herdr/sessions/");
     let room =
         (MAX_SOCKET_BYTES.saturating_sub(socket_prefix.len())).saturating_sub("/herdr.sock".len());
     let room = room.min(MAX_NAME_BYTES);
@@ -79,8 +76,8 @@ pub struct Loaded {
 
 /// Load and verify this project's complete Herdr ownership. Missing, legacy,
 /// foreign or incomplete records are refused, never adopted.
-pub fn load(root: &str) -> Result<Option<Value>> {
-    let Some(value) = ownership::read(root)? else {
+pub fn load(root: &str, host: &Host) -> Result<Option<Value>> {
+    let Some(value) = ownership::read_in(host, root)? else {
         return Ok(None);
     };
     if record::is_empty_map(&value) {
@@ -89,8 +86,7 @@ pub fn load(root: &str) -> Result<Option<Value>> {
     domain::recorded_backend(Some(&value))?;
     herdr_domain::complete(&value)?;
     let cwd = record::get_name(&value, "cwd").unwrap_or_default();
-    let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.to_owned());
-    if canonical(&cwd) != canonical(root) {
+    if (host.canonical)(&cwd) != (host.canonical)(root) {
         return Err(Failure::new(
             "Companion ownership is missing, ambiguous or belongs to another project; retained",
         ));
@@ -98,16 +94,15 @@ pub fn load(root: &str) -> Result<Option<Value>> {
     Ok(Some(value))
 }
 
-pub fn required(root: &str) -> Result<Value> {
-    load(root)?.ok_or_else(|| {
+pub fn required(root: &str, host: &Host) -> Result<Value> {
+    load(root, host)?.ok_or_else(|| {
         Failure::new("Companion ownership is missing, ambiguous or unreadable; retained")
     })
 }
 
 /// The companion executable: `CLAUDE_BIN` when set, otherwise the bare name.
-pub fn claude_executable() -> String {
-    std::env::var("CLAUDE_BIN")
-        .ok()
+pub fn claude_executable(host: &Host) -> String {
+    (host.variable)("CLAUDE_BIN")
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "claude".to_owned())
 }
@@ -128,36 +123,35 @@ pub fn select(root: &str, args: &[String]) -> Result<Selected> {
     crate::preflight::select(root, args, false)
 }
 
-/// Options wired for this process: the selected Herdr, the binary's own runner
-/// and controller roles, and the real POSIX boundary.
-fn options(selected: Option<Selected>, progress: Option<ProgressFn>) -> Result<Options> {
-    let mut options = Options::real();
-    options.selected = selected;
-    options.progress = progress;
-    options.runner = Some(RunnerLauncher {
-        argv: role_launcher("companion-runner")?,
-    });
-    options.recovery = Some(ControllerSpec {
-        executable: current_exe()?,
-        argv: vec!["companion-controller".to_owned()],
-    });
-    Ok(options)
+/// The lifecycle backend configuration: the selected Herdr, the binary's own
+/// runner and controller roles, and the worker's progress callback.
+fn config(selected: Selected, progress: Option<ProgressFn>) -> Result<Config> {
+    Ok(Config::lifecycle(
+        selected,
+        progress,
+        RunnerLauncher {
+            argv: role_launcher("companion-runner")?,
+        },
+        ControllerSpec {
+            executable: current_exe()?,
+            argv: vec!["companion-controller".to_owned()],
+        },
+    ))
 }
 
-fn backend(options: Options, identity: Option<Value>) -> Herdr {
-    Herdr::new(identity, options)
-}
-
-pub fn create(root: &str, options_in: CreateOptions) -> Result<(Value, Herdr)> {
-    if load(root)?.is_some() {
+pub fn create(root: &str, host: &Host, options_in: CreateOptions) -> Result<(Value, Herdr)> {
+    if load(root, host)?.is_some() {
         return Err(Failure::new(
             "Companion ownership already recorded; use --restart or resolve it before fresh start",
         ));
     }
     let selected = select(root, &["--backend".to_owned(), "herdr".to_owned()])?;
-    let claude = options_in.claude.clone().unwrap_or_else(claude_executable);
-    let uuid = options_in.uuid.clone().unwrap_or_else(recovery::new_token);
-    let session = session_name(root, &uuid, None)?;
+    let claude = options_in
+        .claude
+        .clone()
+        .unwrap_or_else(|| claude_executable(host));
+    let uuid = options_in.uuid.clone().unwrap_or_else(|| (host.token)());
+    let session = session_name(root, &uuid, &config_root(host))?;
     let command = vec![
         claude.clone(),
         "--dangerously-skip-permissions".to_owned(),
@@ -176,7 +170,7 @@ pub fn create(root: &str, options_in: CreateOptions) -> Result<(Value, Herdr)> {
         domain::STANDING_RULES.to_owned(),
         domain::RECOVERY_PROMPT.to_owned(),
     ];
-    let canonical = posix::canonical(root).unwrap_or_else(|_| root.to_owned());
+    let canonical = (host.canonical)(root);
     let provisional = edn::record::record(vec![
         ("backend", Value::keyword("herdr")),
         ("owner-role", Value::keyword("companion")),
@@ -203,12 +197,13 @@ pub fn create(root: &str, options_in: CreateOptions) -> Result<(Value, Herdr)> {
         ("claude-session", Value::String(uuid)),
         ("provisional", Value::Bool(true)),
     ]);
-    ownership::write(root, &provisional)?;
+    ownership::write(host, root, &provisional)?;
     // The backend builds every later record on this identity, so the committed
     // ownership keeps the --resume recovery command and the Claude session id.
-    let mut backend = backend(
-        options(Some(selected), options_in.progress)?,
+    let mut backend = Herdr::new(
         Some(provisional),
+        host.clone(),
+        config(selected, options_in.progress)?,
     );
     let owned = backend.create(&session, &canonical, &command)?;
     backend.identity = Some(owned.clone());
@@ -225,30 +220,30 @@ pub struct CreateOptions {
     pub progress: Option<ProgressFn>,
 }
 
-pub fn restart(root: &str) -> Result<(Value, Herdr)> {
-    let plain = load(root)?
+pub fn restart(root: &str, host: &Host) -> Result<(Value, Herdr)> {
+    let plain = load(root, host)?
         .ok_or_else(|| Failure::new("Companion ownership is missing; cannot restart"))?;
     let selected = select(root, &["--backend".to_owned(), "herdr".to_owned()])?;
-    let backend = backend(options(Some(selected), None)?, Some(plain.clone()));
+    let backend = Herdr::new(Some(plain.clone()), host.clone(), config(selected, None)?);
     let session = record::get_name(&plain, "session").unwrap_or_default();
     let pane = record::get_name(&plain, "pane").unwrap_or_default();
     backend.probe(&session)?;
     backend.bind(&session, &pane)?;
-    recovery::verify(&plain, &crate::host::Host::posix())?;
+    recovery::verify(&plain, host)?;
     Ok((plain, backend))
 }
 
 /// Cancel recovery first, then release only what this project verifiably
 /// owns; ownership is cleared only after confirmed cleanup.
-pub fn shutdown(root: &str) -> Result<bool> {
-    let Some(plain) = load(root)? else {
+pub fn shutdown(root: &str, host: &Host) -> Result<bool> {
+    let Some(plain) = load(root, host)? else {
         return Ok(false);
     };
     let selected = select(root, &["--backend".to_owned(), "herdr".to_owned()])?;
-    let backend = backend(options(Some(selected), None)?, Some(plain.clone()));
+    let backend = Herdr::new(Some(plain.clone()), host.clone(), config(selected, None)?);
     let session = record::get_name(&plain, "session").unwrap_or_default();
     backend.cleanup(&session)?;
-    ownership::write(root, &Value::Map(vec![]))?;
+    ownership::write(host, root, &Value::Map(vec![]))?;
     Ok(true)
 }
 
@@ -443,6 +438,7 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
 
     #[test]
     fn the_attach_config_hides_the_sidebar_and_keeps_every_other_setting() {
@@ -515,31 +511,33 @@ mod tests {
         assert_eq!("/h/.config/herdr/config.toml", user_config_path(&home));
     }
 
+    /// A typical `$HOME/.config` root; no test reads the process environment.
+    const HOME_CONFIG: &str = "/home/person/.config";
+
     #[test]
     fn names_a_fresh_session_uniquely_per_launch_within_the_grammar() {
-        let name = session_name("/projects/some project", "abcdef12-rest", None).unwrap();
+        let name = session_name("/projects/some project", "abcdef12-rest", HOME_CONFIG).unwrap();
         assert!(name.len() <= 64);
         assert!(herdr_domain::session_valid(&name), "{name}");
         let long = session_name(
             &format!("/projects/{}", "x".repeat(200)),
             "abcdef12-rest",
-            None,
+            HOME_CONFIG,
         )
         .unwrap();
         assert!(long.len() <= 64);
         let stripped: String = long.trim_start_matches("uml-viewer-").to_owned();
         assert!(stripped.ends_with("-abcdef12"), "{long}");
         // Two roots whose names share a prefix must not collide.
-        let a = session_name("/projects/alpha-one", "abcdef12-rest", None).unwrap();
-        let b = session_name("/projects/alpha-two", "abcdef12-rest", None).unwrap();
+        let a = session_name("/projects/alpha-one", "abcdef12-rest", HOME_CONFIG).unwrap();
+        let b = session_name("/projects/alpha-two", "abcdef12-rest", HOME_CONFIG).unwrap();
         assert_ne!(a, b);
     }
 
     #[test]
     fn shrinks_the_name_so_the_socket_path_stays_inside_the_measured_limit() {
         let config_root = "/tmp/uml-restart-xdg-o7gbqk3s/config";
-        let name =
-            session_name("/projects/some project", "abcdef12-rest", Some(config_root)).unwrap();
+        let name = session_name("/projects/some project", "abcdef12-rest", config_root).unwrap();
         let socket = format!("{config_root}/herdr/sessions/{name}/herdr.sock");
         assert!(
             socket.len() <= MAX_SOCKET_BYTES,
@@ -548,7 +546,7 @@ mod tests {
         );
         assert!(herdr_domain::session_valid(&name), "{name}");
         assert!(name.len() <= MAX_NAME_BYTES);
-        let other = session_name("/projects/other", "abcdef12-rest", Some(config_root)).unwrap();
+        let other = session_name("/projects/other", "abcdef12-rest", config_root).unwrap();
         assert_ne!(name, other);
         assert!(other.ends_with("abcdef12"));
     }
@@ -558,7 +556,7 @@ mod tests {
         let error = session_name(
             "/projects/some project",
             "abcdef12-rest",
-            Some(&format!("/tmp/{}", "x".repeat(120))),
+            &format!("/tmp/{}", "x".repeat(120)),
         )
         .unwrap_err();
         assert!(error.message.contains("XDG_CONFIG_HOME"));
@@ -575,7 +573,8 @@ mod tests {
         ));
         std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
         let root = directory.to_string_lossy().into_owned();
-        assert!(load(&root).unwrap().is_none());
+        let host = Host::posix();
+        assert!(load(&root, &host).unwrap().is_none());
         let cases = [
             format!(r#"{{:backend :unknown :cwd "{root}" :session "s" :pane "%1"}}"#),
             format!(r#"{{:cwd "{root}" :session "s" :pane "%1"}}"#),
@@ -586,7 +585,7 @@ mod tests {
         ];
         for text in cases {
             std::fs::write(directory.join(".uml-viewer/companion.edn"), &text).unwrap();
-            assert!(load(&root).is_err(), "{text}");
+            assert!(load(&root, &host).is_err(), "{text}");
             assert_eq!(text, ownership::bytes(&root).unwrap(), "bytes are retained");
         }
         let _ = std::fs::remove_dir_all(&directory);
@@ -594,11 +593,16 @@ mod tests {
 
     #[test]
     fn claude_executable_prefers_claude_bin() {
-        // The environment is process-global; this only asserts the fallback
-        // shape when the variable is absent, which the test host controls.
-        if std::env::var("CLAUDE_BIN").is_err() {
-            assert_eq!("claude", claude_executable());
-        }
+        let with = |value: Option<&'static str>| Host {
+            variable: Rc::new(move |name| {
+                assert_eq!("CLAUDE_BIN", name);
+                value.map(str::to_owned)
+            }),
+            ..Host::fake()
+        };
+        assert_eq!("/opt/claude", claude_executable(&with(Some("/opt/claude"))));
+        assert_eq!("claude", claude_executable(&with(Some(""))));
+        assert_eq!("claude", claude_executable(&with(None)));
     }
 
     #[test]

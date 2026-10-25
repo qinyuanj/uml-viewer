@@ -340,8 +340,8 @@ pub fn run(request_path: &str, attach: bool, host: &Host) -> Result<i32> {
             if stop && !keep {
                 // A completed record may be released only through the
                 // verified cleanup contract; partial records remain.
-                if lifecycle::required(&root).is_ok() {
-                    match lifecycle::shutdown(&root) {
+                if lifecycle::required(&root, host).is_ok() {
+                    match lifecycle::shutdown(&root, host) {
                         Ok(_) => {
                             session.borrow_mut().event(
                                 "stopped",
@@ -384,12 +384,14 @@ fn run_body(
     attach: bool,
     progress: ProgressFn,
 ) -> Result<()> {
+    let host = session.borrow().host.clone();
     session.borrow_mut().event("starting", None)?;
     let (record_value, backend): (Value, Herdr) = if restart {
-        lifecycle::restart(root)?
+        lifecycle::restart(root, &host)?
     } else {
         lifecycle::create(
             root,
+            &host,
             lifecycle::CreateOptions {
                 progress: Some(progress),
                 ..lifecycle::CreateOptions::default()
@@ -454,7 +456,7 @@ fn run_body(
     session.borrow_mut().event("stopping", None)?;
     let keep = session.borrow().keep;
     if !keep {
-        lifecycle::shutdown(root)?;
+        lifecycle::shutdown(root, &host)?;
     }
     session.borrow_mut().event("stopped", None)?;
     Ok(())
