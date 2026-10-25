@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use edn::Value;
 
-use crate::graph::{self, Scanner};
+use crate::scan::{self, Scanner, SourceFile};
 use crate::text::{self, at, is_space};
 use crate::value::get_truthy as get;
 use edn::record::{record, seq};
@@ -540,7 +540,7 @@ fn metadata_paths(root: &str) -> Vec<String> {
 
 /// `lib_name(root, by_path)`: the `[lib] name = "..."` of the first present
 /// metadata file.
-fn lib_name(root: &str, by_path: &HashMap<String, &crate::files::SourceFile>) -> Option<Vec<u8>> {
+fn lib_name(root: &str, by_path: &HashMap<String, &SourceFile>) -> Option<Vec<u8>> {
     let mut cargo: Option<&[u8]> = None;
     for path in metadata_paths(root) {
         if let Some(f) = by_path.get(&path) {
@@ -580,7 +580,7 @@ fn lib_name(root: &str, by_path: &HashMap<String, &crate::files::SourceFile>) ->
 
 /// `module_relative(path, root)`.
 fn module_relative(path: &str, root: &str) -> String {
-    let rel = graph::relative_path(path, root);
+    let rel = scan::relative_path(path, root);
     if rel == "lib.rs" || rel == "mod.rs" {
         return String::new();
     }
@@ -590,12 +590,8 @@ fn module_relative(path: &str, root: &str) -> String {
 }
 
 /// `resolve_mod(path, name, by_path)`.
-fn resolve_mod(
-    path: &str,
-    name: &[u8],
-    by_path: &HashMap<String, &crate::files::SourceFile>,
-) -> Option<String> {
-    let base = graph::file_base(path)?;
+fn resolve_mod(path: &str, name: &[u8], by_path: &HashMap<String, &SourceFile>) -> Option<String> {
+    let base = scan::file_base(path)?;
     let mut dir = parent(path)?;
     if base != "lib.rs" && base != "main.rs" && base != "mod.rs" {
         let stem = base.strip_suffix(".rs").unwrap_or(&base);
@@ -620,7 +616,7 @@ impl Scanner for RustScanner {
         &self,
         root: &str,
         opts: &Value,
-        files: &[crate::files::SourceFile],
+        files: &[SourceFile],
         cwd: &str,
     ) -> Result<Value, String> {
         let prefix = match get(opts, "prefix") {
@@ -631,12 +627,12 @@ impl Scanner for RustScanner {
             Some(Value::String(s)) => s.clone(),
             _ => prefix.clone(),
         };
-        let by_path: HashMap<String, &crate::files::SourceFile> =
+        let by_path: HashMap<String, &SourceFile> =
             files.iter().map(|f| (f.path.clone(), f)).collect();
         let mut surfaces: HashMap<String, Value> = HashMap::new();
         let surface = |path: &str,
                        surfaces: &mut HashMap<String, Value>,
-                       by_path: &HashMap<String, &crate::files::SourceFile>| {
+                       by_path: &HashMap<String, &SourceFile>| {
             surfaces
                 .entry(path.to_owned())
                 .or_insert_with(|| read_module(&by_path[path].source))
@@ -675,8 +671,8 @@ impl Scanner for RustScanner {
         let name = lib_name(root, &by_path);
         for path in &reachable {
             let rel = module_relative(path, root);
-            let ns = graph::ns_join(&ns_prefix, &rel);
-            let id = graph::id_of(&ns, Some(&Value::String(prefix.clone())));
+            let ns = scan::ns_join(&ns_prefix, &rel);
+            let id = scan::id_of(&ns, Some(&Value::String(prefix.clone())));
             by_file.insert(path.as_str(), metas.len());
             if !by_rel.iter().any(|(r, _)| *r == rel) {
                 by_rel.push((rel.clone(), id.clone()));
@@ -711,8 +707,8 @@ impl Scanner for RustScanner {
             let relative = &m.1;
             match head.as_slice() {
                 b"crate" => suffix(&tail),
-                b"self" => suffix(&graph::ns_join(relative, &tail)),
-                b"super" => suffix(&graph::ns_join(
+                b"self" => suffix(&scan::ns_join(relative, &tail)),
+                b"super" => suffix(&scan::ns_join(
                     relative.rsplit_once('.').map(|(p, _)| p).unwrap_or(""),
                     &tail,
                 )),
@@ -744,10 +740,10 @@ impl Scanner for RustScanner {
                 ("ns", Value::String(m.2.clone())),
                 (
                     "name",
-                    Value::String(graph::file_base(&m.0).unwrap_or_default()),
+                    Value::String(scan::file_base(&m.0).unwrap_or_default()),
                 ),
                 ("lang", Value::keyword("rust")),
-                ("file", Value::String(graph::relative_path(&m.0, cwd))),
+                ("file", Value::String(scan::relative_path(&m.0, cwd))),
             ]);
             if !ops.is_empty() {
                 edn::record::put(&mut c, "ops", Value::Vector(ops));
@@ -874,7 +870,7 @@ impl Scanner for RustScanner {
         }
         for id in foreigns {
             if !project_ids.contains(&crate::value::encode_key(&id)) {
-                classes.push(graph::foreign_class(&id));
+                classes.push(scan::foreign_class(&id));
             }
         }
         Ok(record(vec![

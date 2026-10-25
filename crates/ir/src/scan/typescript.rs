@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use edn::Value;
 
-use crate::graph::{self, Scanner};
+use crate::scan::{self, Scanner, SourceFile};
 use crate::text::{self, at, is_space, is_ts_ident};
 use crate::value::get_truthy as get;
 use edn::record::{flag, record, seq};
@@ -638,7 +638,7 @@ fn normalize(path: &str) -> String {
 
 /// `module_relative(path, root)`.
 fn module_relative(path: &str, root: &str) -> String {
-    let rel = graph::relative_path(path, root);
+    let rel = scan::relative_path(path, root);
     // `gsub('%.[cm]?[jt]sx?$','')`
     let rel = strip_ts_extension(&rel);
     let rel = if rel == "index" {
@@ -677,7 +677,7 @@ impl Scanner for TypeScriptScanner {
         &self,
         root: &str,
         opts: &Value,
-        files: &[crate::files::SourceFile],
+        files: &[SourceFile],
         cwd: &str,
     ) -> Result<Value, String> {
         let prefix = match get(opts, "prefix") {
@@ -688,14 +688,13 @@ impl Scanner for TypeScriptScanner {
             Some(Value::String(s)) => s.clone(),
             _ => prefix.clone(),
         };
-        let mut sorted: Vec<&crate::files::SourceFile> =
-            files.iter().filter(|f| accepts(&f.path)).collect();
+        let mut sorted: Vec<&SourceFile> = files.iter().filter(|f| accepts(&f.path)).collect();
         sorted.sort_by(|a, b| a.path.cmp(&b.path));
         let mut by_path: HashMap<String, Value> = HashMap::new();
         let mut project: HashSet<String> = HashSet::new();
         for f in &sorted {
-            let cid = graph::id_of(
-                &graph::ns_join(&ns_prefix, &module_relative(&f.path, root)),
+            let cid = scan::id_of(
+                &scan::ns_join(&ns_prefix, &module_relative(&f.path, root)),
                 Some(&Value::String(prefix.clone())),
             );
             by_path.insert(f.path.clone(), cid.clone());
@@ -783,13 +782,13 @@ impl Scanner for TypeScriptScanner {
             }
             let mut c = record(vec![
                 ("id", cid.clone()),
-                ("name", Value::String(graph::module_name(&cid))),
+                ("name", Value::String(scan::module_name(&cid))),
                 (
                     "ns",
-                    Value::String(graph::ns_join(&ns_prefix, &module_relative(&f.path, root))),
+                    Value::String(scan::ns_join(&ns_prefix, &module_relative(&f.path, root))),
                 ),
                 ("lang", Value::keyword("typescript")),
-                ("file", Value::String(graph::relative_path(&f.path, cwd))),
+                ("file", Value::String(scan::relative_path(&f.path, cwd))),
             ]);
             if !ops.is_empty() {
                 edn::record::put(&mut c, "ops", Value::Vector(ops));
@@ -858,7 +857,7 @@ impl Scanner for TypeScriptScanner {
         }
         for cid in foreigns {
             if !project.contains(&crate::value::encode_key(&cid)) {
-                classes.push(graph::foreign_class(&cid));
+                classes.push(scan::foreign_class(&cid));
             }
         }
         Ok(record(vec![

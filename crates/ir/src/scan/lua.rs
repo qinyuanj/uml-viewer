@@ -4,7 +4,7 @@
 
 use edn::Value;
 
-use crate::graph::{self, Scanner};
+use crate::scan::{self, Scanner, SourceFile};
 use crate::text::{self, at, is_alpha_, is_space, is_word};
 use crate::value::get_truthy as get;
 use edn::record::{flag, record, seq};
@@ -498,7 +498,7 @@ fn match_base(tail: &[u8]) -> Option<Vec<u8>> {
 
 /// `module_relative(path, root)`.
 fn module_relative(path: &str, root: &str) -> String {
-    let mut rel = graph::relative_path(path, root);
+    let mut rel = scan::relative_path(path, root);
     for prefix in ["src/lua/", "src/", "lua/"] {
         if let Some(stripped) = rel.strip_prefix(prefix) {
             rel = stripped.to_owned();
@@ -547,7 +547,7 @@ impl Scanner for LuaScanner {
         &self,
         root: &str,
         opts: &Value,
-        files: &[crate::files::SourceFile],
+        files: &[SourceFile],
         cwd: &str,
     ) -> Result<Value, String> {
         let prefix = get(opts, "prefix")
@@ -563,9 +563,9 @@ impl Scanner for LuaScanner {
                 _ => None,
             })
             .unwrap_or_else(|| prefix.clone());
-        let mut sorted: Vec<&crate::files::SourceFile> = files
+        let mut sorted: Vec<&SourceFile> = files
             .iter()
-            .filter(|f| self.accepts(&graph::relative_path(&f.path, root), opts))
+            .filter(|f| self.accepts(&scan::relative_path(&f.path, root), opts))
             .collect();
         sorted.sort_by(|a, b| a.path.cmp(&b.path));
         let mut metas = Vec::new();
@@ -576,9 +576,9 @@ impl Scanner for LuaScanner {
             let ns = if rel == ns_prefix || rel.starts_with(&format!("{ns_prefix}.")) {
                 rel.clone()
             } else {
-                graph::ns_join(&ns_prefix, &rel)
+                scan::ns_join(&ns_prefix, &rel)
             };
-            let cid = graph::id_of(&ns, Some(&Value::String(prefix.clone())));
+            let cid = scan::id_of(&ns, Some(&Value::String(prefix.clone())));
             metas.push((f, rel.clone(), ns.clone(), cid.clone()));
             if !rel.is_empty() {
                 by_rel.push((rel, cid.clone()));
@@ -592,7 +592,7 @@ impl Scanner for LuaScanner {
         let mut foreigns: Vec<Value> = Vec::new();
         for (f, _, ns, cid) in &metas {
             let surface = read_module(&f.source);
-            let file = graph::relative_path(&f.path, cwd);
+            let file = scan::relative_path(&f.path, cwd);
             if let Some(warning) =
                 dynamic_require_warning(&file, seq(get(&surface, "dynamic-requires")))
             {
@@ -610,9 +610,9 @@ impl Scanner for LuaScanner {
             classes.push(record(vec![
                 ("id", cid.clone()),
                 ("ns", Value::String(ns.clone())),
-                ("name", Value::String(graph::module_name(cid))),
+                ("name", Value::String(scan::module_name(cid))),
                 ("lang", Value::keyword("lua")),
-                ("file", Value::String(graph::relative_path(&f.path, cwd))),
+                ("file", Value::String(scan::relative_path(&f.path, cwd))),
                 ("ops", Value::Vector(ops)),
             ]));
             let edge = |edges: &mut Vec<Value>, to: Value, kind: &str| {
@@ -665,7 +665,7 @@ impl Scanner for LuaScanner {
             }
         }
         for cid in foreigns {
-            classes.push(graph::foreign_class(&cid));
+            classes.push(scan::foreign_class(&cid));
         }
         Ok(record(vec![
             ("classes", Value::Vector(classes)),
