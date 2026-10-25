@@ -1,5 +1,9 @@
-//! eframe application: window, hot reload, evidence publishing, driver
-//! replay, input mapping, and the undecorated-window drag/resize regions.
+//! The eframe adapter around the viewer session (#164): window creation,
+//! decorations and the undecorated drag/resize regions, fonts and DPI, the
+//! wake threads, input collection and capture, the search box and GUI
+//! drawing, screenshots, the bench and evidence. Everything the session
+//! decides (actions, reload, mail, canvas input, normal close and restart
+//! exit) arrives as an event; the shell carries out the effects it returns.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -14,17 +18,16 @@ use scene::events::{self, Dims};
 use scene::geom::Rect;
 
 use crate::bench;
-use crate::clock::Now;
-use crate::commands::{self, Command};
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
 use crate::gui::{Action, Gui};
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::viewer_session::{
-    Action as SessionAction, Canvas, CompanionLink, Effects, Event, Launch, Repaint, ViewerSession,
+    Action as SessionAction, Canvas, Chrome, Effects, Event, Launch, Now, Repaint, ViewerSession,
+    WINDOW_MIN, window_size,
 };
-use crate::{cli::Options, fonts, inspector, mail, mail_watch, paint, session, signal, strings};
+use crate::{cli::Options, fonts, mail_watch, paint, signal, strings};
 use crate::{source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
@@ -124,7 +127,7 @@ struct Setup {
     bench: Option<PathBuf>,
     bench_only: Option<String>,
     /// Saved window/inspector chrome from a restart session.
-    chrome: session::Chrome,
+    chrome: Chrome,
 }
 
 impl Setup {
@@ -192,14 +195,11 @@ pub fn run(options: Options) -> ExitCode {
     // 1500x920 is also the protocol-1 bench window (#143).
     let scale = dpi_override().unwrap_or(1.0);
     // A restart restores the saved window; a fresh launch keeps the default.
-    let [width, height] = session::window_size(&setup.chrome, f64::from(scale));
+    let [width, height] = window_size(&setup.chrome, f64::from(scale));
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(WINDOW_TITLE)
         .with_inner_size([width as f32, height as f32])
-        .with_min_inner_size([
-            session::WINDOW_MIN[0] * scale,
-            session::WINDOW_MIN[1] * scale,
-        ])
+        .with_min_inner_size([WINDOW_MIN[0] * scale, WINDOW_MIN[1] * scale])
         .with_decorations(mode.decorated());
     if !mode.decorated() {
         viewport = viewport.with_title(format!("{WINDOW_TITLE} (无装饰)"));
@@ -355,7 +355,7 @@ impl Viewer {
         // The first frames measure the window before the content rect is
         // known: start from the requested (or restored) size.
         let [start_w, start_h] =
-            session::window_size(&setup.chrome, dpi_override().map(f64::from).unwrap_or(1.0));
+            window_size(&setup.chrome, dpi_override().map(f64::from).unwrap_or(1.0));
         // The idle watcher takes its baseline before the first load, so a
         // diagram written meanwhile still wakes the viewer.
         let wake_stop = spawn_wake(
@@ -376,15 +376,7 @@ impl Viewer {
         // The queue is consumed whether or not a companion backend was asked
         // for (LOVE's `mail` exists in both cases); only the helper process is
         // backend-specific and starts after the first scene, as in LOVE.
-        let (root, restart) = (setup.project_root.clone(), setup.launch.restart);
-        let backend = setup.launch.backend;
-        let opened = ViewerSession::open(setup.launch, move || -> Box<dyn CompanionLink> {
-            if backend {
-                Box::new(mail::Companion::start(&root, restart))
-            } else {
-                Box::new(mail::Companion::mail_only())
-            }
-        });
+        let opened = ViewerSession::open_with_companion(setup.launch);
         let session = match opened {
             Ok(session) => session,
             Err(error) => {
@@ -534,13 +526,9 @@ impl Viewer {
                 ctrl,
                 shift,
             } => {
-                let state = self.session.state();
                 if self.gui.card_hovered() {
+                    let rows = self.gui.card_rows(self.session.state());
                     // LOVE wheelmoved(0, -4) scrolls the card down four notches.
-                    let rows = inspector::card_id(state)
-                        .and_then(|id| self.gui.card_for(state, &id))
-                        .map(|(_, rows)| rows)
-                        .unwrap_or_default();
                     Canvas::ScrollCard {
                         rows,
                         delta: -dy,
@@ -549,7 +537,7 @@ impl Viewer {
                 } else {
                     if self
                         .driver_pointer
-                        .or(state.pointer)
+                        .or(self.session.state().pointer)
                         .is_some_and(|(x, y)| self.search.captures(x, y))
                     {
                         return;
@@ -773,8 +761,8 @@ impl Viewer {
     }
 
     /// The window chrome a session snapshot saves.
-    fn chrome(&self) -> session::Chrome {
-        session::Chrome {
+    fn chrome(&self) -> Chrome {
+        Chrome {
             window_w: Some(self.window_w),
             window_h: Some(self.window_h),
             inspector_w: Some(self.gui.inspector_width()),
@@ -1568,51 +1556,7 @@ impl driver::Host for Viewer {
     }
 
     fn assert_text_fits(&mut self) -> Result<(), String> {
-        let ctx = self.ctx.clone();
-        let measure = |s: f64, t: &str| paint::measure(&ctx, s as f32, t);
-        let mut count = 0;
-        let commands = commands::commands(
-            &self.session.state().scene,
-            self.session.state().selected.as_ref(),
-            self.session.state().hover.as_ref(),
-        );
-        for command in &commands {
-            let (text, size, h, max_w, bold, italic) = match command {
-                Command::Text {
-                    text,
-                    size,
-                    h,
-                    max_w,
-                    bold,
-                    italic,
-                    ..
-                } => (text, *size, h.unwrap_or(*size), *max_w, *bold, *italic),
-                Command::Package {
-                    text, size, max_w, ..
-                } => (text, *size, *size, *max_w, false, true),
-                _ => continue,
-            };
-            if text.is_empty() {
-                continue;
-            }
-            let fitted = commands::fit(measure, size.min(h), text, max_w, bold, italic);
-            if fitted > 18.0 || fitted > h + 1e-6 {
-                return Err(format!("text exceeds vertical slot: {text}"));
-            }
-            let width = measure(fitted, text)
-                + if bold { fitted * 0.05 } else { 0.0 }
-                + if italic { fitted * 0.2 } else { 0.0 };
-            if width > max_w + 1e-4 {
-                return Err(format!(
-                    "text exceeds horizontal slot: {text} (size {size} -> {fitted}, width {width} > {max_w})"
-                ));
-            }
-            count += 1;
-        }
-        if count == 0 {
-            return Err("empty capture scene".into());
-        }
-        Ok(())
+        paint::assert_text_fits(&self.ctx, self.session.state())
     }
 
     fn session_record(&self) -> Value {

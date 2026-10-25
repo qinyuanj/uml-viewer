@@ -275,6 +275,14 @@ impl Gui {
         }
     }
 
+    /// The rows of the class card open (or selected) in this view.
+    pub(crate) fn card_rows(&mut self, state: &ViewState) -> Vec<detail::Row> {
+        inspector::card_id(state)
+            .and_then(|id| self.card_for(state, &id))
+            .map(|(_, rows)| rows)
+            .unwrap_or_default()
+    }
+
     /// The cached card model and rows of class `id` in this view.
     pub(crate) fn card_for(
         &mut self,

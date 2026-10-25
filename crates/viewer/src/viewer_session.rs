@@ -18,11 +18,15 @@ use scene::events::{self, Dims};
 use scene::geom::Rect;
 use scene::hit;
 
-use crate::clock::{self, Now};
+use crate::clock;
+/// The clock the session takes as its input; the shell reads it.
+pub(crate) use crate::clock::Now;
 use crate::commands::{self, Command};
 use crate::driver::ViewRecord;
-use crate::mail::DisplayBoundary;
-use crate::session::{self, Chrome};
+use crate::mail::{self, DisplayBoundary};
+use crate::session;
+/// The window chrome a session snapshot saves beside the view.
+pub(crate) use crate::session::{Chrome, WINDOW_MIN, window_size};
 use crate::{
     detail, identity, inspector, mail_watch, mailbox, metrics, project_files, strings, watch,
 };
@@ -314,6 +318,20 @@ impl ViewerSession {
             session.record_identity();
         }
         Ok(session)
+    }
+
+    /// Open with the production companion link: the real worker on a
+    /// `--backend` launch, otherwise the mail queue without a helper.
+    pub(crate) fn open_with_companion(launch: Launch) -> Result<ViewerSession, String> {
+        let (root, restart, backend) =
+            (launch.project_root.clone(), launch.restart, launch.backend);
+        ViewerSession::open(launch, move || -> Box<dyn CompanionLink> {
+            if backend {
+                Box::new(mail::Companion::start(&root, restart))
+            } else {
+                Box::new(mail::Companion::mail_only())
+            }
+        })
     }
 
     /// Apply one event at `now`.

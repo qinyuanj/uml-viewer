@@ -1243,3 +1243,48 @@ pub fn italic_glyph_probe_text(ctx: &egui::Context, probe: &str) -> Result<(), S
 pub fn missing_hint(path: &str) -> String {
     strings::missing_file(path)
 }
+
+/// Every canvas text command fits its vertical and horizontal slot under
+/// this window's fonts (the driver's `:assert-text-fits`).
+pub fn assert_text_fits(ctx: &egui::Context, state: &ViewState) -> Result<(), String> {
+    let measure = |s: f64, t: &str| measure(ctx, s as f32, t);
+    let mut count = 0;
+    let commands = commands::commands(&state.scene, state.selected.as_ref(), state.hover.as_ref());
+    for command in &commands {
+        let (text, size, h, max_w, bold, italic) = match command {
+            Command::Text {
+                text,
+                size,
+                h,
+                max_w,
+                bold,
+                italic,
+                ..
+            } => (text, *size, h.unwrap_or(*size), *max_w, *bold, *italic),
+            Command::Package {
+                text, size, max_w, ..
+            } => (text, *size, *size, *max_w, false, true),
+            _ => continue,
+        };
+        if text.is_empty() {
+            continue;
+        }
+        let fitted = commands::fit(measure, size.min(h), text, max_w, bold, italic);
+        if fitted > 18.0 || fitted > h + 1e-6 {
+            return Err(format!("text exceeds vertical slot: {text}"));
+        }
+        let width = measure(fitted, text)
+            + if bold { fitted * 0.05 } else { 0.0 }
+            + if italic { fitted * 0.2 } else { 0.0 };
+        if width > max_w + 1e-4 {
+            return Err(format!(
+                "text exceeds horizontal slot: {text} (size {size} -> {fitted}, width {width} > {max_w})"
+            ));
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err("empty capture scene".into());
+    }
+    Ok(())
+}
