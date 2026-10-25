@@ -136,7 +136,17 @@ pub struct ViewState {
     pub detail_scroll: f64,
     pub discussion_context: Option<Value>,
     pub quit_for_restart: bool,
-    pub drag: Option<crate::events::Drag>,
+    pub drag: Option<Drag>,
+}
+
+/// An in-flight canvas drag (press position, camera at press, moved flag).
+#[derive(Debug, Clone)]
+pub struct Drag {
+    pub x: f64,
+    pub y: f64,
+    pub cam_x: f64,
+    pub cam_y: f64,
+    pub moved: bool,
 }
 
 impl Default for ViewState {
