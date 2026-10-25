@@ -115,49 +115,13 @@ fn env_nonempty(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-/// Default diagram (port of `session_file.default_diagram`): the generated
-/// `diagram.edn`, the project-named example, then any example, else
-/// `diagram.edn`.
-pub fn default_diagram(root: &Path) -> PathBuf {
-    let candidates = [
-        root.join("diagram.edn"),
-        root.join("examples")
-            .join(
-                root.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-            )
-            .with_extension("edn"),
-        root.join("examples/uml-viewer.edn"),
-    ];
-    for candidate in &candidates {
-        if candidate.is_file() {
-            return candidate.clone();
-        }
-    }
-    if let Ok(entries) = std::fs::read_dir(root.join("examples"))
-        && let Some(found) = entries
-            .flatten()
-            .map(|e| e.path())
-            .find(|p| p.extension().is_some_and(|e| e == "edn"))
-    {
-        return found;
-    }
-    candidates[0].clone()
-}
-
-fn canonical(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
 struct Setup {
     project_root: PathBuf,
-    diagram: PathBuf,
+    /// The resolved diagram and the session snapshot, read once.
+    launch: Launch,
     evidence: Option<Evidence>,
     test_seconds: Option<f64>,
     script: Option<driver::Script>,
-    restart: bool,
-    backend: bool,
     /// Protocol-1 output directory (#143); the bench owns the camera.
     bench: Option<PathBuf>,
     bench_only: Option<String>,
@@ -170,31 +134,14 @@ impl Setup {
         let root = env_nonempty("UML_VIEWER_PROJECT_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
-        let project_root = canonical(&root);
-        // The saved path is consulted only on --restart (Lua `session.path`).
-        let snapshot = if options.restart {
-            session::read(&project_root)
-        } else {
-            None
-        };
-        let saved = snapshot
-            .as_ref()
-            .and_then(|s| get(s, "path"))
-            .and_then(|p| match p {
-                Value::String(s) => Some(PathBuf::from(s)),
-                _ => None,
-            });
-        let diagram = match options.path.clone().or(saved) {
-            Some(path) => canonical(&path),
-            None => canonical(&default_diagram(&project_root)),
-        };
-        // A restart restores the saved window and inspector width; a fresh
-        // launch uses the defaults.
-        let chrome = if options.restart {
-            session::chrome(snapshot.as_ref())
-        } else {
-            session::Chrome::default()
-        };
+        let project_root = std::fs::canonicalize(&root).unwrap_or(root);
+        // The snapshot is read once: the launch keeps it for the restore.
+        let (launch, chrome) = Launch::resolve(
+            project_root.clone(),
+            options.path.clone(),
+            options.restart,
+            options.backend,
+        );
         let evidence = env_nonempty("UML_VIEWER_EVIDENCE").map(|dir| {
             let dir = PathBuf::from(dir);
             let _ = std::fs::create_dir_all(&dir);
@@ -207,12 +154,10 @@ impl Setup {
         };
         Ok(Setup {
             project_root,
-            diagram,
+            launch,
             evidence,
             test_seconds,
             script,
-            restart: options.restart,
-            backend: options.backend,
             bench: env_nonempty("UML_VIEWER_BENCH").map(PathBuf::from),
             bench_only: env_nonempty("UML_VIEWER_BENCH_ONLY"),
             chrome,
@@ -417,7 +362,7 @@ impl Viewer {
         // diagram written meanwhile still wakes the viewer.
         let wake_stop = spawn_wake(
             cc.egui_ctx.clone(),
-            setup.diagram.clone(),
+            setup.launch.diagram.clone(),
             setup.project_root.clone(),
         );
         if let Some(evidence) = &setup.evidence {
@@ -433,23 +378,15 @@ impl Viewer {
         // The queue is consumed whether or not a companion backend was asked
         // for (LOVE's `mail` exists in both cases); only the helper process is
         // backend-specific and starts after the first scene, as in LOVE.
-        let (root, restart) = (setup.project_root.clone(), setup.restart);
-        let backend = setup.backend;
-        let opened = ViewerSession::open(
-            Launch {
-                project_root: setup.project_root.clone(),
-                diagram: setup.diagram.clone(),
-                restart: setup.restart,
-                backend: setup.backend,
-            },
-            move || -> Box<dyn CompanionLink> {
-                if backend {
-                    Box::new(mail::Companion::start(&root, restart))
-                } else {
-                    Box::new(mail::Companion::mail_only())
-                }
-            },
-        );
+        let (root, restart) = (setup.project_root.clone(), setup.launch.restart);
+        let backend = setup.launch.backend;
+        let opened = ViewerSession::open(setup.launch, move || -> Box<dyn CompanionLink> {
+            if backend {
+                Box::new(mail::Companion::start(&root, restart))
+            } else {
+                Box::new(mail::Companion::mail_only())
+            }
+        });
         let session = match opened {
             Ok(session) => session,
             Err(error) => {

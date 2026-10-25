@@ -7,7 +7,7 @@
 //! Not the session snapshot (`session`, what a restart restores) and not
 //! the Herdr session.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use companion::mailbox::Mailbox;
@@ -54,6 +54,79 @@ pub(crate) struct Launch {
     pub restart: bool,
     /// `--backend herdr`: show the waiting canvas until `:display`.
     pub backend: bool,
+    /// The saved session snapshot a restart restores (read once).
+    pub snapshot: Option<Value>,
+}
+
+impl Launch {
+    /// Resolve the diagram and read the session snapshot once: the saved
+    /// path and window chrome are consulted only on `--restart`, and the
+    /// same snapshot is what `open` restores. An explicit path wins over
+    /// the saved one, which wins over the default diagram.
+    pub(crate) fn resolve(
+        project_root: PathBuf,
+        explicit: Option<PathBuf>,
+        restart: bool,
+        backend: bool,
+    ) -> (Launch, Chrome) {
+        let snapshot = if restart {
+            session::read(&project_root)
+        } else {
+            None
+        };
+        let default = default_diagram(&project_root);
+        let diagram = canonical(&session::path(
+            explicit.as_deref(),
+            snapshot.as_ref(),
+            &default,
+        ));
+        // A restart restores the saved window and inspector width; a fresh
+        // launch uses the defaults.
+        let chrome = session::chrome(snapshot.as_ref());
+        let launch = Launch {
+            project_root,
+            diagram,
+            restart,
+            backend,
+            snapshot,
+        };
+        (launch, chrome)
+    }
+}
+
+/// Default diagram (port of `session_file.default_diagram`): the generated
+/// `diagram.edn`, the project-named example, then any example, else
+/// `diagram.edn`.
+fn default_diagram(root: &Path) -> PathBuf {
+    let candidates = [
+        root.join("diagram.edn"),
+        root.join("examples")
+            .join(
+                root.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            )
+            .with_extension("edn"),
+        root.join("examples/uml-viewer.edn"),
+    ];
+    for candidate in &candidates {
+        if candidate.is_file() {
+            return candidate.clone();
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(root.join("examples"))
+        && let Some(found) = entries
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.extension().is_some_and(|e| e == "edn"))
+    {
+        return found;
+    }
+    candidates[0].clone()
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Something the shell hands the session.
@@ -170,7 +243,7 @@ impl ViewerSession {
             quit_deadline: None,
         };
         let launch_backend = launch.backend;
-        session.load_initial(launch.restart, launch.backend)?;
+        session.load_initial(launch.restart, launch.backend, launch.snapshot.as_ref())?;
         session.link = start_link();
         session.link_status = session.link.launch_status();
         session.mail_watch.baseline(&session.project_root);
@@ -436,7 +509,12 @@ impl ViewerSession {
         self.identity_recorded = true;
     }
 
-    fn load_initial(&mut self, restart: bool, backend: bool) -> Result<(), String> {
+    fn load_initial(
+        &mut self,
+        restart: bool,
+        backend: bool,
+        snapshot: Option<&Value>,
+    ) -> Result<(), String> {
         let (snapshots, stamp) = metrics::snapshot(&self.project_root);
         let path = self.diagram.to_string_lossy().into_owned();
         let root = self.project_root.to_string_lossy().into_owned();
@@ -473,8 +551,8 @@ impl ViewerSession {
         state.path = Some(path);
         state.project_root = Some(root);
         if restart {
-            if let Some(snapshot) = crate::session::read(&self.project_root) {
-                state = crate::session::restore(&state, &snapshot);
+            if let Some(snapshot) = snapshot {
+                state = session::restore(&state, snapshot);
             }
         } else {
             state.fit_pending = true;
@@ -649,6 +727,7 @@ mod tests {
                 diagram: dir.join("diagram.edn"),
                 restart: false,
                 backend,
+                snapshot: None,
             },
             move || Box::new(link),
         )
@@ -1047,6 +1126,66 @@ mod tests {
             text.starts_with(&format!("{{\"pid\":{},", std::process::id())),
             "{text}"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_restart_restores_the_snapshot_it_resolved_once_without_refitting_and_keeps_consuming_mail()
+    {
+        let dir = project("restore");
+        let diagram = dir.join("diagram.edn");
+        std::fs::write(&diagram, SECOND).unwrap();
+        std::fs::write(
+            dir.join(".uml-viewer/session.edn"),
+            format!(
+                "{{:window-w 1100 :window-h 700 :inspector-width 340 :path \"{}\" :mail-seen 1 :focus [] :cam-x 33 :cam-y 21 :zoom 1.7 :selected {{:kind :class :id :d0-target}} :detail-id :d0-target :discussion-context {{:context :proposal :proposal-id :plan}}}}",
+                diagram.display()
+            ),
+        )
+        .unwrap();
+        let (launch, chrome) = Launch::resolve(dir.clone(), None, true, false);
+        assert_eq!(std::fs::canonicalize(&diagram).unwrap(), launch.diagram);
+        assert_eq!(
+            Chrome {
+                window_w: Some(1100.0),
+                window_h: Some(700.0),
+                inspector_w: Some(340.0),
+            },
+            chrome
+        );
+        // The snapshot is read once, when the launch is resolved.
+        std::fs::remove_file(dir.join(".uml-viewer/session.edn")).unwrap();
+        let mut session = ViewerSession::open(launch, || Box::new(NoLink)).unwrap();
+        let state = session.state();
+        assert!(!state.fit_pending, "a restored view does not re-fit");
+        assert_eq!((1.7, 33.0, 21.0), (state.zoom, state.cam_x, state.cam_y));
+        assert_eq!(Some(Value::keyword("d0-target")), state.detail_id);
+        assert_eq!(1, state.mail_seen);
+        assert_eq!(Some(Value::keyword("proposal")), context(state));
+        write_inbox(
+            &dir,
+            "{:next-id 3 :queue [{:id 2 :op :context :context :real}]}",
+        );
+        session.process(Event::MailDue, at(Instant::now(), 0));
+        assert_eq!(2, session.state().mail_seen, "mail above the cursor");
+        assert_eq!(Some(Value::keyword("real")), context(session.state()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_fresh_launch_ignores_the_saved_snapshot_and_fits() {
+        let dir = project("fresh");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        std::fs::write(
+            dir.join(".uml-viewer/session.edn"),
+            "{:path \"/elsewhere.edn\" :window-w 1100 :zoom 1.7}",
+        )
+        .unwrap();
+        let (launch, chrome) =
+            Launch::resolve(dir.clone(), Some(dir.join("diagram.edn")), false, false);
+        assert_eq!(Chrome::default(), chrome);
+        let session = ViewerSession::open(launch, || Box::new(NoLink)).unwrap();
+        assert!(session.state().fit_pending);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
