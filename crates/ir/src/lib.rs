@@ -36,42 +36,35 @@ fn emit(doc: &Value) -> Result<String, String> {
 /// Keys only a generated IR document carries; a policy never declares them.
 const IR_ONLY_KEYS: [&str; 3] = ["classes", "edges", "policy-file"];
 
-/// A policy declares where its source is: a source root, a language (with
-/// the default `src` root) or per-crate source roots.
-const SOURCE_KEYS: [&str; 3] = ["src", "lang", "sources"];
+const USAGE: &str = "usage: ir [policy [output]] [--root directory]";
 
-const POLICY_USAGE: &str = "usage: ir <policy> [output] [--root directory]";
-
-/// Reads and shape-checks a policy (#166): an EDN map that declares its
-/// source and carries no IR-only keys.
-/// A generated IR document passed by mistake fails fast instead of being
-/// regenerated into the default output.
-fn read_policy(path: &str, adapter: &Adapter) -> Result<Value, String> {
-    let text = adapter.read(path)?;
-    let text = String::from_utf8(text).map_err(|_| format!("{path}: policy is not UTF-8"))?;
-    let policy = edn::parse(&text).map_err(|e| format!("{path}: {e}"))?;
+/// Refuses EDN that is not a policy (#166): a non-map, or a generated IR
+/// document passed by mistake (any IR-only key). Source declarations stay
+/// optional; `:src` defaults and the language is detected.
+fn check_policy_shape(path: &str, policy: &Value) -> Result<(), String> {
     if !matches!(policy, Value::Map(_)) {
-        return Err(format!("{path}: policy must be an EDN map; {POLICY_USAGE}"));
+        return Err(format!("{path}: policy must be an EDN map; {USAGE}"));
     }
     let ir_keys: Vec<String> = IR_ONLY_KEYS
         .iter()
-        .filter(|k| edn::record::get(&policy, k).is_some())
+        .filter(|k| edn::record::get(policy, k).is_some())
         .map(|k| format!(":{k}"))
         .collect();
     if !ir_keys.is_empty() {
         return Err(format!(
-            "{path}: not a policy (IR-only keys {}; is this a generated diagram?); {POLICY_USAGE}",
+            "{path}: is a generated IR document, not a policy (IR-only keys {}); {USAGE}",
             ir_keys.join(" ")
         ));
     }
-    if SOURCE_KEYS
-        .iter()
-        .all(|k| value::get_truthy(&policy, k).is_none())
-    {
-        return Err(format!(
-            "{path}: not a policy (declare :src, :lang or :sources); {POLICY_USAGE}"
-        ));
-    }
+    Ok(())
+}
+
+/// Reads a policy and checks its shape before any detection, scan or write.
+fn read_policy(path: &str, adapter: &Adapter) -> Result<Value, String> {
+    let text = adapter.read(path)?;
+    let text = String::from_utf8(text).map_err(|_| format!("{path}: policy is not UTF-8"))?;
+    let policy = edn::parse(&text).map_err(|e| format!("{path}: {e}"))?;
+    check_policy_shape(path, &policy)?;
     Ok(policy)
 }
 
@@ -207,7 +200,7 @@ fn run_result(args: &[OsString]) -> Result<String, String> {
             _ => {
                 let n = if positional[0].is_some() { 1 } else { 0 };
                 if positional[n].is_some() {
-                    return Err("usage: ir [policy [output]] [--root directory]".to_owned());
+                    return Err(USAGE.to_owned());
                 }
                 positional[n] = Some(a.to_owned());
             }
@@ -245,6 +238,57 @@ pub fn run(args: &[OsString]) -> ExitCode {
         Err(message) => {
             eprintln!("IR generation failed: {message}");
             ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(test)]
+mod policy_shape_tests {
+    //! #166: the rejection branch of the policy shape check.
+    use super::check_policy_shape;
+
+    fn check(text: &str) -> Result<(), String> {
+        check_policy_shape("p.edn", &edn::parse(text).unwrap())
+    }
+
+    #[test]
+    fn each_ir_only_key_marks_a_generated_ir_document() {
+        for text in [
+            "{:prefix \"app\" :classes []}",
+            "{:prefix \"app\" :edges []}",
+            "{:prefix \"app\" :policy-file \"policy.edn\"}",
+        ] {
+            let err = check(text).unwrap_err();
+            assert!(err.contains("generated IR document"), "{text}: {err}");
+            assert!(
+                err.contains("usage: ir [policy [output]] [--root directory]"),
+                "{text}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_refusal_names_every_ir_only_key_present() {
+        let err = check("{:policy-file \"p\" :classes [] :edges []}").unwrap_err();
+        assert!(err.contains(":classes :edges :policy-file"), "{err}");
+    }
+
+    #[test]
+    fn a_non_map_is_refused_with_the_usage() {
+        let err = check("[:classes]").unwrap_err();
+        assert!(err.contains("policy must be an EDN map"), "{err}");
+        assert!(err.contains("usage: ir [policy [output]]"), "{err}");
+    }
+
+    #[test]
+    fn policies_with_or_without_a_source_declaration_pass() {
+        for text in [
+            "{}",
+            "{:prefix \"app\"}",
+            "{:src \"src\" :prefix \"app\"}",
+            "{:lang :rust :sources [{:src \"crates/ir/src\" :prefix \"uml.ir\"}]}",
+        ] {
+            assert_eq!(Ok(()), check(text), "{text}");
         }
     }
 }

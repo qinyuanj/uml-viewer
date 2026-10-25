@@ -90,8 +90,11 @@ fn ir_refuses_an_ir_document_as_the_policy_with_a_usage_hint() {
         .unwrap();
     assert_eq!(Some(1), output.status.code());
     let err = stderr(&output);
-    assert!(err.contains("not a policy"), "{err}");
-    assert!(err.contains("ir <policy> [output]"), "{err}");
+    assert!(err.contains("generated IR document"), "{err}");
+    assert!(
+        err.contains("usage: ir [policy [output]] [--root directory]"),
+        "{err}"
+    );
 }
 
 #[test]
