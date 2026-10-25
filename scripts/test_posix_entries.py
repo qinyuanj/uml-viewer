@@ -194,10 +194,18 @@ class PosixEntries(unittest.TestCase):
                    **{f'{tool.upper()}_REF': 'main' for tool in tools})
         (self.root / '.gitignore').write_text('')
         policy = (self.root / 'policy.edn').read_bytes()
-        for _ in range(2):
+        # #167: the project was installed by the LOVE-era installer.
+        leftover = self.root / '.uml-viewer/cimgui-love-1.90-1'
+        (leftover / 'cimgui').mkdir(parents=True)
+        (leftover / 'cimgui/love.lua').write_text('return {}\n')
+        (self.root / '.uml-viewer/install.json').write_text('{"version": 1, "love": "/usr/bin/love"}\n')
+        for attempt in range(2):
             result = subprocess.run([str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
                                     cwd=self.root, env=env, capture_output=True, text=True, timeout=900)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertFalse(leftover.exists())
+            self.assertEqual(attempt == 0, '.uml-viewer/cimgui-love-1.90-1' in result.stdout,
+                             result.stdout)
             self.assertTrue((self.root / 'uml').is_file())
             self.assertEqual(policy, (self.root / 'policy.edn').read_bytes())
         self.assertEqual(1, (self.root / '.gitignore').read_text().count('# BEGIN UML-VIEWER'))
@@ -768,6 +776,61 @@ class PosixEntries(unittest.TestCase):
             self.assertFalse(hasattr(installer, name), name)
         self.assertFalse(hasattr(installer, 'CIMGUI_URL'))
         self.assertFalse(hasattr(installer, 'LUA_PROBE'))
+
+    def retired_install(self, record):
+        """A project `.uml-viewer/` as a LOVE-era install left it (#167)."""
+        state = self.root / '.uml-viewer'
+        (state / 'cimgui-love-1.90-1/cimgui').mkdir(parents=True)
+        (state / 'cimgui-love-1.90-1/cimgui/love.lua').write_text('return {}\n')
+        (state / 'fonts').mkdir()
+        (state / 'fonts/keep.ttf').write_text('font')
+        (state / 'install.json').write_text(json.dumps(record))
+        outside = self.root / 'outside'
+        (outside / 'cimgui').mkdir(parents=True)
+        (outside / 'cimgui/user.lua').write_text('mine')
+        (state / 'cimgui-love-1.90-1/escape').symlink_to(outside, target_is_directory=True)
+        (state / 'cimgui-love-linked').symlink_to(outside, target_is_directory=True)
+        (state / 'cimgui-love-note.txt').write_text('not a directory')
+        return state, outside
+
+    def test_upgrade_from_love_removes_only_the_provisioned_cimgui_directories(self):
+        import contextlib
+        import io
+        installer = self.installer_module()
+        for record in ({'version': 1, 'love': '/usr/bin/love'}, {'version': 1, 'jvm': 'java'}):
+            with self.subTest(record=record):
+                state, outside = self.retired_install(record)
+                printed = io.StringIO()
+                with contextlib.redirect_stdout(printed):
+                    installer.remove_retired_runtime(state)
+                lines = printed.getvalue().splitlines()
+                self.assertEqual(1, len(lines), printed.getvalue())
+                self.assertIn('.uml-viewer/cimgui-love-1.90-1', lines[0])
+                self.assertFalse((state / 'cimgui-love-1.90-1').exists())
+                # Symlinks are never followed out of the project; anything the
+                # installer did not create as a directory stays.
+                self.assertEqual('mine', (outside / 'cimgui/user.lua').read_text())
+                self.assertTrue((state / 'cimgui-love-linked').is_symlink())
+                self.assertTrue((state / 'cimgui-love-note.txt').is_file())
+                self.assertTrue((state / 'fonts/keep.ttf').is_file())
+                self.assertTrue((state / 'install.json').is_file())
+                shutil.rmtree(state)
+                shutil.rmtree(outside)
+
+    def test_rust_install_record_leaves_cimgui_directories_alone(self):
+        import contextlib
+        import io
+        installer = self.installer_module()
+        state, _ = self.retired_install({'version': 1, 'rust': '/x/uml-viewer'})
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            installer.remove_retired_runtime(state)
+        self.assertEqual('', printed.getvalue())
+        self.assertTrue((state / 'cimgui-love-1.90-1/cimgui/love.lua').is_file())
+        # No record at all (a first install) is not a retired runtime either.
+        (state / 'install.json').unlink()
+        installer.remove_retired_runtime(state)
+        self.assertTrue((state / 'cimgui-love-1.90-1').is_dir())
 
     def installer_module(self):
         import importlib.util
