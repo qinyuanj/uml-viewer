@@ -666,7 +666,11 @@ impl Viewer {
                 if self.gui.card_hovered() {
                     // LOVE wheelmoved(0, -4) scrolls the card down four notches.
                     let view_h = self.gui.card.view_h;
-                    self.state = inspector::scroll(&state, -dy, view_h);
+                    let rows = inspector::card_id(&state)
+                        .and_then(|id| self.gui.card_for(&state, &id))
+                        .map(|(_, rows)| rows)
+                        .unwrap_or_default();
+                    self.state = inspector::scroll_rows(&state, &rows, -dy, view_h);
                     return;
                 }
                 if self

@@ -126,7 +126,12 @@ pub fn scroll(state: &ViewState, delta: f64, view_h: f64) -> ViewState {
         .and_then(|id| detail::for_state(state, &id))
         .map(|m| detail::rows(&m))
         .unwrap_or_default();
+    scroll_rows(state, &rows, delta, view_h)
+}
+
+/// [`scroll`] over card rows the caller already holds (the gui card cache).
+pub fn scroll_rows(state: &ViewState, rows: &[detail::Row], delta: f64, view_h: f64) -> ViewState {
     let mut next = state.clone();
-    next.detail_scroll = detail::scroll(&rows, view_h, state.detail_scroll, delta);
+    next.detail_scroll = detail::scroll(rows, view_h, state.detail_scroll, delta);
     next
 }
