@@ -816,7 +816,7 @@ pub fn edge_commands(
 /// Natural advance fallback: the layout's 8px/char monospace estimate at
 /// 16px, scaled. The real measure comes from egui at paint time.
 pub fn estimate_w(text: &str, size: f64) -> f64 {
-    scene::layout::text_w(Some(text)) / 16.0 * size
+    scene::text_w(Some(text)) / 16.0 * size
 }
 
 /// The layout's 8px/char estimate fixes box widths (JVM goldens); an 18px
@@ -882,7 +882,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
     if flag(&diagram, "proposal") {
         let mut proposal_name: Option<String> = None;
         if let Some(doc) = &state.document {
-            for p in &scene::hierarchy::named_proposals(doc) {
+            for p in &scene::proposals(doc) {
                 if get(p, "id") == get(&state.extra, "proposal-id") {
                     proposal_name = Some(match get(p, "name") {
                         Some(Value::String(s)) => s.clone(),

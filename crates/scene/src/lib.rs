@@ -19,6 +19,8 @@ pub use card::{Neighbourhood, Relation, class_card, class_card_in};
 pub use config::{
     Band, GRADE_BEST, GRADE_MID, GRADE_WORST, MetricRating, Rating, metric_rating, rating,
 };
+pub use document::proposals;
+pub use layout::{CHAR_W, text_w};
 
 mod card;
 pub mod compose;

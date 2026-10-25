@@ -54,7 +54,7 @@ pub fn entries(state: &ViewState) -> Vec<Entry> {
         label: title,
         active: active.is_none(),
     }];
-    for p in scene::hierarchy::named_proposals(&doc) {
+    for p in scene::proposals(&doc) {
         let id = get(&p, "id").cloned().unwrap_or(Value::Nil);
         let label = match get(&p, "name") {
             Some(Value::String(n)) => n.clone(),

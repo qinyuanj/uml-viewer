@@ -406,6 +406,12 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
     drop_missing_detail(s)
 }
 
+/// The proposal list of an IR or policy document: `:proposals` in order,
+/// then the legacy singular `:proposal`.
+pub fn proposals(doc: &Value) -> Vec<Value> {
+    crate::policy::named_proposals(doc)
+}
+
 fn has_named(doc: &Value, pid: &Value) -> bool {
     H::named_proposals(doc)
         .iter()
