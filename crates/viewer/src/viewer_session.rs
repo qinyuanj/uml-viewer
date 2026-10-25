@@ -230,7 +230,7 @@ pub(crate) enum Canvas {
 }
 
 /// How long a normal close waits for the helper to settle.
-pub const NORMAL_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
+pub(crate) const NORMAL_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 
 /// What the inspector, class card and menus ask the session to do. Opening
 /// a source window is the shell's own (it is GUI state).
@@ -250,7 +250,7 @@ pub(crate) enum Action {
 }
 
 /// The hot-reload and mail cadence.
-pub const POLL_INTERVAL: Duration = Duration::from_millis(250);
+pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Whether the shell should draw another frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

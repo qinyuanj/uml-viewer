@@ -23,8 +23,8 @@ use crate::gui::{Action, Gui};
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::viewer_session::{
-    Action as SessionAction, Canvas, Chrome, Effects, Event, Launch, Now, Repaint, ViewerSession,
-    WINDOW_MIN, window_size,
+    Action as SessionAction, Canvas, Chrome, Effects, Event, Launch, Now, POLL_INTERVAL, Repaint,
+    ViewerSession, WINDOW_MIN, window_size,
 };
 use crate::{cli::Options, fonts, mail_watch, paint, signal, strings};
 use crate::{source, theme, watch};
@@ -39,7 +39,6 @@ pub fn dpi_override() -> Option<f32> {
         .and_then(|v| v.parse::<f32>().ok())
         .filter(|v| *v > 0.0)
 }
-pub const POLL_INTERVAL: Duration = crate::viewer_session::POLL_INTERVAL;
 /// Height of the undecorated window's drag strip, in points.
 pub const DRAG_STRIP: f32 = 28.0;
 /// Resize grip thickness, in points.
