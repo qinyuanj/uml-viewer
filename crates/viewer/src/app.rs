@@ -14,8 +14,7 @@ use std::time::{Duration, Instant};
 use edn::Value;
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
-use scene::Rect;
-use scene::events::{self, Dims};
+use scene::{Dims, Rect, ZOOM_STEP};
 
 use crate::bench;
 use crate::driver::{self, Input, Runner, ViewRecord};
@@ -1032,7 +1031,7 @@ impl Viewer {
         if zoom != 1.0 && zoom > 0.0 && !over_search {
             self.pending.push(Input::Wheel {
                 dx: 0.0,
-                dy: zoom.ln() / events::ZOOM_STEP.ln(),
+                dy: zoom.ln() / ZOOM_STEP.ln(),
                 ctrl: true,
                 shift: false,
             });
