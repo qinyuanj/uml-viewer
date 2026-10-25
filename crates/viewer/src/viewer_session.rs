@@ -379,17 +379,23 @@ impl ViewerSession {
             }
             Event::WindowClosed => {
                 // The helper then releases the session and ownership itself.
-                if !self.link.settled()
-                    && let Err(error) = self.link.stop(Stop::ReleaseCompanion)
-                {
-                    eprintln!("uml viewer: could not stop the companion: {error}");
+                if !self.link.settled() {
+                    self.stop_link(Stop::ReleaseCompanion);
                 }
                 Effects::default()
             }
         }
     }
 
-    /// `:quit-for-restart`: stop the helper with `keep` (a failed helper needs
+    /// Ask the helper to stop; a failure is reported, not fatal (the exit
+    /// goes on).
+    fn stop_link(&mut self, stop: Stop) {
+        if let Err(error) = self.link.stop(stop) {
+            eprintln!("uml viewer: could not stop the companion: {error}");
+        }
+    }
+
+    /// `:quit-for-restart`: stop the helper keeping the companion (a failed helper needs
     /// no stop and must not strand the restart), poll until it settled so the
     /// replacement viewer binds the companion that is actually there, then
     /// save the snapshot and exit 0.
@@ -398,9 +404,7 @@ impl ViewerSession {
             return Effects::default();
         }
         if !self.restart_stop {
-            if let Err(error) = self.link.stop(Stop::KeepCompanion) {
-                eprintln!("uml viewer: could not stop the companion: {error}");
-            }
+            self.stop_link(Stop::KeepCompanion);
             self.restart_stop = true;
         }
         self.poll_link();
@@ -463,18 +467,15 @@ impl ViewerSession {
                     next = events::zoom_at(&next, factor, cx, cy);
                     next.fit_pending = false;
                 }
-                if let Some([x, y]) = center {
-                    // Centre the world point: cam is the top-left world point.
-                    next.cam_x = x - dims.window_w / (2.0 * next.zoom);
-                    next.cam_y = y - dims.window_h / (2.0 * next.zoom);
+                if let Some(point) = center {
+                    centre_on(&mut next, point, &dims);
                 }
                 next
             }
             Canvas::Camera { cx, cy, zoom } => {
                 let mut next = s.clone();
                 next.zoom = zoom;
-                next.cam_x = cx - dims.window_w / (2.0 * zoom);
-                next.cam_y = cy - dims.window_h / (2.0 * zoom);
+                centre_on(&mut next, [cx, cy], &dims);
                 next.fit_pending = false;
                 next
             }
@@ -493,9 +494,7 @@ impl ViewerSession {
             return Effects::default();
         }
         self.close_deadline = Some(now.at + NORMAL_CLOSE_DEADLINE);
-        if let Err(error) = self.link.stop(Stop::ReleaseCompanion) {
-            eprintln!("uml viewer: could not stop the companion: {error}");
-        }
+        self.stop_link(Stop::ReleaseCompanion);
         Effects {
             close: self.link.settled().then_some(0),
             ..Effects::default()
@@ -892,6 +891,13 @@ impl ViewerSession {
         }
         consumed
     }
+}
+
+/// Centre the window on the world point at the current zoom: the camera is
+/// the top-left world point.
+fn centre_on(state: &mut ViewState, [x, y]: [f64; 2], dims: &Dims) {
+    state.cam_x = x - dims.window_w / (2.0 * state.zoom);
+    state.cam_y = y - dims.window_h / (2.0 * state.zoom);
 }
 
 /// The link before `open` starts the real one.
