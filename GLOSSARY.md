@@ -45,6 +45,14 @@ _Avoid_: 引擎, 后端, scene service
 viewer 中不依赖窗口的部分：持有视图状态，应用前端动作、热重载、邮件消费以及正常关闭与重启退出，返回重绘与关闭请求。它读写项目文件，因此**不是**纯逻辑模块；唯一的宿主 seam 是 companion 链接（轮询、停止并指定是否保留、唤醒、是否已 settled）。与「会话快照」（重启时保存的视图）和 Herdr 会话不同。
 _Avoid_: app, session state
 
+**正常关闭**:
+关窗、终止信号或测试时长结束时 viewer 的退出：以**不保留** companion 的方式停止 helper，helper settled 或 5 秒截止时以 0 退出；不写会话快照。
+_Avoid_: quit, 关闭（单独使用时）
+
+**重启退出**:
+收到 `:quit-for-restart` 邮件后的退出：以**保留** companion 的方式停止 helper，等到它 settled 后才写会话快照并以 0 退出，供 `./uml --restart` 恢复。
+_Avoid_: restart（指退出这一步时）
+
 **隐藏**:
 把某个元素从当前提案或真实图中排除的操作。
 _Avoid_: 省略, omit（界面文案中）

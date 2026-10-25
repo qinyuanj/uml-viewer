@@ -1,8 +1,12 @@
 //! Rust viewer crate (#139): egui/eframe canvas for the UML viewer.
 //!
 //! The pure drawing model (`commands`, `theme`, `lod`) is window-free and
-//! unit-tested; `app`/`paint`/`driver` are the eframe seam exercised by the
-//! declarative EDN driver scripts under `scripts/drivers/`.
+//! unit-tested. The viewer session (`viewer_session`, crate-private) holds
+//! the view and owns actions, reload, mail, canvas input, normal close and
+//! the restart exit; it is tested without a window behind a fake companion
+//! link. `app` is the eframe adapter around it; `paint`, `gui` and the
+//! driver's pixel, font and window steps are exercised by the declarative
+//! EDN driver scripts under `scripts/drivers/`.
 
 pub mod app;
 pub mod bench;
