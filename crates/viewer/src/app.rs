@@ -27,7 +27,7 @@ use crate::viewer_session::{
     ViewerSession, WINDOW_MIN, window_size,
 };
 use crate::{cli::Options, fonts, mail_watch, paint, signal, strings};
-use crate::{source, theme, watch};
+use crate::{theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
 
@@ -1537,13 +1537,8 @@ impl driver::Host for Viewer {
     }
 
     fn open_source(&mut self, lang: &str, file: &str, name: Option<&str>) -> Result<(), String> {
-        let ident = source::Ident {
-            lang: Some(lang.into()),
-            file: Some(file.into()),
-            ns: None,
-            name: name.map(Into::into),
-        };
-        self.gui.open_source(&ident, &self.project_root)
+        self.gui
+            .open_source_file(lang, file, name, &self.project_root)
     }
 
     fn resize_card(&mut self, w: f64, h: f64) {

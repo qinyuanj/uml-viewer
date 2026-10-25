@@ -209,6 +209,24 @@ impl Gui {
         self.menu_open
     }
 
+    /// Open the source window for a file member (the driver's
+    /// `:open-source`): `name` is the member, `None` the whole file.
+    pub fn open_source_file(
+        &mut self,
+        lang: &str,
+        file: &str,
+        name: Option<&str>,
+        root: &Path,
+    ) -> Result<(), String> {
+        let ident = Ident {
+            lang: Some(lang.into()),
+            file: Some(file.into()),
+            ns: None,
+            name: name.map(Into::into),
+        };
+        self.open_source(&ident, root)
+    }
+
     /// Open a source window; `Err` carries the reason for the status line.
     pub fn open_source(&mut self, ident: &Ident, root: &Path) -> Result<(), String> {
         let files = source::Files {
