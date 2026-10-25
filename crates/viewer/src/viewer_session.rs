@@ -16,6 +16,7 @@ use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
 
 use crate::clock::{self, Now};
+use crate::commands::{self, Command};
 use crate::mail::DisplayBoundary;
 use crate::session::{self, Chrome};
 use crate::{
@@ -597,6 +598,58 @@ impl ViewerSession {
 
     pub(crate) fn state(&self) -> &ViewState {
         &self.state
+    }
+
+    /// What the mail driver observes: the cursor, whether the canvas still
+    /// waits for `:display`, the loaded path and title and the discussion
+    /// context.
+    pub(crate) fn mail_record(&self) -> Value {
+        let kw = Value::keyword;
+        let s = &self.state;
+        let title = s
+            .document
+            .as_ref()
+            .and_then(|d| edn::record::get(d, "title"));
+        let context = s
+            .discussion_context
+            .as_ref()
+            .and_then(|c| edn::record::get(c, "context"));
+        Value::Map(vec![
+            (kw("seen"), Value::Integer(s.mail_seen)),
+            (kw("waiting"), Value::Bool(s.waiting)),
+            (kw("path"), s.path.clone().map_or(Value::Nil, Value::String)),
+            (kw("title"), title.cloned().unwrap_or(Value::Nil)),
+            (kw("context"), context.cloned().unwrap_or(Value::Nil)),
+        ])
+    }
+
+    /// The restart snapshot this session would save with `chrome`.
+    pub(crate) fn session_record(&self, chrome: &Chrome) -> Value {
+        session::snapshot(&self.state, chrome)
+    }
+
+    /// One diagnosis line for the class's quality rendering.
+    pub(crate) fn quality_line(&self, id: &str) -> Option<String> {
+        let target = Value::keyword(id);
+        commands::commands(&self.state.scene, None, None)
+            .into_iter()
+            .find_map(|c| match c {
+                Command::Class {
+                    id: Some(cid),
+                    missing,
+                    band,
+                    grade,
+                    stroke,
+                    ..
+                } if cid == target => Some(format!(
+                    "Detail missing={missing} band={band} continuousGrade={} stroke={},{},{}",
+                    grade.map_or("nil".to_string(), |g| g.to_string()),
+                    stroke.0,
+                    stroke.1,
+                    stroke.2
+                )),
+                _ => None,
+            })
     }
 
     /// The canvas hint (a missing diagram), if any.
@@ -1382,6 +1435,65 @@ mod tests {
         );
         assert_eq!(Some("Source not opened"), session.status());
         assert_eq!(Repaint::Now, effects.repaint);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_mail_record_reports_the_cursor_wait_title_and_context_after_display() {
+        let dir = project("mail record");
+        std::fs::write(dir.join("second.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, true);
+        let waiting = session.mail_record();
+        assert_eq!(Some(&Value::Bool(true)), get(&waiting, "waiting"));
+        assert!(
+            get(&waiting, "title").is_none_or(|t| *t == Value::Nil),
+            "no title before :display"
+        );
+        write_inbox(
+            &dir,
+            "{:next-id 3 :queue [{:id 1 :op :context :context :proposal :proposal-id :p :name \"中文\"} {:id 2 :op :display :path \"second.edn\"}]}",
+        );
+        session.process(Event::MailDue, at(Instant::now(), 0));
+        let record = session.mail_record();
+        assert_eq!(Some(&Value::Integer(2)), get(&record, "seen"));
+        assert_eq!(Some(&Value::Bool(false)), get(&record, "waiting"));
+        assert_eq!(
+            Some(&Value::String("Second diagram".into())),
+            get(&record, "title")
+        );
+        assert_eq!(Some(&Value::keyword("proposal")), get(&record, "context"));
+        let path = get(&record, "path").cloned();
+        assert!(
+            matches!(&path, Some(Value::String(p)) if p.ends_with("second.edn")),
+            "{path:?}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_class_without_quality_data_has_a_red_quality_line() {
+        let dir = project("quality");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (session, _) = open(&dir, false);
+        let line = session.quality_line("d0-target").expect("a class line");
+        assert!(line.starts_with("Detail missing=true band=red"), "{line}");
+        assert_eq!(None, session.quality_line("nowhere"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_session_record_is_the_snapshot_a_restart_would_save() {
+        let dir = project("session record");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, false);
+        let record = session.session_record(&chrome());
+        assert_eq!(Some(&Value::Integer(1100)), get(&record, "window-w"));
+        write_inbox(&dir, "{:next-id 2 :queue [{:id 1 :op :quit-for-restart}]}");
+        session.process(Event::MailDue, at(Instant::now(), 0));
+        let expected = session.session_record(&chrome());
+        session.process(Event::RestartExit(chrome()), at(Instant::now(), 0));
+        let saved = std::fs::read_to_string(dir.join(".uml-viewer/session.edn")).unwrap();
+        assert_eq!(expected, edn::parse(&saved).unwrap());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

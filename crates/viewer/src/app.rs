@@ -870,44 +870,6 @@ impl Viewer {
         }
     }
 
-    /// What the mail driver observes: the cursor, whether the canvas still
-    /// waits for `:display`, the loaded title and the discussion context.
-    fn mail_record(&self) -> Value {
-        let kw = Value::keyword;
-        Value::Map(vec![
-            (kw("seen"), Value::Integer(self.session.state().mail_seen)),
-            (kw("waiting"), Value::Bool(self.session.state().waiting)),
-            (
-                kw("path"),
-                self.session
-                    .state()
-                    .path
-                    .clone()
-                    .map_or(Value::Nil, Value::String),
-            ),
-            (
-                kw("title"),
-                self.session
-                    .state()
-                    .document
-                    .as_ref()
-                    .and_then(|d| get(d, "title"))
-                    .cloned()
-                    .unwrap_or(Value::Nil),
-            ),
-            (
-                kw("context"),
-                self.session
-                    .state()
-                    .discussion_context
-                    .as_ref()
-                    .and_then(|c| get(c, "context"))
-                    .cloned()
-                    .unwrap_or(Value::Nil),
-            ),
-        ])
-    }
-
     /// A normal close: the session stops the helper without keeping it.
     fn begin_normal_quit(&mut self, ctx: &egui::Context) {
         let effects = self.session.process(Event::Quit, Now::read());
@@ -1638,7 +1600,7 @@ impl driver::Host for Viewer {
                 (Value::keyword("h"), edn_number(self.window_h)),
             ]),
         );
-        record.assoc(Value::keyword("mail"), self.mail_record());
+        record.assoc(Value::keyword("mail"), self.session.mail_record());
         record.assoc(Value::keyword("session"), self.session_record());
         record
     }
@@ -1714,7 +1676,7 @@ impl driver::Host for Viewer {
     }
 
     fn session_record(&self) -> Value {
-        session::snapshot(self.session.state(), &self.chrome())
+        self.session.session_record(&self.chrome())
     }
 
     fn display_record(&self) -> Value {
@@ -1752,26 +1714,7 @@ impl driver::Host for Viewer {
     }
 
     fn quality_line(&self, id: &str) -> Option<String> {
-        let target = Value::keyword(id);
-        commands::commands(&self.session.state().scene, None, None)
-            .into_iter()
-            .find_map(|c| match c {
-                Command::Class {
-                    id: Some(cid),
-                    missing,
-                    band,
-                    grade,
-                    stroke,
-                    ..
-                } if cid == target => Some(format!(
-                    "Detail missing={missing} band={band} continuousGrade={} stroke={},{},{}",
-                    grade.map_or("nil".to_string(), |g| g.to_string()),
-                    stroke.0,
-                    stroke.1,
-                    stroke.2
-                )),
-                _ => None,
-            })
+        self.session.quality_line(id)
     }
 
     fn resize_window(&mut self, w: f64, h: f64) {
