@@ -8,9 +8,11 @@
 //! - `.event-<n>.edn` `{:token :phase :message}`, with phases `starting`,
 //!   the progress stages, `ready`, `stopping`, `stopped` and `failed`.
 //!
-//! Every file is written to `.tmp` then renamed.
+//! Every file is written to a temporary sibling, then renamed, through the
+//! companion host.
 
 use crate::herdr::{Herdr, ProgressFn};
+use crate::host::Host;
 use crate::lifecycle;
 use crate::mailbox::Mailbox;
 use crate::posix;
@@ -18,7 +20,7 @@ use crate::record;
 use crate::vocab::{Failure, Owner, Result};
 use edn::Value;
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 /// A companion that has not reached `ready` within this bound is cancelled;
@@ -33,22 +35,29 @@ pub fn mail_token(id: i64) -> String {
     format!("mail-{id}")
 }
 
-fn write(path: &Path, value: &Value) -> Result<()> {
+fn write(host: &Host, path: &Path, value: &Value) -> Result<()> {
     // The destination is unique per generation, never replaced.
-    let temporary = PathBuf::from(format!("{}.tmp", path.display()));
-    let encoded = edn::encode(value)?;
-    std::fs::write(&temporary, encoded)?;
-    std::fs::rename(&temporary, path)?;
-    Ok(())
+    (host.write)(path, edn::encode(value)?.as_bytes())
 }
 
-fn read(path: &Path) -> Option<Value> {
-    let text = std::fs::read_to_string(path).ok()?;
+fn read(host: &Host, path: &Path) -> Option<Value> {
+    let text = (host.read)(path).ok().flatten()?;
     edn::parse(&text).ok()
 }
 
-/// A started worker, as the viewer tracks it.
+/// The process identity without its name, as the worker and viewer compare
+/// it (starttime only).
+fn identity(host: &Host, pid: i32) -> Option<Owner> {
+    (host.owner)(i64::from(pid)).map(|owner| Owner {
+        name: String::new(),
+        ..owner
+    })
+}
+
+/// A started worker, as the viewer tracks it. It carries the companion host
+/// it was started with; every later command and poll uses that host.
 pub struct Worker {
+    host: Host,
     pub base: String,
     pub token: String,
     pub owner: Owner,
@@ -63,9 +72,10 @@ pub struct Worker {
 
 /// The viewer-side start: write the request, then spawn the helper natively.
 pub fn start(root: &str, restart: bool) -> Result<Worker> {
-    let token = crate::recovery::new_token();
+    let host = Host::posix();
+    let token = (host.token)();
     let base = format!("{root}/.uml-viewer/companion-worker-{token}");
-    let owner = posix::owner_native(posix::current_pid())?
+    let owner = identity(&host, posix::current_pid())
         .ok_or_else(|| Failure::new("viewer process identity is unavailable"))?;
     let request = edn::record::record(vec![
         ("token", Value::String(token.clone())),
@@ -81,7 +91,7 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
         ),
     ]);
     let request_path = format!("{base}.request.edn");
-    write(Path::new(&request_path), &request)?;
+    write(&host, Path::new(&request_path), &request)?;
     let executable = std::env::current_exe()
         .map_err(|error| Failure::new(format!("cannot resolve the uml-viewer binary: {error}")))?;
     let argv = vec![
@@ -89,7 +99,9 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
         std::ffi::OsString::from(&request_path),
     ];
     let child = posix::spawn_native(executable.as_os_str(), &argv, Path::new(root))?;
+    let started = Some((host.clock)());
     Ok(Worker {
+        host,
         base,
         token,
         owner: child,
@@ -97,7 +109,7 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
         seen: 0,
         phase: "starting".to_owned(),
         message: None,
-        started: Some(posix::monotonic_ms()),
+        started,
         timed_out: false,
         exited: false,
     })
@@ -105,9 +117,20 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
 
 /// Ask the helper to stop (`keep` retains the companion session).
 pub fn command(worker: &mut Worker, operation: &str, keep: bool) -> Result<()> {
-    command_with(worker, operation, keep, &|path, value| {
-        write(Path::new(path), value)
-    })
+    worker.sequence += 1;
+    let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
+    write(
+        &worker.host,
+        Path::new(&path),
+        &edn::record::record(vec![
+            ("token", Value::String(worker.token.clone())),
+            ("operation", Value::keyword(operation)),
+            (
+                "extra",
+                edn::record::record(vec![("keep", Value::Bool(keep))]),
+            ),
+        ]),
+    )
 }
 
 /// Ask the helper to wake its pane for one mail delivery. The id is the
@@ -117,6 +140,7 @@ pub fn wake(worker: &mut Worker, id: i64) -> Result<()> {
     worker.sequence += 1;
     let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
     write(
+        &worker.host,
         Path::new(&path),
         &edn::record::record(vec![
             ("token", Value::String(worker.token.clone())),
@@ -129,62 +153,16 @@ pub fn wake(worker: &mut Worker, id: i64) -> Result<()> {
     )
 }
 
-/// The same command, through an injected writer (the poll path uses the
-/// host so tests and the viewer share one boundary).
-fn command_with(
-    worker: &mut Worker,
-    operation: &str,
-    keep: bool,
-    write: &dyn Fn(&str, &Value) -> Result<()>,
-) -> Result<()> {
-    worker.sequence += 1;
-    let path = format!("{}.command-{}.edn", worker.base, worker.sequence);
-    write(
-        &path,
-        &edn::record::record(vec![
-            ("token", Value::String(worker.token.clone())),
-            ("operation", Value::keyword(operation)),
-            (
-                "extra",
-                edn::record::record(vec![("keep", Value::Bool(keep))]),
-            ),
-        ]),
-    )
-}
-
-/// The viewer-side boundary: event/command files and the helper's identity.
-pub struct PollHost {
-    pub read: Box<ReadFn>,
-    pub write: Box<WriteFn>,
-    pub owner: Box<OwnerFn>,
-    pub clock: Box<ClockFn>,
-}
-
-type ReadFn = dyn Fn(&str) -> Option<Value>;
-type WriteFn = dyn Fn(&str, &Value) -> Result<()>;
-type OwnerFn = dyn Fn(i32) -> Option<Owner>;
-type ClockFn = dyn Fn() -> i64;
-
-impl PollHost {
-    pub fn real() -> PollHost {
-        PollHost {
-            read: Box::new(|path| read(Path::new(path))),
-            write: Box::new(|path, value| write(Path::new(path), value)),
-            owner: Box::new(|pid| posix::owner_native(pid).ok().flatten()),
-            clock: Box::new(posix::monotonic_ms),
-        }
-    }
-}
-
 /// Consume up to 32 matching events, enforce the startup deadline once, and
 /// notice a helper that exited without a final result. A stale generation
 /// result is an error before the cursor advances.
-pub fn poll(worker: &mut Worker, host: &PollHost) -> Result<()> {
+pub fn poll(worker: &mut Worker) -> Result<()> {
+    let host = worker.host.clone();
     let start = worker.seen;
     while worker.seen - start < MAX_EVENTS_PER_POLL as u64 {
         let index = worker.seen + 1;
         let path = format!("{}.event-{index}.edn", worker.base);
-        let Some(event) = (host.read)(&path) else {
+        let Some(event) = read(&host, Path::new(&path)) else {
             break;
         };
         if record::get_name(&event, "token").as_deref() != Some(worker.token.as_str()) {
@@ -211,9 +189,9 @@ pub fn poll(worker: &mut Worker, host: &PollHost) -> Result<()> {
         worker.message = Some(
             "Companion startup timed out; cancellation pending, ownership retained".to_owned(),
         );
-        command_with(worker, "stop", false, &*host.write)?;
+        command(worker, "stop", false)?;
     }
-    let observed = (host.owner)(worker.owner.pid);
+    let observed = identity(&host, worker.owner.pid);
     let alive = observed.is_some_and(|observed| observed.start == worker.owner.start);
     if !alive {
         if !matches!(worker.phase.as_str(), "stopped" | "failed") {
@@ -232,6 +210,7 @@ pub fn poll(worker: &mut Worker, host: &PollHost) -> Result<()> {
 /// a cancellation can land between create boundaries exactly as the Lua
 /// worker's `progress` hook did.
 struct Session {
+    host: Host,
     base: String,
     token: String,
     sequence: u64,
@@ -254,6 +233,7 @@ impl Session {
             entries.push(("message", Value::String(message)));
         }
         write(
+            &self.host,
             Path::new(&format!("{}.event-{}.edn", self.base, self.sequence)),
             &edn::record::record(entries),
         )
@@ -263,7 +243,7 @@ impl Session {
     fn commands(&mut self) -> Result<()> {
         loop {
             let path = format!("{}.command-{}.edn", self.base, self.next_command);
-            let Some(command) = read(Path::new(&path)) else {
+            let Some(command) = read(&self.host, Path::new(&path)) else {
                 break;
             };
             if record::get_name(&command, "token").as_deref() != Some(self.token.as_str()) {
@@ -286,7 +266,13 @@ impl Session {
                 _ => {}
             }
         }
-        let viewer = posix::owner_native(self.viewer_pid)?;
+        if self.viewer_pid < 1 {
+            return Err(Failure::new(format!(
+                "Invalid owned process PID: {}",
+                self.viewer_pid
+            )));
+        }
+        let viewer = identity(&self.host, self.viewer_pid);
         if !viewer.is_some_and(|viewer| viewer.start == self.viewer_start) {
             self.stop = true;
         }
@@ -307,8 +293,8 @@ impl Session {
 
 /// The helper role body. `open_window` is `None` when the viewer asked for no
 /// terminal attach (`UML_COMPANION_NO_ATTACH=1`).
-pub fn run(request_path: &str, attach: bool) -> Result<i32> {
-    let request = read(Path::new(request_path))
+pub fn run(request_path: &str, attach: bool, host: &Host) -> Result<i32> {
+    let request = read(host, Path::new(request_path))
         .ok_or_else(|| Failure::new("Missing companion helper request"))?;
     let root = record::get_name(&request, "root").unwrap_or_default();
     let base = record::get_name(&request, "base").unwrap_or_default();
@@ -318,6 +304,7 @@ pub fn run(request_path: &str, attach: bool) -> Result<i32> {
         .cloned()
         .unwrap_or(Value::Nil);
     let session = Rc::new(RefCell::new(Session {
+        host: host.clone(),
         base,
         token,
         sequence: 0,
@@ -353,8 +340,8 @@ pub fn run(request_path: &str, attach: bool) -> Result<i32> {
             if stop && !keep {
                 // A completed record may be released only through the
                 // verified cleanup contract; partial records remain.
-                if lifecycle::required(&root).is_ok() {
-                    match lifecycle::shutdown(&root) {
+                if lifecycle::required(&root, host).is_ok() {
+                    match lifecycle::shutdown(&root, host) {
                         Ok(_) => {
                             session.borrow_mut().event(
                                 "stopped",
@@ -397,12 +384,14 @@ fn run_body(
     attach: bool,
     progress: ProgressFn,
 ) -> Result<()> {
+    let host = session.borrow().host.clone();
     session.borrow_mut().event("starting", None)?;
     let (record_value, backend): (Value, Herdr) = if restart {
-        lifecycle::restart(root)?
+        lifecycle::restart(root, &host)?
     } else {
         lifecycle::create(
             root,
+            &host,
             lifecycle::CreateOptions {
                 progress: Some(progress),
                 ..lifecycle::CreateOptions::default()
@@ -445,7 +434,7 @@ fn run_body(
             if session.borrow().stop {
                 break;
             }
-            posix::sleep(POLL_MS);
+            (session.borrow().host.sleep)(POLL_MS);
             continue;
         };
         let token = mail_token(id);
@@ -467,7 +456,7 @@ fn run_body(
     session.borrow_mut().event("stopping", None)?;
     let keep = session.borrow().keep;
     if !keep {
-        lifecycle::shutdown(root)?;
+        lifecycle::shutdown(root, &host)?;
     }
     session.borrow_mut().event("stopped", None)?;
     Ok(())
@@ -488,7 +477,6 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::rc::Rc;
 
     #[test]
     fn names_a_mail_delivery_by_its_mailbox_id() {
@@ -505,28 +493,37 @@ mod tests {
         journal: &Journal,
         owner: impl Fn(i32) -> Option<Owner> + 'static,
         now: Rc<RefCell<i64>>,
-    ) -> PollHost {
+    ) -> Host {
         let files = journal.files.clone();
         let written = journal.events.clone();
         let write_files = journal.files.clone();
-        PollHost {
-            read: Box::new(move |path| files.borrow().get(path).cloned()),
-            write: Box::new(move |path, value| {
+        Host {
+            read: Rc::new(move |path| {
+                let key = path.to_string_lossy().into_owned();
+                match files.borrow().get(&key) {
+                    Some(value) => edn::encode(value).map(Some).map_err(Failure::from),
+                    None => Ok(None),
+                }
+            }),
+            write: Rc::new(move |path, bytes| {
+                let value = edn::parse(&String::from_utf8_lossy(bytes)).unwrap();
                 written.borrow_mut().push(value.clone());
                 // The helper journal is in-memory: a written command/event is
                 // visible to the next read, exactly like the file protocol.
                 write_files
                     .borrow_mut()
-                    .insert(path.trim_end_matches(".tmp").to_owned(), value.clone());
+                    .insert(path.to_string_lossy().into_owned(), value);
                 Ok(())
             }),
-            owner: Box::new(owner),
-            clock: Box::new(move || *now.borrow()),
+            owner: Rc::new(move |pid| owner(pid as i32)),
+            clock: Rc::new(move || *now.borrow()),
+            ..Host::fake()
         }
     }
 
-    fn worker() -> Worker {
+    fn worker(host: Host) -> Worker {
         Worker {
+            host,
             base: "journal".to_owned(),
             token: "generation".to_owned(),
             owner: Owner {
@@ -557,8 +554,8 @@ mod tests {
         }
         let now = Rc::new(RefCell::new(0i64));
         let host = host(&journal, move |_| observed.clone(), now);
-        let mut worker = worker();
-        poll(&mut worker, &host).unwrap();
+        let mut worker = worker(host);
+        poll(&mut worker).unwrap();
         worker
     }
 
@@ -606,8 +603,8 @@ mod tests {
             },
             now,
         );
-        let mut worker = worker();
-        let error = poll(&mut worker, &host).unwrap_err();
+        let mut worker = worker(host);
+        let error = poll(&mut worker).unwrap_err();
         assert_eq!(
             "Companion helper result identity mismatch; ownership retained",
             error.message
@@ -690,10 +687,10 @@ mod tests {
             },
             now,
         );
-        let mut worker = worker();
+        let mut worker = worker(host);
         worker.started = Some(100);
-        poll(&mut worker, &host).unwrap();
-        poll(&mut worker, &host).unwrap();
+        poll(&mut worker).unwrap();
+        poll(&mut worker).unwrap();
         assert!(worker.timed_out);
         assert_eq!("failed", worker.phase);
         assert!(
@@ -738,11 +735,11 @@ mod tests {
             },
             now,
         );
-        let mut worker = worker();
+        let mut worker = worker(host);
         worker.timed_out = true;
         worker.phase = "failed".to_owned();
         worker.message = Some("cancellation pending".to_owned());
-        poll(&mut worker, &host).unwrap();
+        poll(&mut worker).unwrap();
         assert_eq!("failed", worker.phase);
         assert_eq!(Some("cancellation pending".to_owned()), worker.message);
         journal.files.borrow_mut().insert(
@@ -756,7 +753,7 @@ mod tests {
                 ),
             ]),
         );
-        poll(&mut worker, &host).unwrap();
+        poll(&mut worker).unwrap();
         assert_eq!("stopped", worker.phase);
         assert_eq!(Some("owned resources released".to_owned()), worker.message);
     }
@@ -783,16 +780,16 @@ mod tests {
             },
             now,
         );
-        let mut worker = worker();
+        let mut worker = worker(host);
         worker.started = Some(100);
-        poll(&mut worker, &host).unwrap();
+        poll(&mut worker).unwrap();
         assert_eq!(None, worker.started);
         assert!(!worker.timed_out);
         journal.files.borrow_mut().insert(
             "journal.event-2.edn".to_owned(),
             event("generation", "stopping"),
         );
-        poll(&mut worker, &host).unwrap();
+        poll(&mut worker).unwrap();
         assert_eq!("stopping", worker.phase);
         assert!(!worker.timed_out);
     }
@@ -806,19 +803,21 @@ mod tests {
         ));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("event-1.edn");
-        write(&path, &event("generation", "ready")).unwrap();
+        let host = Host::posix();
+        write(&host, &path, &event("generation", "ready")).unwrap();
         assert!(!directory.join("event-1.edn.tmp").exists());
         assert_eq!(
             Some("ready".to_owned()),
-            record::get_name(&read(&path).unwrap(), "phase")
+            record::get_name(&read(&host, &path).unwrap(), "phase")
         );
-        assert!(read(&directory.join("missing.edn")).is_none());
+        assert!(read(&host, &directory.join("missing.edn")).is_none());
         let _ = std::fs::remove_dir_all(&directory);
     }
 
     fn session_in(directory: &Path) -> Rc<RefCell<Session>> {
         let base = format!("{}/journal", directory.display());
         Rc::new(RefCell::new(Session {
+            host: Host::posix(),
             base,
             token: "generation".to_owned(),
             sequence: 0,
@@ -827,8 +826,7 @@ mod tests {
             keep: false,
             pending: Vec::new(),
             viewer_pid: posix::current_pid(),
-            viewer_start: posix::owner_native(posix::current_pid())
-                .unwrap()
+            viewer_start: identity(&Host::posix(), posix::current_pid())
                 .expect("viewer identity")
                 .start,
         }))
@@ -844,7 +842,7 @@ mod tests {
                     .strip_suffix(".edn")?
                     .parse()
                     .ok()?;
-                let value = read(&directory.join(&name))?;
+                let value = read(&Host::posix(), &directory.join(&name))?;
                 Some((index, record::get_name(&value, "phase")?))
             })
             .collect();
@@ -865,6 +863,7 @@ mod tests {
         // The command arrives while the workspace boundary is still being
         // created; it must land before the next stage runs.
         write(
+            &Host::posix(),
             &directory.join("journal.command-1.edn"),
             &edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
@@ -898,6 +897,7 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let session = session_in(&directory);
         write(
+            &Host::posix(),
             &directory.join("journal.command-1.edn"),
             &edn::record::record(vec![
                 ("token", Value::String("generation".to_owned())),
@@ -926,6 +926,7 @@ mod tests {
         let root = directory.to_string_lossy().into_owned();
         let request_path = format!("{root}/.uml-viewer/companion-worker-gen.request.edn");
         write(
+            &Host::posix(),
             Path::new(&request_path),
             &edn::record::record(vec![
                 ("token", Value::String("gen".to_owned())),
@@ -950,10 +951,10 @@ mod tests {
         )))
         .unwrap()
         .expect("lock");
-        let code = run(&request_path, false).unwrap();
+        let code = run(&request_path, false, &Host::posix()).unwrap();
         assert_eq!(1, code);
         let event_path = format!("{root}/.uml-viewer/companion-worker-gen.event-1.edn");
-        let event = read(Path::new(&event_path)).unwrap();
+        let event = read(&Host::posix(), Path::new(&event_path)).unwrap();
         assert_eq!(Some("failed".to_owned()), record::get_name(&event, "phase"));
         assert!(
             record::get_name(&event, "message")

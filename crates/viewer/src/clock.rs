@@ -1,6 +1,26 @@
 //! The host clock for proposal writeback (#157). The scene core takes `now`
 //! and the proposal name as inputs; the front end reads the clock and the
-//! local time zone here.
+//! local time zone here. [`Now`] is the instant the viewer session takes
+//! as its clock input (#161).
+
+use std::time::Instant;
+
+/// The current moment as the viewer session sees it: a monotonic instant
+/// for poll cadences and the wall-clock seconds proposal writeback stores.
+#[derive(Debug, Clone, Copy)]
+pub struct Now {
+    pub at: Instant,
+    pub epoch: i64,
+}
+
+impl Now {
+    pub fn read() -> Now {
+        Now {
+            at: Instant::now(),
+            epoch: now(),
+        }
+    }
+}
 
 /// Seconds since the Unix epoch.
 pub fn now() -> i64 {

@@ -12,22 +12,24 @@ use edn::record::{get, local_name};
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
 use scene::Rect;
-use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
 use scene::hit;
 
 use crate::bench;
+use crate::clock::Now;
 use crate::commands::{self, Command};
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
 use crate::gui::{Action, Gui};
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
-use crate::{
-    cli::Options, fonts, identity, inspector, mail, mail_watch, mailbox, metrics, paint,
-    project_files, session, signal, strings,
+use crate::viewer_session::{
+    Action as SessionAction, CompanionLink, Effects, Event, Launch, Repaint, ViewerSession,
 };
-use crate::{clock, source, theme, watch};
+use crate::{
+    cli::Options, fonts, identity, inspector, mail, mail_watch, paint, session, signal, strings,
+};
+use crate::{source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
 
@@ -39,7 +41,7 @@ pub fn dpi_override() -> Option<f32> {
         .and_then(|v| v.parse::<f32>().ok())
         .filter(|v| *v > 0.0)
 }
-pub const POLL_INTERVAL: Duration = Duration::from_millis(250);
+pub const POLL_INTERVAL: Duration = crate::viewer_session::POLL_INTERVAL;
 /// Height of the undecorated window's drag strip, in points.
 pub const DRAG_STRIP: f32 = 28.0;
 /// Resize grip thickness, in points.
@@ -290,22 +292,18 @@ pub fn run(options: Options) -> ExitCode {
 }
 
 struct Viewer {
-    state: ViewState,
+    /// View state, hot reload, mail and the companion link (#161).
+    session: ViewerSession,
     project_root: PathBuf,
-    diagram: PathBuf,
     evidence: Option<Evidence>,
     test_seconds: Option<f64>,
     driver: Option<Runner>,
     frames: u64,
     started: Instant,
-    last_poll: Instant,
     last_frame: Instant,
     frame_ms: f64,
     pending: Vec<Input>,
-    hint: Option<String>,
-    status: Option<String>,
     show_performance: bool,
-    force_refresh: bool,
     exit: Arc<AtomicU8>,
     published: u64,
     render_shot: bool,
@@ -345,12 +343,6 @@ struct Viewer {
     gui_pointer: egui::Pos2,
     /// A batch reached egui this frame and the GUI has not drawn it yet.
     gui_inflight: bool,
-    /// The companion helper and the `to-viewer.edn` queue (`--backend herdr`).
-    companion: Option<mail::Companion>,
-    /// Change detector for the mail queue and the helper's event files.
-    mail_watch: mail_watch::Watch,
-    /// The identity was recorded once the helper reached ready.
-    companion_recorded: bool,
     /// `:quit-for-restart` already asked the helper to stop with `keep`.
     restart_stop: bool,
     /// A normal quit (window close, SIGTERM, test duration) asked the helper
@@ -430,23 +422,62 @@ impl Viewer {
         // known: start from the requested (or restored) size.
         let [start_w, start_h] =
             session::window_size(&setup.chrome, dpi_override().map(f64::from).unwrap_or(1.0));
+        // The idle watcher takes its baseline before the first load, so a
+        // diagram written meanwhile still wakes the viewer.
+        let wake_stop = spawn_wake(
+            cc.egui_ctx.clone(),
+            setup.diagram.clone(),
+            setup.project_root.clone(),
+        );
+        if let Some(evidence) = &setup.evidence {
+            if let Some(info) = &renderer {
+                let _ = evidence.write_text("renderer.txt", info);
+            }
+            // The backend identity is the D3D12-versus-llvmpipe evidence.
+            eprintln!(
+                "UML viewer: {}",
+                info_lines(renderer.as_deref().unwrap_or("renderer: unknown\n"))
+            );
+        }
+        // The queue is consumed whether or not a companion backend was asked
+        // for (LOVE's `mail` exists in both cases); only the helper process is
+        // backend-specific and starts after the first scene, as in LOVE.
+        let (root, restart) = (setup.project_root.clone(), setup.restart);
+        let backend = setup.backend;
+        let opened = ViewerSession::open(
+            Launch {
+                project_root: setup.project_root.clone(),
+                diagram: setup.diagram.clone(),
+                restart: setup.restart,
+                backend: setup.backend,
+            },
+            move || -> Box<dyn CompanionLink> {
+                if backend {
+                    Box::new(mail::Companion::start(&root, restart))
+                } else {
+                    Box::new(mail::Companion::mail_only())
+                }
+            },
+        );
+        let session = match opened {
+            Ok(session) => session,
+            Err(error) => {
+                wake_stop.store(true, Ordering::SeqCst);
+                return Err(error);
+            }
+        };
         let mut app = Viewer {
-            state: ViewState::default(),
+            session,
             project_root: setup.project_root.clone(),
-            diagram: setup.diagram.clone(),
             evidence: setup.evidence.clone(),
             test_seconds: setup.test_seconds,
             driver: setup.script.clone().map(Runner::new),
             frames: 0,
             started: Instant::now(),
-            last_poll: Instant::now() - POLL_INTERVAL,
             last_frame: Instant::now(),
             frame_ms: 0.0,
             pending: Vec::new(),
-            hint: None,
-            status: None,
             show_performance: false,
-            force_refresh: false,
             exit,
             published: 0,
             render_shot: false,
@@ -467,43 +498,17 @@ impl Viewer {
             adapter,
             render_cache: RenderCache::default(),
             text_cache: paint::TextCache::default(),
-            wake_stop: spawn_wake(
-                cc.egui_ctx.clone(),
-                setup.diagram.clone(),
-                setup.project_root.clone(),
-            ),
+            wake_stop,
             gui: Gui::default(),
             gui_batches: Default::default(),
             gui_pointer: egui::Pos2::ZERO,
             gui_inflight: false,
-            companion: None,
-            mail_watch: mail_watch::Watch::new(),
-            companion_recorded: false,
             restart_stop: false,
             normal_stop: false,
             stop_deadline: None,
             waker: None,
         };
-        if let Some(evidence) = &setup.evidence {
-            if let Some(info) = &renderer {
-                let _ = evidence.write_text("renderer.txt", info);
-            }
-            // The backend identity is the D3D12-versus-llvmpipe evidence.
-            eprintln!(
-                "UML viewer: {}",
-                info_lines(renderer.as_deref().unwrap_or("renderer: unknown\n"))
-            );
-        }
-        app.load_initial(setup.restart, setup.backend)?;
-        // The queue is consumed whether or not a companion backend was asked
-        // for (LOVE's `mail` exists in both cases); only the helper process is
-        // backend-specific and starts after the first scene, as in LOVE.
-        app.companion = Some(if setup.backend {
-            mail::Companion::start(&setup.project_root, setup.restart)
-        } else {
-            mail::Companion::mail_only(&setup.project_root)
-        });
-        app.mail_watch.baseline(&setup.project_root);
+        app.publish();
         // Mail must be noticed even when nothing else asks for a frame; the
         // waker requests one only when a watched file actually changed.
         let ctx = cc.egui_ctx.clone();
@@ -516,7 +521,7 @@ impl Viewer {
             app.gui.width = Some(width);
         }
         if let Some(out) = setup.bench.clone() {
-            let (classes, _, _) = bench::scene_counts(&app.state.scene);
+            let (classes, _, _) = bench::scene_counts(&app.session.state().scene);
             let provenance = bench::Provenance::from_env(bench::load_one_minute())?;
             let runner = bench::Bench::new(
                 out,
@@ -528,7 +533,7 @@ impl Viewer {
             )?;
             app.bench = Some(runner);
             // The bench sets the unclamped protocol camera; no viewer fit.
-            app.state.fit_pending = false;
+            app.session.state_mut().fit_pending = false;
         }
         // A refused or invalid startup never overwrites an existing identity.
         // With a companion the identity is recorded once it is ready.
@@ -540,64 +545,16 @@ impl Viewer {
         Ok(app)
     }
 
-    fn load_initial(&mut self, restart: bool, backend: bool) -> Result<(), String> {
-        let (snapshots, stamp) = metrics::snapshot(&self.project_root);
-        let path = self.diagram.to_string_lossy().into_owned();
-        if backend && !restart {
-            let mut state = document::waiting_state(Some(path), 0);
-            state.project_root = Some(self.project_root.to_string_lossy().into_owned());
-            state.revision = 1;
-            self.state = state;
-            self.publish();
-            return Ok(());
-        }
-        let text = match std::fs::read_to_string(&self.diagram) {
-            Ok(text) => text,
-            Err(_) => {
-                let state = ViewState {
-                    path: Some(path.clone()),
-                    project_root: Some(self.project_root.to_string_lossy().into_owned()),
-                    revision: 1,
-                    ..ViewState::default()
-                };
-                self.state = state;
-                self.hint = Some(strings::missing_file(&path));
-                self.publish();
-                return Ok(());
-            }
-        };
-        let doc = scene::ir::read_document(&text).map_err(|e| format!("{path}: {e}"))?;
-        let mtime = watch::mtime(&self.diagram).ok();
-        let mut state = document::new_state(
-            doc,
-            mtime.map(Value::String),
-            None,
-            None,
-            &snapshots,
-            Some(stamp),
-        );
-        state.path = Some(path);
-        state.project_root = Some(self.project_root.to_string_lossy().into_owned());
-        if restart {
-            if let Some(snapshot) = session::read(&self.project_root) {
-                state = session::restore(&state, &snapshot);
-            }
-        } else {
-            state.fit_pending = true;
-        }
-        self.state = state;
-        self.publish();
-        Ok(())
-    }
-
     fn publish(&mut self) {
         if let Some(evidence) = &self.evidence
-            && self.state.revision != self.published
+            && self.session.state().revision != self.published
         {
-            if let Err(error) = evidence.publish(&self.state.scene, self.state.revision) {
+            if let Err(error) =
+                evidence.publish(&self.session.state().scene, self.session.state().revision)
+            {
                 eprintln!("uml viewer: could not publish evidence: {error}");
             }
-            self.published = self.state.revision;
+            self.published = self.session.state().revision;
         }
     }
 
@@ -618,7 +575,7 @@ impl Viewer {
     /// origin), the space `scene::events` converts to world itself.
     fn apply_input(&mut self, input: Input, ctx: &egui::Context) {
         let mut dims = self.dims(ctx);
-        let state = self.state.clone();
+        let state = self.session.state().clone();
         match &input {
             Input::Click { x, y } | Input::DoubleClick { x, y } | Input::MouseMove { x, y } => {
                 self.driver_pointer = Some((*x, *y))
@@ -626,7 +583,7 @@ impl Viewer {
             Input::Drag { to, .. } => self.driver_pointer = Some((to[0], to[1])),
             _ => {}
         }
-        self.state = match input {
+        *self.session.state_mut() = match input {
             Input::Click { x, y } => {
                 if self.chrome_press(x, y) {
                     return;
@@ -670,7 +627,7 @@ impl Viewer {
                         .and_then(|id| self.gui.card_for(&state, &id))
                         .map(|(_, rows)| rows)
                         .unwrap_or_default();
-                    self.state = inspector::scroll_rows(&state, &rows, -dy, view_h);
+                    *self.session.state_mut() = inspector::scroll_rows(&state, &rows, -dy, view_h);
                     return;
                 }
                 if self
@@ -699,7 +656,7 @@ impl Viewer {
                 }
                 dims.raw_key = Some(key.clone());
                 if key == "r" {
-                    self.force_refresh = true;
+                    self.session.process(Event::ForceRefresh, Now::read());
                 }
                 events::on_key(&state, Some(&Value::String(key)), &dims)
             }
@@ -743,13 +700,13 @@ impl Viewer {
     }
 
     fn search_key(&mut self, key: &str, dims: &Dims) {
-        let results = self.search.results(self.state.document.as_ref());
+        let results = self.search.results(self.session.state().document.as_ref());
         match key {
             "down" => self.search.step(true, &results),
             "up" => self.search.step(false, &results),
             "enter" => {
                 if let Some(id) = self.search.selection.clone() {
-                    self.state = events::locate(&self.state, &id, dims);
+                    *self.session.state_mut() = events::locate(self.session.state(), &id, dims);
                 }
             }
             "escape" => self.search.close(),
@@ -760,7 +717,7 @@ impl Viewer {
     /// Enter the target's namespace, select it, open its card and centre it.
     fn locate(&mut self, id: &Value) {
         let dims = self.dims(&self.ctx.clone());
-        self.state = events::locate(&self.state, id, &dims);
+        *self.session.state_mut() = events::locate(self.session.state(), id, &dims);
     }
 
     /// Draw the Ctrl+F search box and record its area and rows in view
@@ -769,7 +726,7 @@ impl Viewer {
         if !self.search.active {
             return;
         }
-        self.search.sync(self.state.revision);
+        self.search.sync(self.session.state().revision);
         let origin = ctx.content_rect().min;
         let field = egui::Id::unique("uml-search-field");
         // Driver text/paste go through egui's own event path into the field.
@@ -777,7 +734,7 @@ impl Viewer {
         if !events.is_empty() {
             ctx.input_mut(|i| i.events.extend(events));
         }
-        let results = self.search.results(self.state.document.as_ref());
+        let results = self.search.results(self.session.state().document.as_ref());
         let mut rows = Vec::new();
         let mut chosen = None;
         let response = egui::Area::new(egui::Id::unique("uml-search"))
@@ -820,102 +777,50 @@ impl Viewer {
     }
 
     /// Apply what the inspector, card and source windows asked for.
+    /// The viewer session applies them; a source window is GUI state.
     fn apply_actions(&mut self, actions: Vec<Action>, ctx: &egui::Context) {
         if actions.is_empty() {
             return;
         }
-        let outbox = companion::mailbox::Mailbox::outbox(&self.project_root);
         for action in actions {
-            match action {
-                Action::Choose(id) => {
-                    let choice = inspector::choose(&self.state, id.as_ref());
-                    self.state = choice.state;
-                    let extra: Vec<(Value, Value)> = match &choice.context {
-                        Value::Map(entries) => entries.clone(),
-                        _ => Vec::new(),
-                    };
-                    if let Err(error) = outbox.append("context", &extra) {
-                        eprintln!("uml viewer: could not send the context: {error}");
-                    }
-                    self.state.discussion_context = Some(choice.context);
-                }
-                Action::NewProposal => {
-                    let now = clock::now();
-                    self.state = events::add_proposal(
-                        &self.state,
-                        now,
-                        &clock::proposal_name(now),
-                        Some(&project_files::Files),
-                    );
-                    self.gui.invalidate();
-                }
-                Action::Declutter => self.state = events::cycle_declutter(&self.state),
-                Action::Regen => {
-                    // The durable queue is authoritative; the wake tells the
-                    // agent there is something to consume. Without a helper
-                    // the request still waits in the queue (#142).
-                    self.status = Some(match outbox.append("regen", &[]) {
-                        Ok(cmd) => {
-                            let id = companion::record::get_i64(&cmd, "id").unwrap_or(0);
-                            let woken = self.companion.as_mut().is_some_and(|c| c.wake(id).is_ok());
-                            if woken {
-                                "Regen requested.".into()
-                            } else {
-                                "Regen queued; Claude session not attached.".into()
-                            }
-                        }
-                        Err(_) => "Regen failed.".into(),
-                    });
-                    self.mail_watch.baseline(&self.project_root);
-                }
-                Action::Rename(id, new_name) => {
-                    self.state = events::rename_proposal(
-                        &self.state,
-                        Some(&id),
-                        &new_name,
-                        Some(&project_files::Files),
-                    );
-                    self.gui.invalidate();
-                }
-                Action::Delete(id) => {
-                    self.state = events::delete_proposal(
-                        &self.state,
-                        Some(&id),
-                        Some(&project_files::Files),
-                    );
-                    self.gui.invalidate();
-                }
-                Action::CloseCard => self.state = events::close_detail(&self.state),
-                Action::Mail(op) => {
-                    // The right-click menu writes the exact `to-agent.edn`
-                    // command and wakes the companion for that delivery.
-                    let (op, extra) =
-                        mailbox::menu_mail(&self.state, self.state.selected.as_ref(), &op);
-                    match outbox.append(&op, &extra) {
-                        Ok(cmd) => {
-                            let id = companion::record::get_i64(&cmd, "id").unwrap_or(0);
-                            if let Some(companion) = &mut self.companion
-                                && let Err(error) = companion.wake(id)
-                            {
-                                eprintln!("uml viewer: could not wake the companion: {error}");
-                            }
-                        }
-                        Err(error) => {
-                            self.status = Some(format!("Mail failed: {error}"));
-                        }
-                    }
-                    self.mail_watch.baseline(&self.project_root);
-                }
-                Action::Locate(id) => self.locate(&id),
+            let action = match action {
                 Action::OpenSource(ident) => {
                     if let Err(reason) = self.gui.open_source(&ident, &self.project_root) {
-                        self.status = Some(strings::SOURCE_NOT_OPENED.replace("%s", &reason));
+                        self.session
+                            .set_status(strings::SOURCE_NOT_OPENED.replace("%s", &reason));
                     }
+                    continue;
                 }
-            }
+                Action::Choose(id) => SessionAction::Choose(id),
+                Action::NewProposal => SessionAction::NewProposal,
+                Action::Declutter => SessionAction::Declutter,
+                Action::Regen => SessionAction::Regen,
+                Action::Rename(id, name) => SessionAction::Rename(id, name),
+                Action::Delete(id) => SessionAction::Delete(id),
+                Action::CloseCard => SessionAction::CloseCard,
+                Action::Locate(id) => SessionAction::Locate(id),
+                Action::Mail(op) => SessionAction::Mail(op),
+            };
+            let dims = self.dims(ctx);
+            let effects = self
+                .session
+                .process(Event::Action(action, dims), Now::read());
+            self.carry_out(effects, ctx);
         }
         self.publish();
+        // Every action redraws, a source window included.
         ctx.request_repaint();
+    }
+
+    /// Do what the viewer session asked for.
+    fn carry_out(&mut self, effects: Effects, ctx: &egui::Context) {
+        if effects.invalidate_gui {
+            self.gui.invalidate();
+        }
+        match effects.repaint {
+            Repaint::None => {}
+            Repaint::Now => ctx.request_repaint(),
+        }
     }
 
     /// The point a GUI step targets, in screen points.
@@ -1005,54 +910,25 @@ impl Viewer {
         }
     }
 
-    /// Poll the IR and metrics stamps; reload when either changed.
-    fn poll(&mut self) {
-        // A companion launch shows the empty canvas until :display (#142).
-        if self.state.waiting {
-            return;
-        }
-        let path_text = self.diagram.to_string_lossy().into_owned();
-        let Ok(mtime) = watch::mtime(&self.diagram) else {
-            self.hint = Some(strings::missing_file(&path_text));
-            return;
-        };
-        let (snapshots, stamp) = metrics::snapshot(&self.project_root);
-        let current_mtime = Some(Value::String(mtime));
-        if current_mtime == self.state.mtime && Some(stamp.clone()) == self.state.metrics_stamp {
-            return;
-        }
-        let Ok(text) = std::fs::read_to_string(&self.diagram) else {
-            self.hint = Some(strings::missing_file(&path_text));
-            return;
-        };
-        let (next, changed, rejected) =
-            document::reload(&self.state, &text, current_mtime, &snapshots, Some(stamp));
-        if let Some(reason) = rejected {
-            eprintln!("Document reload rejected: {reason}");
-        }
-        if next.document.is_some() {
-            self.hint = None;
-        }
-        self.state = next;
-        if changed {
-            self.publish();
-        }
-    }
-
     /// What the mail driver observes: the cursor, whether the canvas still
     /// waits for `:display`, the loaded title and the discussion context.
     fn mail_record(&self) -> Value {
         let kw = Value::keyword;
         Value::Map(vec![
-            (kw("seen"), Value::Integer(self.state.mail_seen)),
-            (kw("waiting"), Value::Bool(self.state.waiting)),
+            (kw("seen"), Value::Integer(self.session.state().mail_seen)),
+            (kw("waiting"), Value::Bool(self.session.state().waiting)),
             (
                 kw("path"),
-                self.state.path.clone().map_or(Value::Nil, Value::String),
+                self.session
+                    .state()
+                    .path
+                    .clone()
+                    .map_or(Value::Nil, Value::String),
             ),
             (
                 kw("title"),
-                self.state
+                self.session
+                    .state()
                     .document
                     .as_ref()
                     .and_then(|d| get(d, "title"))
@@ -1061,7 +937,8 @@ impl Viewer {
             ),
             (
                 kw("context"),
-                self.state
+                self.session
+                    .state()
                     .discussion_context
                     .as_ref()
                     .and_then(|c| get(c, "context"))
@@ -1069,67 +946,6 @@ impl Viewer {
                     .unwrap_or(Value::Nil),
             ),
         ])
-    }
-
-    /// The 250 ms mail loop (`--backend herdr`): consume worker events, then
-    /// the `to-viewer.edn` queue. A poll with nothing new does no work and
-    /// asks for no repaint, so an idle viewer stays idle (#142).
-    fn poll_mail(&mut self, ctx: &egui::Context) {
-        if self.companion.is_none() {
-            return;
-        }
-        let found = self.mail_watch.poll(&self.project_root);
-        let mut changed = false;
-        if found.worker {
-            let ready = self
-                .companion
-                .as_mut()
-                .is_some_and(|companion| companion.poll_worker());
-            changed = true;
-            if ready && !self.companion_recorded {
-                // Identity is written once, after the companion is ready.
-                if let Err(error) = identity::record(&self.project_root) {
-                    eprintln!("uml viewer: could not record the process identity: {error}");
-                }
-                self.companion_recorded = true;
-            }
-        }
-        if found.mail {
-            let consumed = match &mut self.companion {
-                Some(companion) => {
-                    let (next, consumed) = companion.consume(&self.state);
-                    if consumed {
-                        let path_changed = next.path != self.state.path;
-                        self.state = next;
-                        if let Some(path) = self.state.path.clone() {
-                            self.diagram = PathBuf::from(path);
-                        }
-                        if path_changed {
-                            self.hint = None;
-                        }
-                    }
-                    consumed
-                }
-                None => false,
-            };
-            if consumed {
-                self.gui.invalidate();
-                self.publish();
-                changed = true;
-            }
-            // The pop rewrote the file this watcher reads.
-            self.mail_watch.baseline(&self.project_root);
-        }
-        let status = self.companion.as_ref().and_then(|c| c.status.clone());
-        if let Some(status) = status
-            && self.status.as_deref() != Some(status.as_str())
-        {
-            self.status = Some(status);
-            changed = true;
-        }
-        if changed {
-            ctx.request_repaint();
-        }
     }
 
     /// A normal close asks the helper to stop without keeping the companion;
@@ -1141,12 +957,10 @@ impl Viewer {
         }
         self.normal_stop = true;
         self.stop_deadline = Some(Instant::now() + Duration::from_secs(5));
-        if let Some(companion) = &mut self.companion
-            && let Err(error) = companion.stop(false)
-        {
+        if let Err(error) = self.session.stop_companion(false) {
             eprintln!("uml viewer: could not stop the companion: {error}");
         }
-        if self.companion.as_ref().is_none_or(|c| c.settled()) {
+        if self.session.companion_settled() {
             self.quit = true;
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
@@ -1154,10 +968,7 @@ impl Viewer {
 
     /// Wait (bounded) for the helper to settle, then exit 0.
     fn settle_normal_quit(&mut self, ctx: &egui::Context) {
-        let settled = match &mut self.companion {
-            Some(companion) => companion.poll_worker() || companion.settled(),
-            None => true,
-        };
+        let settled = self.session.poll_companion() || self.session.companion_settled();
         let expired = self.stop_deadline.is_some_and(|at| Instant::now() >= at);
         if settled || expired {
             self.quit = true;
@@ -1171,27 +982,25 @@ impl Viewer {
     /// `:quit-for-restart`: stop the helper with `keep` (a failed helper needs
     /// no stop and must not strand the restart), save the session, exit 0.
     fn quit_for_restart(&mut self, ctx: &egui::Context) {
-        if let Some(companion) = &mut self.companion {
-            if !self.restart_stop {
-                if let Err(error) = companion.stop(true) {
-                    eprintln!("uml viewer: could not stop the companion: {error}");
-                }
-                self.restart_stop = true;
+        if !self.restart_stop {
+            if let Err(error) = self.session.stop_companion(true) {
+                eprintln!("uml viewer: could not stop the companion: {error}");
             }
-            // Poll until the helper settled, so the replacement viewer binds
-            // the companion that is actually there.
-            companion.poll_worker();
-            if !companion.settled() {
-                ctx.request_repaint_after(POLL_INTERVAL);
-                return;
-            }
+            self.restart_stop = true;
+        }
+        // Poll until the helper settled, so the replacement viewer binds
+        // the companion that is actually there.
+        self.session.poll_companion();
+        if !self.session.companion_settled() {
+            ctx.request_repaint_after(POLL_INTERVAL);
+            return;
         }
         let chrome = session::Chrome {
             window_w: Some(self.window_w),
             window_h: Some(self.window_h),
             inspector_w: Some(self.gui.inspector_width()),
         };
-        let snapshot = session::snapshot(&self.state, &chrome);
+        let snapshot = session::snapshot(self.session.state(), &chrome);
         if let Err(error) = session::save(&self.project_root, &snapshot) {
             eprintln!("uml viewer: could not save the session: {error}");
         }
@@ -1336,26 +1145,26 @@ impl Viewer {
         if let Some(p) = pos.filter(|_| inside) {
             // View units: points from the canvas origin.
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
-            let dragging = self.state.drag.is_some();
+            let dragging = self.session.state().drag.is_some();
             if !dragging && (self.search.captures(x, y) || self.gui.captures(x, y, self.window_w)) {
                 // egui owns the search box; the canvas sees nothing.
-                self.state = events::on_leave(&self.state);
+                *self.session.state_mut() = events::on_leave(self.session.state());
             } else if (pressed || double) && self.chrome_press(x, y) {
                 // Consumed by the Declutter control.
             } else if double {
-                self.state = events::on_double_press(&self.state, x, y);
+                *self.session.state_mut() = events::on_double_press(self.session.state(), x, y);
             } else if pressed {
-                self.state = events::on_left_press(&self.state, x, y);
+                *self.session.state_mut() = events::on_left_press(self.session.state(), x, y);
             } else if down && dragging {
-                self.state = events::on_drag(&self.state, x, y);
+                *self.session.state_mut() = events::on_drag(self.session.state(), x, y);
             } else if !down {
-                self.state = events::on_move(&self.state, x, y);
+                *self.session.state_mut() = events::on_move(self.session.state(), x, y);
             }
-            if released && self.state.drag.is_some() {
-                self.state = events::on_release(&self.state, x, y);
+            if released && self.session.state().drag.is_some() {
+                *self.session.state_mut() = events::on_release(self.session.state(), x, y);
             }
         } else if !down {
-            self.state = events::on_leave(&self.state);
+            *self.session.state_mut() = events::on_leave(self.session.state());
         }
         let over_search = pos.is_some_and(|p| {
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
@@ -1433,7 +1242,7 @@ impl Viewer {
     ) {
         let (w, h) = (rect.width() as f64, rect.height() as f64);
         if self.bench_geo.is_none() {
-            let geo = bench::Geo::from_scene(&self.state.scene, w, h);
+            let geo = bench::Geo::from_scene(&self.session.state().scene, w, h);
             let [name, backend, driver, info] = &self.adapter;
             let meta = bench::environment_meta(
                 name,
@@ -1443,7 +1252,7 @@ impl Viewer {
                 ctx.pixels_per_point() as f64,
                 (w, h),
                 &geo,
-                bench::scene_counts(&self.state.scene),
+                bench::scene_counts(&self.session.state().scene),
             );
             eprintln!("UML viewer bench: {meta}");
             if let Some(runner) = &mut self.bench {
@@ -1458,10 +1267,10 @@ impl Viewer {
         let step = runner.frame(&geo, now, cpu_ms);
         let passed = runner.passed();
         if let Some((cx, cy, zoom)) = step.camera {
-            self.state.zoom = zoom;
-            self.state.cam_x = cx - w / (2.0 * zoom);
-            self.state.cam_y = cy - h / (2.0 * zoom);
-            self.state.fit_pending = false;
+            self.session.state_mut().zoom = zoom;
+            self.session.state_mut().cam_x = cx - w / (2.0 * zoom);
+            self.session.state_mut().cam_y = cy - h / (2.0 * zoom);
+            self.session.state_mut().fit_pending = false;
         }
         if step.continuous {
             ctx.request_repaint();
@@ -1544,9 +1353,8 @@ impl eframe::App for Viewer {
         // A window close the frame loop did not see (WM quit): ask the
         // helper to stop without keeping the companion. It then releases the
         // session and ownership on its own.
-        if let Some(companion) = &mut self.companion
-            && !companion.settled()
-            && let Err(error) = companion.stop(false)
+        if !self.session.companion_settled()
+            && let Err(error) = self.session.stop_companion(false)
         {
             eprintln!("uml viewer: could not stop the companion: {error}");
         }
@@ -1606,38 +1414,38 @@ impl eframe::App for Viewer {
         }
 
         // Hot reload: IR or metrics stamp change, or R.
-        if self.force_refresh || self.last_poll.elapsed() >= POLL_INTERVAL {
-            self.force_refresh = false;
-            self.last_poll = Instant::now();
-            self.poll();
-        }
+        let effects = self.session.process(Event::Tick, Now::read());
+        self.carry_out(effects, ctx);
+        self.publish();
         // Mail is polled only when the waker saw a change (or at startup):
         // an unchanged project does no mailbox work and no repaint.
         let mail_due = self.frames <= 2 || self.waker.as_ref().is_some_and(|waker| waker.take());
         if mail_due {
-            self.poll_mail(ctx);
+            let effects = self.session.process(Event::MailDue, Now::read());
+            self.carry_out(effects, ctx);
+            self.publish();
         }
         // A restart request saves the session and exits; a stopped helper
         // keeps being polled so the replacement viewer never binds a ghost.
-        if self.state.quit_for_restart || self.restart_stop {
+        if self.session.state().quit_for_restart || self.restart_stop {
             self.quit_for_restart(ctx);
         }
-        if self.state.fit_pending {
+        if self.session.state().fit_pending {
             let dims = self.dims(ctx);
-            self.state = events::settle(&self.state, &dims);
+            *self.session.state_mut() = events::settle(self.session.state(), &dims);
         }
 
         let full = ui.max_rect();
         let rect = full.with_max_x(full.min.x + self.gui.canvas_width(full.width() as f64) as f32);
-        let hint = self.hint.clone();
-        let status = self.status.clone();
+        let hint = self.session.hint().map(str::to_owned);
+        let status = self.session.status().map(str::to_owned);
         let performance = self
             .show_performance
             .then(|| strings::performance(fps(ctx), self.frame_ms));
         paint::paint(
             ctx,
             ui.painter(),
-            &self.state,
+            self.session.state(),
             rect,
             hint.as_deref(),
             status.as_deref(),
@@ -1647,7 +1455,7 @@ impl eframe::App for Viewer {
             &mut self.text_cache,
         );
         self.draw_search(ctx);
-        let actions = self.gui.draw(ctx, &self.state, self.frames);
+        let actions = self.gui.draw(ctx, self.session.state(), self.frames);
         self.apply_actions(actions, ctx);
         self.draw_window_controls(ctx);
         self.gui_inflight = false;
@@ -1737,15 +1545,17 @@ impl driver::Host for Viewer {
     fn set_view(&mut self, zoom: Option<f64>, center: Option<[f64; 2]>) {
         if let Some(zoom) = zoom {
             // Keep the view centre fixed, like ctrl+wheel at the middle.
-            let factor = zoom / self.state.zoom.max(1e-6);
+            let factor = zoom / self.session.state().zoom.max(1e-6);
             let (cx, cy) = (self.window_w / 2.0, self.window_h / 2.0);
-            self.state = events::zoom_at(&self.state, factor, cx, cy);
-            self.state.fit_pending = false;
+            *self.session.state_mut() = events::zoom_at(self.session.state(), factor, cx, cy);
+            self.session.state_mut().fit_pending = false;
         }
         if let Some(center) = center {
             // Center the world point: cam is the top-left world coordinate.
-            self.state.cam_x = center[0] - self.window_w / (2.0 * self.state.zoom);
-            self.state.cam_y = center[1] - self.window_h / (2.0 * self.state.zoom);
+            self.session.state_mut().cam_x =
+                center[0] - self.window_w / (2.0 * self.session.state().zoom);
+            self.session.state_mut().cam_y =
+                center[1] - self.window_h / (2.0 * self.session.state().zoom);
         }
     }
 
@@ -1755,7 +1565,7 @@ impl driver::Host for Viewer {
     }
 
     fn view_record(&mut self, anchor: Option<[f64; 2]>) -> ViewRecord {
-        let s = &self.state;
+        let s = self.session.state();
         let id_of = |v: &Option<Value>| {
             v.as_ref().map(|v| {
                 get(v, "id")
@@ -1784,27 +1594,28 @@ impl driver::Host for Viewer {
     }
 
     fn is_fitted(&self) -> bool {
-        let fitted = events::fit(&self.state, &self.dims(&self.ctx));
+        let fitted = events::fit(self.session.state(), &self.dims(&self.ctx));
         let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
-        !self.state.fit_pending
-            && near(fitted.zoom, self.state.zoom)
-            && near(fitted.cam_x, self.state.cam_x)
-            && near(fitted.cam_y, self.state.cam_y)
+        !self.session.state().fit_pending
+            && near(fitted.zoom, self.session.state().zoom)
+            && near(fitted.cam_x, self.session.state().cam_x)
+            && near(fitted.cam_y, self.session.state().cam_y)
     }
 
     fn is_blank(&self, x: f64, y: f64) -> bool {
-        let (wx, wy) = events::world_xy(&self.state, x, y);
-        hit::at(&self.state.scene, wx, wy).is_none() && !self.gui.captures(x, y, self.window_w)
+        let (wx, wy) = events::world_xy(self.session.state(), x, y);
+        hit::at(&self.session.state().scene, wx, wy).is_none()
+            && !self.gui.captures(x, y, self.window_w)
     }
 
     fn click_class(&mut self, id: &str, double: bool, secondary: bool) -> Result<(), String> {
         // The compiled scene prefixes ids per section (`d0-`); the authored
         // IR id is what the driver names, so resolve through the suffix.
         let wanted = Value::keyword(id);
-        let class = hit::class_by_id(&self.state.scene, &wanted)
+        let class = hit::class_by_id(&self.session.state().scene, &wanted)
             .or_else(|| {
                 let suffix = format!("-{id}");
-                edn::record::seq(get(&self.state.scene, "classes"))
+                edn::record::seq(get(&self.session.state().scene, "classes"))
                     .iter()
                     .find(|c| {
                         get(c, "id")
@@ -1817,10 +1628,10 @@ impl driver::Host for Viewer {
             .and_then(Rect::from_value)
             .ok_or_else(|| format!("class {id} has no rect"))?;
         // A few units inside the box under the current camera (Lua on_class).
-        let z = events::zoom_of(&self.state);
+        let z = events::zoom_of(self.session.state());
         let (x, y) = (
-            (r.x + 6.0 - self.state.cam_x) * z,
-            (r.y + 6.0 - self.state.cam_y) * z,
+            (r.x + 6.0 - self.session.state().cam_x) * z,
+            (r.y + 6.0 - self.session.state().cam_y) * z,
         );
         if secondary {
             // A right click through egui's own pointer path: the canvas menu
@@ -1925,10 +1736,12 @@ impl driver::Host for Viewer {
     }
 
     fn gui_record(&self) -> Value {
-        let mut record = self.gui.record(&self.state);
+        let mut record = self.gui.record(self.session.state());
         record.assoc(
             Value::keyword("status"),
-            self.status.clone().map_or(Value::Nil, Value::String),
+            self.session
+                .status()
+                .map_or(Value::Nil, |s| Value::String(s.into())),
         );
         record.assoc(
             Value::keyword("window"),
@@ -1969,9 +1782,9 @@ impl driver::Host for Viewer {
         let measure = |s: f64, t: &str| paint::measure(&ctx, s as f32, t);
         let mut count = 0;
         let commands = commands::commands(
-            &self.state.scene,
-            self.state.selected.as_ref(),
-            self.state.hover.as_ref(),
+            &self.session.state().scene,
+            self.session.state().selected.as_ref(),
+            self.session.state().hover.as_ref(),
         );
         for command in &commands {
             let (text, size, h, max_w, bold, italic) = match command {
@@ -2018,7 +1831,7 @@ impl driver::Host for Viewer {
             window_h: Some(self.window_h),
             inspector_w: Some(self.gui.inspector_width()),
         };
-        session::snapshot(&self.state, &chrome)
+        session::snapshot(self.session.state(), &chrome)
     }
 
     fn display_record(&self) -> Value {
@@ -2057,7 +1870,7 @@ impl driver::Host for Viewer {
 
     fn quality_line(&self, id: &str) -> Option<String> {
         let target = Value::keyword(id);
-        commands::commands(&self.state.scene, None, None)
+        commands::commands(&self.session.state().scene, None, None)
             .into_iter()
             .find_map(|c| match c {
                 Command::Class {
