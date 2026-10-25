@@ -857,8 +857,8 @@ impl Viewer {
     }
 
     /// A normal close: the session stops the helper without keeping it.
-    fn begin_normal_quit(&mut self, ctx: &egui::Context) {
-        let effects = self.session.process(Event::Quit, Now::read());
+    fn begin_normal_close(&mut self, ctx: &egui::Context) {
+        let effects = self.session.process(Event::NormalClose, Now::read());
         self.carry_out(effects, ctx);
     }
 
@@ -923,7 +923,7 @@ impl Viewer {
             ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
         }
         if closed && !self.quit {
-            self.begin_normal_quit(ctx);
+            self.begin_normal_close(ctx);
         }
     }
 
@@ -1325,16 +1325,18 @@ impl eframe::App for Viewer {
         // A termination signal is a normal close: release the companion and
         // exit through the same path a window close takes.
         if signal::terminated() && !self.quit {
-            self.begin_normal_quit(ctx);
+            self.begin_normal_close(ctx);
         }
-        let effects = self.session.process(Event::Quitting, Now::read());
+        let effects = self
+            .session
+            .process(Event::NormalCloseCheckpoint, Now::read());
         self.carry_out(effects, ctx);
         if let Some(seconds) = self.test_seconds
             && self.started.elapsed().as_secs_f64() >= seconds
         {
             // The test duration is the normal close: the companion is
-            // stopped here and `settle_normal_quit` closes the window.
-            self.begin_normal_quit(ctx);
+            // stopped here and the normal-close checkpoint closes the window.
+            self.begin_normal_close(ctx);
         }
         // Idle: no cadence; input and the wake watcher repaint. Drivers,
         // timed runs and pending screenshots keep the poll cadence.

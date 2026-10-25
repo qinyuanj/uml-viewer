@@ -154,11 +154,12 @@ pub(crate) enum Event {
     RestartExit(Chrome),
     /// A normal close (the close control, a termination signal, the test
     /// duration): stop the helper without keeping the companion.
-    Quit,
+    NormalClose,
     /// The frame's normal-close checkpoint: close once the helper settled,
     /// or at the deadline regardless.
-    Quitting,
-    /// The window closed without the frame loop seeing it (a WM quit).
+    NormalCloseCheckpoint,
+    /// The window closed without the frame loop seeing it (the window manager
+    /// closed it).
     WindowClosed,
     /// Canvas input the shell found uncaptured by the search box and the GUI,
     /// with the canvas geometry and modifiers at the time.
@@ -219,7 +220,7 @@ pub(crate) enum Canvas {
 }
 
 /// How long a normal close waits for the helper to settle.
-pub const QUIT_DEADLINE: Duration = Duration::from_secs(5);
+pub const NORMAL_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 
 /// What the inspector, class card and menus ask the session to do. Opening
 /// a source window is the shell's own (it is GUI state).
@@ -280,7 +281,7 @@ pub(crate) struct ViewerSession {
     /// `:quit-for-restart` already asked the helper to stop with `keep`.
     restart_stop: bool,
     /// A normal close stops the helper; the viewer exits at this deadline.
-    quit_deadline: Option<Instant>,
+    close_deadline: Option<Instant>,
 }
 
 impl ViewerSession {
@@ -305,7 +306,7 @@ impl ViewerSession {
             last_poll: None,
             force_refresh: false,
             restart_stop: false,
-            quit_deadline: None,
+            close_deadline: None,
         };
         let launch_backend = launch.backend;
         session.load_initial(launch.restart, launch.backend, launch.snapshot.as_ref())?;
@@ -353,8 +354,8 @@ impl ViewerSession {
                 Effects::default()
             }
             Event::RestartExit(chrome) => self.restart_exit(&chrome),
-            Event::Quit => self.begin_quit(now),
-            Event::Quitting => self.quitting(now),
+            Event::NormalClose => self.begin_normal_close(now),
+            Event::NormalCloseCheckpoint => self.normal_close_checkpoint(now),
             Event::Canvas(input, dims) => {
                 self.canvas(input, dims);
                 Effects::default()
@@ -477,11 +478,11 @@ impl ViewerSession {
     /// A normal close asks the helper to stop without keeping the companion;
     /// the helper then cancels recovery, removes its Herdr session and clears
     /// the ownership record. A viewer without a helper has nothing to stop.
-    fn begin_quit(&mut self, now: Now) -> Effects {
-        if self.quit_deadline.is_some() {
+    fn begin_normal_close(&mut self, now: Now) -> Effects {
+        if self.close_deadline.is_some() {
             return Effects::default();
         }
-        self.quit_deadline = Some(now.at + QUIT_DEADLINE);
+        self.close_deadline = Some(now.at + NORMAL_CLOSE_DEADLINE);
         if let Err(error) = self.link.stop(false) {
             eprintln!("uml viewer: could not stop the companion: {error}");
         }
@@ -492,8 +493,8 @@ impl ViewerSession {
     }
 
     /// Wait (bounded) for the helper to settle, then exit 0.
-    fn quitting(&mut self, now: Now) -> Effects {
-        let Some(deadline) = self.quit_deadline else {
+    fn normal_close_checkpoint(&mut self, now: Now) -> Effects {
+        let Some(deadline) = self.close_deadline else {
             return Effects::default();
         };
         let settled = self.poll_link() || self.link.settled();
@@ -1243,15 +1244,15 @@ mod tests {
         let start = Instant::now();
         assert_eq!(
             Effects::default(),
-            session.process(Event::Quitting, at(start, 0)),
+            session.process(Event::NormalCloseCheckpoint, at(start, 0)),
             "before a close the checkpoint does nothing"
         );
         calls.borrow_mut().unsettled = true;
         assert_eq!(
             Effects::default(),
-            session.process(Event::Quit, at(start, 0))
+            session.process(Event::NormalClose, at(start, 0))
         );
-        session.process(Event::Quit, at(start, 100));
+        session.process(Event::NormalClose, at(start, 100));
         assert_eq!(vec![false], calls.borrow().stops, "one stop, not keeping");
         for ms in [0, 1000, 4999] {
             assert_eq!(
@@ -1259,13 +1260,15 @@ mod tests {
                     repaint: Repaint::After(POLL_INTERVAL),
                     ..Effects::default()
                 },
-                session.process(Event::Quitting, at(start, ms)),
+                session.process(Event::NormalCloseCheckpoint, at(start, ms)),
                 "still waiting for the helper at {ms} ms"
             );
         }
         assert_eq!(
             Some(0),
-            session.process(Event::Quitting, at(start, 5000)).close,
+            session
+                .process(Event::NormalCloseCheckpoint, at(start, 5000))
+                .close,
             "the deadline closes regardless"
         );
         assert!(!dir.join(".uml-viewer/session.edn").exists());
@@ -1280,17 +1283,24 @@ mod tests {
         let start = Instant::now();
         assert_eq!(
             Some(0),
-            session.process(Event::Quit, at(start, 0)).close,
+            session.process(Event::NormalClose, at(start, 0)).close,
             "no helper to wait for"
         );
         let (mut session, calls2) = open(&dir, false);
         calls2.borrow_mut().unsettled = true;
-        session.process(Event::Quit, at(start, 0));
-        assert_eq!(None, session.process(Event::Quitting, at(start, 250)).close);
+        session.process(Event::NormalClose, at(start, 0));
+        assert_eq!(
+            None,
+            session
+                .process(Event::NormalCloseCheckpoint, at(start, 250))
+                .close
+        );
         calls2.borrow_mut().unsettled = false;
         assert_eq!(
             Some(0),
-            session.process(Event::Quitting, at(start, 500)).close
+            session
+                .process(Event::NormalCloseCheckpoint, at(start, 500))
+                .close
         );
         assert_eq!(vec![false], calls.borrow().stops);
         let _ = std::fs::remove_dir_all(dir);
