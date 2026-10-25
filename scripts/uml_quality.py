@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 from uml_posix import atomic_write
 
@@ -98,14 +99,14 @@ def business(root, path, roots, exclusions):
 
 
 def targets(root, forward, roots, exclusions):
-    options, named = [], []
+    options, named = [], []  # (name, named by the caller)
     index = 0
     while index < len(forward):
         arg = forward[index]
         if arg == '--changed':
             for command in (['diff', '--name-only', '-z', '--diff-filter=AM', 'HEAD'], ['ls-files', '--others', '--exclude-standard', '-z']):
                 result = subprocess.run(['git', '-C', str(root), *command], capture_output=True, check=True)
-                named += [os.fsdecode(x) for x in result.stdout.split(b'\0') if x]
+                named += [(os.fsdecode(x), False) for x in result.stdout.split(b'\0') if x]
         elif arg.startswith('-'):
             if arg in ('--root', '--source-root', '-s', '--exclude'):
                 raise ValueError('mutation scope 由 standardTools 声明')
@@ -116,10 +117,10 @@ def targets(root, forward, roots, exclusions):
                     raise ValueError(f'{arg} 缺少参数值')
                 options.append(forward[index])
         else:
-            named.append(arg)
+            named.append((arg, True))
         index += 1
     files = []
-    for name in named:
+    for name, explicit in named:
         path = root / name
         if path.is_symlink():
             raise ValueError(f'mutation 不允许符号链接：{name}')
@@ -134,7 +135,10 @@ def targets(root, forward, roots, exclusions):
             relative = file.relative_to(root)
             if file.suffix not in EXTENSIONS or SKIP.intersection(relative.parts):
                 continue
-            if business(root, file, roots, exclusions) and str(relative) not in files:
+            if not business(root, file, roots, exclusions):
+                if explicit and file == path:
+                    print(f'uml: omitted mutation target outside business scope: {relative.as_posix()}', file=sys.stderr)
+            elif str(relative) not in files:
                 files.append(str(relative))
     if not files:
         raise ValueError('没有业务 mutation 目标；请提供明确文件或 --changed。')
@@ -199,6 +203,5 @@ def dispatch(root, operation, forward):
     try:
         atomic_write(result_path, json.dumps(record) + '\n')
     except OSError as error:
-        import sys
         print(f'uml: 无法发布质量结果记录：{error}', file=sys.stderr)
     return code

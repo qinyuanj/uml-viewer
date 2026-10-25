@@ -439,6 +439,55 @@ class PosixEntries(unittest.TestCase):
                  (self.root / 'mutate-calls.jsonl').read_text().splitlines()]
         self.assertEqual([['-m', 'mutator', '--max-workers', '2', 'business/keep.lua']], calls)
         self.assertTrue(self.record()['validResult'])
+        # Each named file dropped by the declared scope (outside the roots or
+        # excluded) gets one diagnostic line, in the order it was named.
+        self.assertEqual('', result.stdout)
+        self.assertEqual(['uml: omitted mutation target outside business scope: business/generated/omit.lua',
+                          'uml: omitted mutation target outside business scope: outside.lua'],
+                         result.stderr.splitlines())
+
+    def test_standard_mutation_stays_silent_about_files_it_collected(self):
+        # Files found by --changed or by expanding a named directory were never
+        # named by the caller, so dropping them needs no diagnostic.
+        self.stub_tool('mutator', 'import json,sys\nfrom pathlib import Path\n'
+                       'p=Path("mutate-calls.jsonl")\n'
+                       'with p.open("a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+                       'raise SystemExit(3)\n')
+        for name in ['tools/cli.lua', 'business/generated/omit.lua']:
+            file = self.root / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('return 1')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['src', 'business'], 'exclude': ['**/generated']}}))
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        subprocess.run(['git', '-C', str(self.root), '-c', 'user.name=t', '-c', 'user.email=t@t',
+                        'commit', '-q', '--allow-empty', '-m', 'base'], check=True)
+        for args in (['--changed'], ['src/a.lua', 'tools', 'business']):
+            with self.subTest(args=args):
+                (self.root / 'mutate-calls.jsonl').unlink(missing_ok=True)
+                result = self.entry('mutate', *args)
+                self.assertEqual(3, result.returncode, result.stderr)
+                calls = [json.loads(line) for line in
+                         (self.root / 'mutate-calls.jsonl').read_text().splitlines()]
+                self.assertEqual([['-m', 'mutator', 'src/a.lua']], calls)
+                self.assertNotIn('omitted mutation target', result.stderr)
+
+    def test_standard_mutation_names_every_dropped_target_before_refusing(self):
+        # When no named file is in scope the caller still learns which ones
+        # were dropped, then gets the existing refusal, and no tool runs.
+        self.stub_tool('mutator', 'from pathlib import Path\nPath("launched").write_text("")\n')
+        (self.root / 'tools').mkdir()
+        (self.root / 'tools/cli.lua').write_text('return 1')
+        (self.root / 'uml-quality.json').write_text(json.dumps({'version': 1, 'standardTools': {
+            'sourceRoots': ['src'], 'exclude': ['src/a.lua']}}))
+        result = self.entry('mutate', 'tools/cli.lua', 'src/a.lua')
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        lines = result.stderr.splitlines()
+        self.assertEqual(['uml: omitted mutation target outside business scope: tools/cli.lua',
+                          'uml: omitted mutation target outside business scope: src/a.lua'], lines[:2])
+        self.assertIn('没有业务 mutation 目标', '\n'.join(lines[2:]))
+        self.assertFalse((self.root / 'launched').exists())
+        self.assertFalse((self.root / '.uml-viewer/quality-result.json').exists())
 
     def test_standard_mutation_never_accepts_routing_overrides_from_the_caller(self):
         # Ported from the retired suite: scope belongs to the declaration, so a
