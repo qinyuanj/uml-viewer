@@ -15,10 +15,12 @@ pub fn run(args: &[OsString]) -> ExitCode {
     cli::run(args)
 }
 
+pub use card::{Neighbourhood, Relation, class_card, class_card_in};
 pub use config::{
     Band, GRADE_BEST, GRADE_MID, GRADE_WORST, MetricRating, Rating, metric_rating, rating,
 };
 
+mod card;
 pub mod compose;
 pub mod config;
 pub mod curve;

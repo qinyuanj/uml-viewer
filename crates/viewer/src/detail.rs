@@ -64,12 +64,6 @@ fn string(v: Option<&Value>) -> Option<String> {
     }
 }
 
-fn named<'a>(scene: &'a Value, key: &str, id: &Value) -> Option<&'a Value> {
-    seq(get(scene, key))
-        .iter()
-        .find(|c| get(c, "id") == Some(id))
-}
-
 fn phrase(kind: Option<&Value>, outgoing: bool) -> String {
     let kind = kind.and_then(local_name).unwrap_or_default().to_owned();
     let (out, inc) = strings::PHRASES
@@ -79,169 +73,40 @@ fn phrase(kind: Option<&Value>, outgoing: bool) -> String {
     if outgoing { out } else { inc }.to_string()
 }
 
-/// The card of class `id` in a scene, or None when it is not there.
-pub fn model(scene: &Value, id: &Value) -> Option<Model> {
-    let c = named(scene, "classes", id)?;
-    let mut rels = Vec::new();
-    for e in seq(get(scene, "edges")) {
-        let outgoing = get(e, "from") == Some(id);
-        if !(outgoing || get(e, "to") == Some(id)) {
-            continue;
-        }
-        let other = get(e, if outgoing { "to" } else { "from" })
-            .cloned()
-            .unwrap_or(Value::Nil);
-        let other_name = named(scene, "classes", &other)
-            .and_then(|o| string(get(o, "name")))
-            .unwrap_or_else(|| local_name(&other).unwrap_or_default().to_owned());
-        rels.push(Rel {
-            id: other,
-            name: other_name,
-            label: string(get(e, "label")),
-            phrase: phrase(get(e, "kind"), outgoing),
-        });
+/// The card model of a scene-core neighbourhood: phrasing and names only.
+fn assemble(n: scene::Neighbourhood) -> Model {
+    let c = n.class;
+    Model {
+        ns: string(get(&c, "ns"))
+            .or_else(|| get(&c, "id").map(|v| local_name(v).unwrap_or_default().to_owned())),
+        lang: get(&c, "lang").cloned(),
+        file: string(get(&c, "file")),
+        package: n.package,
+        title: string(n.title.as_ref()),
+        rels: n
+            .relations
+            .into_iter()
+            .map(|r| Rel {
+                name: string(r.other_name.as_ref())
+                    .unwrap_or_else(|| local_name(&r.other).unwrap_or_default().to_owned()),
+                label: string(r.label.as_ref()),
+                phrase: phrase(r.kind.as_ref(), r.outgoing),
+                id: r.other,
+            })
+            .collect(),
+        class: c,
     }
-    Some(Model {
-        class: c.clone(),
-        ns: string(get(c, "ns"))
-            .or_else(|| get(c, "id").map(|v| local_name(v).unwrap_or_default().to_owned())),
-        package: get(c, "package")
-            .and_then(|p| named(scene, "packages", p))
-            .cloned(),
-        title: get(scene, "diagram").and_then(|d| string(get(d, "title"))),
-        lang: get(c, "lang").cloned(),
-        file: string(get(c, "file")),
-        rels,
-    })
 }
 
-/// Merge the visible scene with the full overlaid document so a card keeps
-/// its leaf identities and relationships across namespaces.
+/// The card of class `id` in a scene, or None when it is not there.
+pub fn model(scene: &Value, id: &Value) -> Option<Model> {
+    scene::class_card_in(scene, id).map(assemble)
+}
+
+/// The card of class `id` in the current view; the scene core keeps its
+/// leaf identities and relationships across namespaces.
 pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
-    let Some(doc) = &state.document else {
-        return model(&state.scene, id);
-    };
-    let doc = scene::overlay::apply(doc, &state.snapshots);
-    let mut classes: Vec<Value> = Vec::new();
-    let mut edges: Vec<Value> = Vec::new();
-    let mut seen: Vec<Value> = Vec::new();
-    let mut seen_edges: Vec<Value> = Vec::new();
-    fn add_edges(edges: &mut Vec<Value>, seen: &mut Vec<Value>, list: &[Value]) {
-        for e in list {
-            let key = Value::Vector(
-                ["from", "to", "kind", "label"]
-                    .iter()
-                    .map(|k| get(e, k).cloned().unwrap_or(Value::Nil))
-                    .collect(),
-            );
-            if !seen.contains(&key) {
-                seen.push(key);
-                edges.push(e.clone());
-            }
-        }
-    }
-    fn add(classes: &mut Vec<Value>, seen: &mut Vec<Value>, c: &Value) {
-        let cid = get(c, "id").cloned().unwrap_or(Value::Nil);
-        if !seen.contains(&cid) {
-            seen.push(cid);
-            classes.push(c.clone());
-        }
-        for child in seq(get(c, "contents")) {
-            add(classes, seen, child);
-        }
-    }
-    let add_view = |classes: &mut Vec<Value>,
-                    seen: &mut Vec<Value>,
-                    edges: &mut Vec<Value>,
-                    seen_edges: &mut Vec<Value>,
-                    view: &Value| {
-        add_edges(edges, seen_edges, seq(get(view, "edges")));
-        for p in seq(get(view, "packages")) {
-            for c in seq(get(p, "classes")) {
-                add(classes, seen, c);
-            }
-        }
-        for key in ["classes", "foreign"] {
-            for c in seq(get(view, key)) {
-                add(classes, seen, c);
-            }
-        }
-    };
-    add_edges(&mut edges, &mut seen_edges, seq(get(&doc, "edges")));
-    // Authored leaf data wins over the abbreviated rows of collapsed boxes.
-    for c in seq(get(&doc, "classes")) {
-        add(&mut classes, &mut seen, c);
-    }
-    for p in seq(get(&doc, "packages")) {
-        for c in seq(get(p, "classes")) {
-            add(&mut classes, &mut seen, c);
-        }
-    }
-    if edn::record::flag(&doc, "hierarchical") {
-        let root = scene::hierarchy::view_at(&doc, &[]);
-        add_view(&mut classes, &mut seen, &mut edges, &mut seen_edges, &root);
-        // A port can name an intermediate namespace absent from the root and
-        // current boxes: resolve its parent view only when asked.
-        let mut parent: Vec<Value> = local_name(id)
-            .unwrap_or_default()
-            .split('.')
-            .map(Value::keyword)
-            .collect();
-        parent.pop();
-        if !parent.is_empty() {
-            let target = scene::hierarchy::view_at(&doc, &parent);
-            add_view(
-                &mut classes,
-                &mut seen,
-                &mut edges,
-                &mut seen_edges,
-                &target,
-            );
-            for p in seq(get(&target, "packages")) {
-                for c in seq(get(p, "classes")) {
-                    if get(c, "id") != Some(id) || !edn::record::flag(c, "drill?") {
-                        continue;
-                    }
-                    for dir in ["in-deps", "out-deps"] {
-                        for dep in seq(get(c, dir)) {
-                            add(&mut classes, &mut seen, dep);
-                            let other = get(dep, "id").cloned().unwrap_or(Value::Nil);
-                            let (from, to) = if dir == "out-deps" {
-                                (id.clone(), other)
-                            } else {
-                                (other, id.clone())
-                            };
-                            let edge = Value::Map(vec![
-                                (Value::keyword("from"), from),
-                                (Value::keyword("to"), to),
-                                (Value::keyword("kind"), Value::keyword("dependency")),
-                            ]);
-                            add_edges(&mut edges, &mut seen_edges, &[edge]);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    add_edges(&mut edges, &mut seen_edges, seq(get(&state.scene, "edges")));
-    for c in seq(get(&state.scene, "classes")) {
-        add(&mut classes, &mut seen, c);
-    }
-    let merged = Value::Map(vec![
-        (Value::keyword("classes"), Value::Vector(classes)),
-        (Value::keyword("edges"), Value::Vector(edges)),
-        (
-            Value::keyword("packages"),
-            get(&state.scene, "packages")
-                .cloned()
-                .unwrap_or(Value::Vector(vec![])),
-        ),
-        (
-            Value::keyword("diagram"),
-            get(&state.scene, "diagram").cloned().unwrap_or(Value::Nil),
-        ),
-    ]);
-    model(&merged, id)
+    scene::class_card(state, id).map(assemble)
 }
 
 /// What a source jump from this card opens: the module, or one member.
