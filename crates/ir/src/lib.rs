@@ -33,12 +33,44 @@ fn emit(doc: &Value) -> Result<String, String> {
     ))
 }
 
+/// Keys only a generated IR document carries; a policy never declares them.
+const IR_ONLY_KEYS: [&str; 3] = ["classes", "edges", "policy-file"];
+
+/// A policy declares where its source is: a source root, a language (with
+/// the default `src` root) or per-crate source roots.
+const SOURCE_KEYS: [&str; 3] = ["src", "lang", "sources"];
+
+const POLICY_USAGE: &str = "usage: ir <policy> [output] [--root directory]";
+
+/// Reads and shape-checks a policy (#166): an EDN map that declares its
+/// source and carries no IR-only keys.
+/// A generated IR document passed by mistake fails fast instead of being
+/// regenerated into the default output.
 fn read_policy(path: &str, adapter: &Adapter) -> Result<Value, String> {
     let text = adapter.read(path)?;
     let text = String::from_utf8(text).map_err(|_| format!("{path}: policy is not UTF-8"))?;
     let policy = edn::parse(&text).map_err(|e| format!("{path}: {e}"))?;
     if !matches!(policy, Value::Map(_)) {
-        return Err("policy must be an EDN map".to_owned());
+        return Err(format!("{path}: policy must be an EDN map; {POLICY_USAGE}"));
+    }
+    let ir_keys: Vec<String> = IR_ONLY_KEYS
+        .iter()
+        .filter(|k| edn::record::get(&policy, k).is_some())
+        .map(|k| format!(":{k}"))
+        .collect();
+    if !ir_keys.is_empty() {
+        return Err(format!(
+            "{path}: not a policy (IR-only keys {}; is this a generated diagram?); {POLICY_USAGE}",
+            ir_keys.join(" ")
+        ));
+    }
+    if SOURCE_KEYS
+        .iter()
+        .all(|k| value::get_truthy(&policy, k).is_none())
+    {
+        return Err(format!(
+            "{path}: not a policy (declare :src, :lang or :sources); {POLICY_USAGE}"
+        ));
     }
     Ok(policy)
 }
