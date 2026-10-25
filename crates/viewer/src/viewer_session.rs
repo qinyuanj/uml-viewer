@@ -18,7 +18,9 @@ use scene::events::{self, Dims};
 use crate::clock::{self, Now};
 use crate::mail::DisplayBoundary;
 use crate::session::{self, Chrome};
-use crate::{identity, inspector, mail_watch, mailbox, metrics, project_files, strings, watch};
+use crate::{
+    detail, identity, inspector, mail_watch, mailbox, metrics, project_files, strings, watch,
+};
 
 /// What the session needs from the companion helper: poll its events, stop
 /// it (keeping the companion or not), wake it for a delivery id, and tell
@@ -137,8 +139,6 @@ pub(crate) enum Event {
     MailDue,
     /// A frame: hot reload when the poll cadence elapsed or a refresh is due.
     Tick,
-    /// `R`: reload on the next tick regardless of the cadence.
-    ForceRefresh,
     /// The frame's restart-exit checkpoint: after `:quit-for-restart`, stop
     /// the helper keeping the companion, poll it until it settled, then save
     /// the session snapshot (with this window chrome) and close with 0.
@@ -151,6 +151,62 @@ pub(crate) enum Event {
     Quitting,
     /// The window closed without the frame loop seeing it (a WM quit).
     WindowClosed,
+    /// Canvas input the shell found uncaptured by the search box and the GUI,
+    /// with the canvas geometry and modifiers at the time.
+    Canvas(Canvas, Dims),
+    /// A shell-side failure the status line reports (a source window that
+    /// did not open).
+    Notice(String),
+}
+
+/// Canvas input in view units (points from the canvas origin), from real
+/// input and driver replay alike.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Canvas {
+    Press(f64, f64),
+    DoublePress(f64, f64),
+    Move(f64, f64),
+    /// The pointer moved with the button down.
+    Drag(f64, f64),
+    Release(f64, f64),
+    /// The pointer left the canvas (or went over a captured area).
+    Leave,
+    /// A press and release at one point (driver replay).
+    Click(f64, f64),
+    /// Press, drag and release in one step (driver replay).
+    DragTo {
+        from: [f64; 2],
+        to: [f64; 2],
+    },
+    /// Wheel notches; the modifiers travel in the dims.
+    Wheel {
+        dx: f64,
+        dy: f64,
+    },
+    /// A canvas key; `r` also forces a reload on the next tick.
+    Key(String),
+    /// The wheel over the class card scrolls its rows.
+    ScrollCard {
+        rows: Vec<detail::Row>,
+        delta: f64,
+        view_h: f64,
+    },
+    /// The frame's fit checkpoint: fit once when a fit is pending.
+    Fit,
+    /// Set the zoom (keeping the window centre) and/or centre a world point
+    /// (the driver's `:view`).
+    View {
+        zoom: Option<f64>,
+        center: Option<[f64; 2]>,
+    },
+    /// The bench's unclamped camera: world centre and zoom; no fit.
+    Camera {
+        cx: f64,
+        cy: f64,
+        zoom: f64,
+    },
+    /// The shell owns the camera (the bench): drop a pending fit.
+    HoldCamera,
 }
 
 /// How long a normal close waits for the helper to settle.
@@ -273,13 +329,20 @@ impl ViewerSession {
                 // never asks for another one.
                 Effects::default()
             }
-            Event::ForceRefresh => {
-                self.force_refresh = true;
-                Effects::default()
-            }
             Event::RestartExit(chrome) => self.restart_exit(&chrome),
             Event::Quit => self.begin_quit(now),
             Event::Quitting => self.quitting(now),
+            Event::Canvas(input, dims) => {
+                self.canvas(input, dims);
+                Effects::default()
+            }
+            Event::Notice(line) => {
+                self.status = Some(line);
+                Effects {
+                    repaint: Repaint::Now,
+                    ..Effects::default()
+                }
+            }
             Event::WindowClosed => {
                 // The helper then releases the session and ownership itself.
                 if !self.link.settled()
@@ -321,6 +384,71 @@ impl ViewerSession {
             close: Some(0),
             ..Effects::default()
         }
+    }
+
+    /// Dispatch canvas input to the scene core. The frame that carried the
+    /// input draws its result, so it asks for no repaint.
+    fn canvas(&mut self, input: Canvas, mut dims: Dims) {
+        let s = &self.state;
+        if input == Canvas::Fit && !s.fit_pending {
+            return;
+        }
+        self.state = match input {
+            Canvas::Press(x, y) => events::on_left_press(s, x, y),
+            Canvas::DoublePress(x, y) => events::on_double_press(s, x, y),
+            Canvas::Move(x, y) => events::on_move(s, x, y),
+            Canvas::Drag(x, y) => events::on_drag(s, x, y),
+            Canvas::Release(x, y) => events::on_release(s, x, y),
+            Canvas::Leave => events::on_leave(s),
+            Canvas::Click(x, y) => events::on_release(&events::on_left_press(s, x, y), x, y),
+            Canvas::DragTo { from, to } => {
+                let pressed = events::on_left_press(s, from[0], from[1]);
+                let dragged = events::on_drag(&pressed, to[0], to[1]);
+                events::on_release(&dragged, to[0], to[1])
+            }
+            Canvas::Wheel { dx, dy } => events::on_wheel(s, dx, dy, &dims),
+            Canvas::Key(key) => {
+                if key == "r" {
+                    self.force_refresh = true;
+                }
+                dims.raw_key = Some(key.clone());
+                events::on_key(s, Some(&Value::String(key)), &dims)
+            }
+            Canvas::ScrollCard {
+                rows,
+                delta,
+                view_h,
+            } => inspector::scroll_rows(s, &rows, delta, view_h),
+            Canvas::Fit => events::settle(s, &dims),
+            Canvas::View { zoom, center } => {
+                let mut next = s.clone();
+                if let Some(zoom) = zoom {
+                    // Keep the view centre fixed, like ctrl+wheel at the middle.
+                    let factor = zoom / next.zoom.max(1e-6);
+                    let (cx, cy) = (dims.window_w / 2.0, dims.window_h / 2.0);
+                    next = events::zoom_at(&next, factor, cx, cy);
+                    next.fit_pending = false;
+                }
+                if let Some([x, y]) = center {
+                    // Centre the world point: cam is the top-left world point.
+                    next.cam_x = x - dims.window_w / (2.0 * next.zoom);
+                    next.cam_y = y - dims.window_h / (2.0 * next.zoom);
+                }
+                next
+            }
+            Canvas::Camera { cx, cy, zoom } => {
+                let mut next = s.clone();
+                next.zoom = zoom;
+                next.cam_x = cx - dims.window_w / (2.0 * zoom);
+                next.cam_y = cy - dims.window_h / (2.0 * zoom);
+                next.fit_pending = false;
+                next
+            }
+            Canvas::HoldCamera => ViewState {
+                fit_pending: false,
+                ..s.clone()
+            },
+        };
     }
 
     /// A normal close asks the helper to stop without keeping the companion;
@@ -471,10 +599,6 @@ impl ViewerSession {
         &self.state
     }
 
-    pub(crate) fn state_mut(&mut self) -> &mut ViewState {
-        &mut self.state
-    }
-
     /// The canvas hint (a missing diagram), if any.
     pub(crate) fn hint(&self) -> Option<&str> {
         self.hint.as_deref()
@@ -483,10 +607,6 @@ impl ViewerSession {
     /// The status line, if any.
     pub(crate) fn status(&self) -> Option<&str> {
         self.status.as_deref()
-    }
-
-    pub(crate) fn set_status(&mut self, status: String) {
-        self.status = Some(status);
     }
 
     /// Poll the helper; `true` when it reached ready on this poll.
@@ -839,26 +959,6 @@ mod tests {
     }
 
     #[test]
-    fn a_forced_refresh_reloads_on_the_next_tick_without_waiting_for_the_cadence() {
-        let dir = project("refresh");
-        std::fs::write(dir.join("diagram.edn"), "{:title \"First\"}").unwrap();
-        let (mut session, _) = open(&dir, false);
-        let start = Instant::now();
-        session.process(Event::Tick, at(start, 0));
-        std::fs::remove_file(dir.join("diagram.edn")).unwrap();
-        session.process(Event::Tick, at(start, 10));
-        assert_eq!(None, session.hint(), "the cadence has not elapsed");
-        session.process(Event::ForceRefresh, at(start, 20));
-        session.process(Event::Tick, at(start, 20));
-        assert!(
-            session.hint().is_some_and(|h| h.contains("diagram.edn")),
-            "{:?}",
-            session.hint()
-        );
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
     fn one_mail_poll_applies_the_whole_queue_before_the_shell_sees_quit_for_restart() {
         let dir = project("restart");
         std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
@@ -892,9 +992,11 @@ mod tests {
         let dir = project("menu");
         std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
         let (mut session, calls) = open(&dir, false);
-        // The compiled scene id of the clicked class.
-        session.state_mut().selected = Some(edn::parse("{:kind :class :id :d0-target}").unwrap());
         let start = Instant::now();
+        // Select the clicked class (compiled scene id `d0-target`).
+        session.process(Event::Canvas(Canvas::Fit, dims()), at(start, 0));
+        let (x, y) = inside(session.state(), "d0-target");
+        session.process(Event::Canvas(Canvas::Click(x, y), dims()), at(start, 0));
         for op in [
             "refresh-crap",
             "refresh-mutate",
@@ -1186,6 +1288,100 @@ mod tests {
         assert_eq!(Chrome::default(), chrome);
         let session = ViewerSession::open(launch, || Box::new(NoLink)).unwrap();
         assert!(session.state().fit_pending);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A screen point a few units inside the class box (the driver's
+    /// `click-class`).
+    fn inside(state: &ViewState, id: &str) -> (f64, f64) {
+        let class = edn::record::seq(get(&state.scene, "classes"))
+            .iter()
+            .find(|c| get(c, "id") == Some(&Value::keyword(id)))
+            .cloned()
+            .expect("class on the scene");
+        let r = get(&class, "rect")
+            .and_then(scene::geom::Rect::from_value)
+            .unwrap();
+        let z = events::zoom_of(state);
+        ((r.x + 6.0 - state.cam_x) * z, (r.y + 6.0 - state.cam_y) * z)
+    }
+
+    #[test]
+    fn canvas_input_reaches_the_scene_core_through_the_session() {
+        let dir = project("canvas");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, false);
+        let now = at(Instant::now(), 0);
+        assert!(session.state().fit_pending);
+        session.process(Event::Canvas(Canvas::Fit, dims()), now);
+        assert!(!session.state().fit_pending, "the fit checkpoint fits once");
+        let (x, y) = inside(session.state(), "d0-target");
+        session.process(Event::Canvas(Canvas::Click(x, y), dims()), now);
+        assert_eq!(
+            Some(Value::keyword("d0-target")),
+            session
+                .state()
+                .selected
+                .as_ref()
+                .and_then(|s| get(s, "id"))
+                .cloned()
+        );
+        session.process(Event::Canvas(Canvas::DoublePress(x, y), dims()), now);
+        assert_eq!(Some(Value::keyword("d0-target")), session.state().detail_id);
+        let zoom = session.state().zoom;
+        let ctrl = Dims {
+            control: true,
+            ..dims()
+        };
+        session.process(Event::Canvas(Canvas::Wheel { dx: 0.0, dy: 1.0 }, ctrl), now);
+        assert!(session.state().zoom > zoom, "ctrl+wheel zooms in");
+        session.process(
+            Event::Canvas(
+                Canvas::View {
+                    zoom: Some(2.0),
+                    center: Some([100.0, 50.0]),
+                },
+                dims(),
+            ),
+            now,
+        );
+        let state = session.state();
+        assert_eq!(2.0, state.zoom);
+        assert_eq!(
+            (100.0 - 1500.0 / 4.0, 50.0 - 920.0 / 4.0),
+            (state.cam_x, state.cam_y)
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_r_key_reloads_on_the_next_tick_without_waiting_for_the_cadence() {
+        let dir = project("r key");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, false);
+        let start = Instant::now();
+        session.process(Event::Tick, at(start, 0));
+        std::fs::remove_file(dir.join("diagram.edn")).unwrap();
+        session.process(
+            Event::Canvas(Canvas::Key("r".into()), dims()),
+            at(start, 10),
+        );
+        session.process(Event::Tick, at(start, 10));
+        assert!(session.hint().is_some(), "R forced the reload");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_notice_becomes_the_status_line() {
+        let dir = project("notice");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, _) = open(&dir, false);
+        let effects = session.process(
+            Event::Notice("Source not opened".into()),
+            at(Instant::now(), 0),
+        );
+        assert_eq!(Some("Source not opened"), session.status());
+        assert_eq!(Repaint::Now, effects.repaint);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

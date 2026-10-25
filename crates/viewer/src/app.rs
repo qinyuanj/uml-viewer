@@ -24,7 +24,7 @@ use crate::gui::{Action, Gui};
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::viewer_session::{
-    Action as SessionAction, CompanionLink, Effects, Event, Launch, Repaint, ViewerSession,
+    Action as SessionAction, Canvas, CompanionLink, Effects, Event, Launch, Repaint, ViewerSession,
 };
 use crate::{cli::Options, fonts, inspector, mail, mail_watch, paint, session, signal, strings};
 use crate::{source, theme, watch};
@@ -458,7 +458,8 @@ impl Viewer {
             )?;
             app.bench = Some(runner);
             // The bench sets the unclamped protocol camera; no viewer fit.
-            app.session.state_mut().fit_pending = false;
+            let dims = Dims::default();
+            app.canvas(Canvas::HoldCamera, dims);
         }
         Ok(app)
     }
@@ -490,10 +491,10 @@ impl Viewer {
     }
 
     /// Apply one input. Coordinates are view units (points from the canvas
-    /// origin), the space `scene::events` converts to world itself.
+    /// origin); what the search box and the GUI do not capture goes to the
+    /// viewer session, exactly as real input does.
     fn apply_input(&mut self, input: Input, ctx: &egui::Context) {
         let mut dims = self.dims(ctx);
-        let state = self.session.state().clone();
         match &input {
             Input::Click { x, y } | Input::DoubleClick { x, y } | Input::MouseMove { x, y } => {
                 self.driver_pointer = Some((*x, *y))
@@ -501,36 +502,33 @@ impl Viewer {
             Input::Drag { to, .. } => self.driver_pointer = Some((to[0], to[1])),
             _ => {}
         }
-        *self.session.state_mut() = match input {
+        let canvas = match input {
             Input::Click { x, y } => {
                 if self.chrome_press(x, y) {
                     return;
                 }
-                let pressed = events::on_left_press(&state, x, y);
-                events::on_release(&pressed, x, y)
+                Canvas::Click(x, y)
             }
             Input::DoubleClick { x, y } => {
                 if self.chrome_press(x, y) {
                     return;
                 }
-                events::on_double_press(&state, x, y)
+                Canvas::DoublePress(x, y)
             }
             Input::MouseMove { x, y } => {
                 if self.search.captures(x, y) {
-                    events::on_leave(&state)
-                } else if state.drag.is_some() {
-                    events::on_drag(&state, x, y)
+                    Canvas::Leave
+                } else if self.session.state().drag.is_some() {
+                    Canvas::Drag(x, y)
                 } else {
-                    events::on_move(&state, x, y)
+                    Canvas::Move(x, y)
                 }
             }
             Input::Drag { from, to } => {
                 if self.chrome_press(from[0], from[1]) {
                     return;
                 }
-                let pressed = events::on_left_press(&state, from[0], from[1]);
-                let dragged = events::on_drag(&pressed, to[0], to[1]);
-                events::on_release(&dragged, to[0], to[1])
+                Canvas::DragTo { from, to }
             }
             Input::Wheel {
                 dx,
@@ -538,26 +536,30 @@ impl Viewer {
                 ctrl,
                 shift,
             } => {
+                let state = self.session.state();
                 if self.gui.card_hovered() {
                     // LOVE wheelmoved(0, -4) scrolls the card down four notches.
-                    let view_h = self.gui.card.view_h;
-                    let rows = inspector::card_id(&state)
-                        .and_then(|id| self.gui.card_for(&state, &id))
+                    let rows = inspector::card_id(state)
+                        .and_then(|id| self.gui.card_for(state, &id))
                         .map(|(_, rows)| rows)
                         .unwrap_or_default();
-                    *self.session.state_mut() = inspector::scroll_rows(&state, &rows, -dy, view_h);
-                    return;
+                    Canvas::ScrollCard {
+                        rows,
+                        delta: -dy,
+                        view_h: self.gui.card.view_h,
+                    }
+                } else {
+                    if self
+                        .driver_pointer
+                        .or(state.pointer)
+                        .is_some_and(|(x, y)| self.search.captures(x, y))
+                    {
+                        return;
+                    }
+                    dims.control |= ctrl;
+                    dims.shift |= shift;
+                    Canvas::Wheel { dx, dy }
                 }
-                if self
-                    .driver_pointer
-                    .or(state.pointer)
-                    .is_some_and(|(x, y)| self.search.captures(x, y))
-                {
-                    return;
-                }
-                dims.control |= ctrl;
-                dims.shift |= shift;
-                events::on_wheel(&state, dx, dy, &dims)
             }
             Input::Key { key, ctrl, shift } => {
                 dims.control |= ctrl;
@@ -572,11 +574,7 @@ impl Viewer {
                     self.search_key(&key, &dims);
                     return;
                 }
-                dims.raw_key = Some(key.clone());
-                if key == "r" {
-                    self.session.process(Event::ForceRefresh, Now::read());
-                }
-                events::on_key(&state, Some(&Value::String(key)), &dims)
+                Canvas::Key(key)
             }
             Input::Text(text) => {
                 if self.search.active {
@@ -596,6 +594,25 @@ impl Viewer {
                 return;
             }
         };
+        self.canvas(canvas, dims);
+    }
+
+    /// Hand uncaptured canvas input to the viewer session.
+    fn canvas(&mut self, input: Canvas, dims: Dims) {
+        let effects = self
+            .session
+            .process(Event::Canvas(input, dims), Now::read());
+        let ctx = self.ctx.clone();
+        self.carry_out(effects, &ctx);
+    }
+
+    /// The window as the canvas geometry, for driver and bench cameras.
+    fn window_dims(&self, w: f64, h: f64) -> Dims {
+        Dims {
+            window_w: w,
+            window_h: h,
+            ..Dims::default()
+        }
     }
 
     /// A press on screen chrome or the open search box; true when consumed.
@@ -624,7 +641,10 @@ impl Viewer {
             "up" => self.search.step(false, &results),
             "enter" => {
                 if let Some(id) = self.search.selection.clone() {
-                    *self.session.state_mut() = events::locate(self.session.state(), &id, dims);
+                    let action = Event::Action(SessionAction::Locate(id), dims.clone());
+                    let effects = self.session.process(action, Now::read());
+                    let ctx = self.ctx.clone();
+                    self.carry_out(effects, &ctx);
                 }
             }
             "escape" => self.search.close(),
@@ -634,8 +654,11 @@ impl Viewer {
 
     /// Enter the target's namespace, select it, open its card and centre it.
     fn locate(&mut self, id: &Value) {
-        let dims = self.dims(&self.ctx.clone());
-        *self.session.state_mut() = events::locate(self.session.state(), id, &dims);
+        let ctx = self.ctx.clone();
+        let dims = self.dims(&ctx);
+        let action = Event::Action(SessionAction::Locate(id.clone()), dims);
+        let effects = self.session.process(action, Now::read());
+        self.carry_out(effects, &ctx);
     }
 
     /// Draw the Ctrl+F search box and record its area and rows in view
@@ -704,8 +727,9 @@ impl Viewer {
             let action = match action {
                 Action::OpenSource(ident) => {
                     if let Err(reason) = self.gui.open_source(&ident, &self.project_root) {
-                        self.session
-                            .set_status(strings::SOURCE_NOT_OPENED.replace("%s", &reason));
+                        let line = strings::SOURCE_NOT_OPENED.replace("%s", &reason);
+                        let effects = self.session.process(Event::Notice(line), Now::read());
+                        self.carry_out(effects, ctx);
                     }
                     continue;
                 }
@@ -1027,25 +1051,27 @@ impl Viewer {
             // View units: points from the canvas origin.
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
             let dragging = self.session.state().drag.is_some();
+            let dims = self.dims(ctx);
             if !dragging && (self.search.captures(x, y) || self.gui.captures(x, y, self.window_w)) {
                 // egui owns the search box; the canvas sees nothing.
-                *self.session.state_mut() = events::on_leave(self.session.state());
+                self.canvas(Canvas::Leave, dims.clone());
             } else if (pressed || double) && self.chrome_press(x, y) {
                 // Consumed by the Declutter control.
             } else if double {
-                *self.session.state_mut() = events::on_double_press(self.session.state(), x, y);
+                self.canvas(Canvas::DoublePress(x, y), dims.clone());
             } else if pressed {
-                *self.session.state_mut() = events::on_left_press(self.session.state(), x, y);
+                self.canvas(Canvas::Press(x, y), dims.clone());
             } else if down && dragging {
-                *self.session.state_mut() = events::on_drag(self.session.state(), x, y);
+                self.canvas(Canvas::Drag(x, y), dims.clone());
             } else if !down {
-                *self.session.state_mut() = events::on_move(self.session.state(), x, y);
+                self.canvas(Canvas::Move(x, y), dims.clone());
             }
             if released && self.session.state().drag.is_some() {
-                *self.session.state_mut() = events::on_release(self.session.state(), x, y);
+                self.canvas(Canvas::Release(x, y), dims);
             }
         } else if !down {
-            *self.session.state_mut() = events::on_leave(self.session.state());
+            let dims = self.dims(ctx);
+            self.canvas(Canvas::Leave, dims);
         }
         let over_search = pos.is_some_and(|p| {
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
@@ -1148,10 +1174,8 @@ impl Viewer {
         let step = runner.frame(&geo, now, cpu_ms);
         let passed = runner.passed();
         if let Some((cx, cy, zoom)) = step.camera {
-            self.session.state_mut().zoom = zoom;
-            self.session.state_mut().cam_x = cx - w / (2.0 * zoom);
-            self.session.state_mut().cam_y = cy - h / (2.0 * zoom);
-            self.session.state_mut().fit_pending = false;
+            let dims = self.window_dims(w, h);
+            self.canvas(Canvas::Camera { cx, cy, zoom }, dims);
         }
         if step.continuous {
             ctx.request_repaint();
@@ -1309,10 +1333,8 @@ impl eframe::App for Viewer {
             .session
             .process(Event::RestartExit(chrome), Now::read());
         self.carry_out(effects, ctx);
-        if self.session.state().fit_pending {
-            let dims = self.dims(ctx);
-            *self.session.state_mut() = events::settle(self.session.state(), &dims);
-        }
+        let dims = self.dims(ctx);
+        self.canvas(Canvas::Fit, dims);
 
         let full = ui.max_rect();
         let rect = full.with_max_x(full.min.x + self.gui.canvas_width(full.width() as f64) as f32);
@@ -1421,20 +1443,8 @@ impl driver::Host for Viewer {
     }
 
     fn set_view(&mut self, zoom: Option<f64>, center: Option<[f64; 2]>) {
-        if let Some(zoom) = zoom {
-            // Keep the view centre fixed, like ctrl+wheel at the middle.
-            let factor = zoom / self.session.state().zoom.max(1e-6);
-            let (cx, cy) = (self.window_w / 2.0, self.window_h / 2.0);
-            *self.session.state_mut() = events::zoom_at(self.session.state(), factor, cx, cy);
-            self.session.state_mut().fit_pending = false;
-        }
-        if let Some(center) = center {
-            // Center the world point: cam is the top-left world coordinate.
-            self.session.state_mut().cam_x =
-                center[0] - self.window_w / (2.0 * self.session.state().zoom);
-            self.session.state_mut().cam_y =
-                center[1] - self.window_h / (2.0 * self.session.state().zoom);
-        }
+        let dims = self.window_dims(self.window_w, self.window_h);
+        self.canvas(Canvas::View { zoom, center }, dims);
     }
 
     fn quit(&mut self, code: u8) {
