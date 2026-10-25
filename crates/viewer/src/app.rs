@@ -26,9 +26,7 @@ use crate::search_box::SearchBox;
 use crate::viewer_session::{
     Action as SessionAction, CompanionLink, Effects, Event, Launch, Repaint, ViewerSession,
 };
-use crate::{
-    cli::Options, fonts, identity, inspector, mail, mail_watch, paint, session, signal, strings,
-};
+use crate::{cli::Options, fonts, inspector, mail, mail_watch, paint, session, signal, strings};
 use crate::{source, theme, watch};
 
 pub const WINDOW_TITLE: &str = "UML viewer — Rust";
@@ -524,13 +522,6 @@ impl Viewer {
             app.bench = Some(runner);
             // The bench sets the unclamped protocol camera; no viewer fit.
             app.session.state_mut().fit_pending = false;
-        }
-        // A refused or invalid startup never overwrites an existing identity.
-        // With a companion the identity is recorded once it is ready.
-        if !setup.backend
-            && let Err(error) = identity::record(&setup.project_root)
-        {
-            eprintln!("uml viewer: could not record the process identity: {error}");
         }
         Ok(app)
     }

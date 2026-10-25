@@ -169,10 +169,16 @@ impl ViewerSession {
             restart_stop: false,
             quit_deadline: None,
         };
+        let launch_backend = launch.backend;
         session.load_initial(launch.restart, launch.backend)?;
         session.link = start_link();
         session.link_status = session.link.launch_status();
         session.mail_watch.baseline(&session.project_root);
+        // A refused or invalid startup (an `Err` above) never overwrites an
+        // existing identity. With a companion it is recorded once it is ready.
+        if !launch_backend {
+            session.record_identity();
+        }
         Ok(session)
     }
 
@@ -419,6 +425,17 @@ impl ViewerSession {
         polled.ready
     }
 
+    /// Write the process identity, once per session.
+    fn record_identity(&mut self) {
+        if self.identity_recorded {
+            return;
+        }
+        if let Err(error) = identity::record(&self.project_root) {
+            eprintln!("uml viewer: could not record the process identity: {error}");
+        }
+        self.identity_recorded = true;
+    }
+
     fn load_initial(&mut self, restart: bool, backend: bool) -> Result<(), String> {
         let (snapshots, stamp) = metrics::snapshot(&self.project_root);
         let path = self.diagram.to_string_lossy().into_owned();
@@ -476,12 +493,9 @@ impl ViewerSession {
         if found.worker {
             let ready = self.poll_link();
             changed = true;
-            if ready && !self.identity_recorded {
+            if ready {
                 // Identity is written once, after the companion is ready.
-                if let Err(error) = identity::record(&self.project_root) {
-                    eprintln!("uml viewer: could not record the process identity: {error}");
-                }
-                self.identity_recorded = true;
+                self.record_identity();
             }
         }
         if found.mail {
@@ -977,6 +991,62 @@ mod tests {
         calls.borrow_mut().unsettled = true;
         session.process(Event::WindowClosed, at(Instant::now(), 0));
         assert_eq!(vec![false], calls.borrow().stops);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn identity_file(dir: &Path) -> PathBuf {
+        dir.join(".uml-viewer").join(identity::FILE_NAME)
+    }
+
+    /// A new worker event file: what the mail watcher sees as worker news.
+    fn worker_event(dir: &Path, n: u32) {
+        std::fs::write(
+            dir.join(format!(".uml-viewer/companion-worker-t.event-{n}.edn")),
+            "{}",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_companion_launch_shows_the_waiting_canvas_and_records_its_identity_once_when_ready() {
+        let dir = project("identity");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (mut session, calls) = open(&dir, true);
+        let state = session.state();
+        assert!(state.waiting, "a backend launch waits for :display");
+        assert!(state.document.is_none(), "the canvas is empty");
+        assert!(
+            !identity_file(&dir).exists(),
+            "no identity before the companion is ready"
+        );
+        let start = Instant::now();
+        session.process(Event::Tick, at(start, 0));
+        assert!(session.state().waiting, "hot reload does not end the wait");
+        session.process(Event::MailDue, at(start, 0));
+        assert!(!identity_file(&dir).exists(), "polled, not ready yet");
+        calls.borrow_mut().ready_next = true;
+        worker_event(&dir, 1);
+        session.process(Event::MailDue, at(start, 250));
+        assert!(identity_file(&dir).exists(), "recorded once ready");
+        std::fs::remove_file(identity_file(&dir)).unwrap();
+        calls.borrow_mut().ready_next = true;
+        worker_event(&dir, 2);
+        session.process(Event::MailDue, at(start, 500));
+        assert!(!identity_file(&dir).exists(), "recorded only once");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_launch_without_a_companion_records_its_identity_at_open() {
+        let dir = project("identity open");
+        std::fs::write(dir.join("diagram.edn"), SECOND).unwrap();
+        let (session, _) = open(&dir, false);
+        assert!(!session.state().waiting);
+        let text = std::fs::read_to_string(identity_file(&dir)).unwrap();
+        assert!(
+            text.starts_with(&format!("{{\"pid\":{},", std::process::id())),
+            "{text}"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
