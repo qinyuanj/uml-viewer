@@ -70,10 +70,6 @@ pub fn session_name(root: &str, uuid: &str, config_root: &str) -> Result<String>
     Ok(fixed.replace("%s", &base.chars().take(name_budget).collect::<String>()))
 }
 
-pub struct Loaded {
-    pub record: Value,
-}
-
 /// Load and verify this project's complete Herdr ownership. Missing, legacy,
 /// foreign or incomplete records are refused, never adopted.
 pub fn load(root: &str, host: &Host) -> Result<Option<Value>> {
@@ -249,7 +245,6 @@ pub fn shutdown(root: &str, host: &Host) -> Result<bool> {
 
 pub struct Opened {
     pub terminal: String,
-    pub session: String,
     pub attach: String,
 }
 
@@ -402,7 +397,6 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
     let Some(terminal) = terminal else {
         return Opened {
             terminal: "none".to_owned(),
-            session: session.to_owned(),
             attach,
         };
     };
@@ -430,7 +424,6 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
     let started = result.exit == Some(0) && !result.timeout;
     Opened {
         terminal: if started { "windows-terminal" } else { "none" }.to_owned(),
-        session: session.to_owned(),
         attach,
     }
 }

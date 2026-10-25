@@ -826,14 +826,6 @@ impl Herdr {
         Ok(owned)
     }
 
-    pub fn identity_observe(&self, session: &str, pane: &str) -> Result<()> {
-        let identity = self
-            .identity
-            .as_ref()
-            .ok_or_else(|| Failure::new("Incomplete Herdr ownership"))?;
-        self.observe(&identity.clone(), session, pane)
-    }
-
     pub fn probe(&self, session: &str) -> Result<bool> {
         let identity = self
             .identity
@@ -917,7 +909,9 @@ impl Herdr {
 
     /// Recovery toggling: enable only verifies the existing durable
     /// supervisor; disable cancels it. Without a supervisor there is nothing
-    /// to adopt and no replacement is ever invented.
+    /// to adopt and no replacement is ever invented. No role calls it today;
+    /// it stays with its tests (#160).
+    #[cfg(test)]
     pub fn recovery(&self, session: &str, pane: Option<&str>, enabled: bool) -> Result<bool> {
         let identity = self
             .identity

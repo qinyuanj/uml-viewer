@@ -287,11 +287,6 @@ pub fn new_token() -> String {
     text
 }
 
-pub struct ControllerLauncher {
-    pub executable: std::ffi::OsString,
-    pub argv: Vec<std::ffi::OsString>,
-}
-
 /// Register a detached controller and wait for its journal (Lua `M.start`).
 pub fn start(
     identity: &Value,

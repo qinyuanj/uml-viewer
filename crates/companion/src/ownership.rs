@@ -39,10 +39,12 @@ pub fn write(host: &Host, root: &str, record: &Value) -> Result<()> {
     (host.write)(&path(root), edn::encode(record)?.as_bytes())
 }
 
+#[cfg(test)]
 pub fn bytes(root: &str) -> Option<String> {
     std::fs::read_to_string(path(root)).ok()
 }
 
+#[cfg(test)]
 pub fn exists(root: &str) -> bool {
     path(root).is_file()
 }

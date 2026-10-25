@@ -31,6 +31,7 @@ impl Json {
         }
     }
 
+    #[cfg(test)]
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Json::Bool(b) => Some(*b),
@@ -329,6 +330,7 @@ pub fn decode(text: &str) -> Result<Json, JsonError> {
     Ok(result)
 }
 
+#[cfg(test)]
 fn encode_string(value: &str, out: &mut String) {
     out.push('"');
     for char in value.chars() {
@@ -347,6 +349,7 @@ fn encode_string(value: &str, out: &mut String) {
     out.push('"');
 }
 
+#[cfg(test)]
 pub fn encode(value: &Json) -> String {
     let mut out = String::new();
     match value {
