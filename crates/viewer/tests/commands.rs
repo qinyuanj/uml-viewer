@@ -12,6 +12,18 @@ fn scene(classes: &str) -> Value {
     compile_view(&doc, &[], &[], &Value::Map(vec![]))
 }
 
+/// The root view of two modules `a` and `b` joined by `edges`, compiled
+/// with `extra`; a hierarchical view keeps the authored ids.
+fn two_modules(edges: &str, extra: &str) -> Value {
+    let text = format!(
+        "{{:hierarchical true :prefix \"x\" :order [a b] \
+          :classes [{{:id :a :name \"A\" :ns \"x.a\"}} {{:id :b :name \"B\" :ns \"x.b\"}}] \
+          :edges {edges}}}"
+    );
+    let doc = scene::ir::read_document(&text).unwrap();
+    compile_view(&doc, &[], &[], &edn::parse(extra).unwrap())
+}
+
 fn commands_of(s: &Value) -> Vec<Command> {
     commands::commands(s, None, None)
 }
@@ -177,7 +189,7 @@ fn unmeasured_classes_get_the_worst_grade_and_a_no_data_marker() {
         unreachable!()
     };
     assert!(missing);
-    assert_eq!(Some(scene::config::GRADE_WORST), *grade);
+    assert_eq!(Some(scene::GRADE_WORST), *grade);
     let no_data = of_kind(&commands, "no-data");
     assert_eq!(1, no_data.len());
     let Command::NoData {
@@ -204,10 +216,7 @@ fn a_name_band_runs_under_the_name_slot_in_the_box_stroke() {
     };
     assert_eq!(rect.x + 6.0, *x);
     assert_eq!(rect.w - 12.0, *w);
-    let g = scene::config::combined_grade(
-        Some(scene::config::crap_grade(Some(2.0))),
-        Some(scene::config::mutation_grade(Some(0.9))),
-    );
+    let g = scene::metric_rating(Some(2.0), Some(9.0), Some(1.0), None).grade;
     assert_eq!(viewer::theme::stroke(g), *color);
 }
 
@@ -217,7 +226,12 @@ fn edges_choose_heads_and_violation_widths_like_the_lua_adapter() {
                 :edges [{:from :a :to :b :kind :association} {:from :a :to :b :kind :dependency} \
                         {:from :a :to :b :kind :aggregation} {:from :a :to :b :kind :composition} \
                         {:from :a :to :b :kind :inheritance} {:from :a :to :b :kind :implements :violating true}]}";
-    let s = scene::compose::compile_diagram(&edn::parse(text).unwrap());
+    let s = compile_view(
+        &scene::ir::read_document(text).unwrap(),
+        &[],
+        &[],
+        &Value::Map(vec![]),
+    );
     let heads: Vec<String> = commands::edge_commands(&s, None, None)
         .into_iter()
         .filter_map(|c| match c {
@@ -237,7 +251,7 @@ fn edges_choose_heads_and_violation_widths_like_the_lua_adapter() {
         heads
     );
     // A hovered edge is hot; a violating one keeps its hot violation width.
-    let hovered = edn::parse("{:kind :edge :from :a :to :b}").unwrap();
+    let hovered = edn::parse("{:kind :edge :from :d0-a :to :d0-b}").unwrap();
     let hot: Vec<(f32, viewer::theme::Rgb)> = commands::edge_commands(&s, None, Some(&hovered))
         .into_iter()
         .filter_map(|c| match c {
@@ -261,9 +275,10 @@ fn edges_choose_heads_and_violation_widths_like_the_lua_adapter() {
 
 #[test]
 fn hidden_edges_become_violation_aware_indicators() {
-    let text = "{:hide-edges true :packages [{:id :p :label \"P\" :classes [{:id :a :name \"A\"} {:id :b :name \"B\"}]}] \
-                :edges [{:from :a :to :b :kind :dependency :violating true}]}";
-    let s = scene::compose::compile_diagram(&edn::parse(text).unwrap());
+    let s = two_modules(
+        "[{:from :a :to :b :kind :dependency :violating true}]",
+        "{:declutter :triangles}",
+    );
     let commands = commands::edge_commands(&s, None, None);
     assert_eq!(2, commands.len());
     for command in &commands {
@@ -282,22 +297,26 @@ fn hidden_edges_become_violation_aware_indicators() {
 fn hide_edges_draws_indicators_for_any_lua_truthy_value() {
     // adapters/edges.lua: `if g(g(scene,'diagram'),'hide-edges') then` draw
     // indicators, else strokes. `:yes` hides; an authored `false` draws edges.
+    // The triangles declutter computes the indicators; the scene's diagram
+    // then carries the authored flag value.
     let commands_for = |hide: &str| {
-        let text = format!(
-            "{{{hide} :packages [{{:id :p :label \"P\" :classes [{{:id :a :name \"A\"}} {{:id :b :name \"B\"}}]}}] \
-             :edges [{{:from :a :to :b :kind :dependency}}]}}"
+        let mut s = two_modules(
+            "[{:from :a :to :b :kind :dependency}]",
+            "{:declutter :triangles}",
         );
-        let s = scene::compose::compile_diagram(&edn::parse(&text).unwrap());
+        let mut diagram = edn::record::get(&s, "diagram").cloned().unwrap();
+        edn::record::put(&mut diagram, "hide-edges", edn::parse(hide).unwrap());
+        edn::record::put(&mut s, "diagram", diagram);
         commands::edge_commands(&s, None, None)
     };
-    let yes = commands_for(":hide-edges :yes");
+    let yes = commands_for(":yes");
     assert_eq!(2, yes.len());
     assert!(
         yes.iter()
             .all(|c| matches!(c, EdgeCommand::Indicator { .. })),
         "{yes:?}"
     );
-    let shown = commands_for(":hide-edges false");
+    let shown = commands_for("false");
     assert!(
         shown
             .iter()

@@ -13,9 +13,9 @@ use std::time::{Duration, Instant};
 use companion::mailbox::Mailbox;
 use edn::Value;
 use edn::record::{get, local_name};
+use scene::Rect;
 use scene::document::{self, ViewState};
 use scene::events::{self, Dims};
-use scene::geom::Rect;
 use scene::hit;
 
 use crate::clock;
@@ -1437,7 +1437,7 @@ mod tests {
             .cloned()
             .expect("class on the scene");
         let r = get(&class, "rect")
-            .and_then(scene::geom::Rect::from_value)
+            .and_then(scene::Rect::from_value)
             .unwrap();
         let z = events::zoom_of(state);
         ((r.x + 6.0 - state.cam_x) * z, (r.y + 6.0 - state.cam_y) * z)

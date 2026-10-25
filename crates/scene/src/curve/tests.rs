@@ -1,10 +1,10 @@
 //! Curve behaviour — the edges_spec.lua curve oracle.
 
-use edn::parse;
-use scene::curve::{
+use crate::curve::{
     basis_path, constrain_ends, end_tangent, flatten_path, path_bounds, round_corners,
 };
-use scene::geom::{self, Rect};
+use crate::geom::{self, Rect};
+use edn::parse;
 
 fn ps(text: &str) -> Vec<[f64; 2]> {
     let edn::Value::Vector(items) = parse(text).unwrap() else {

@@ -269,3 +269,6 @@ pub fn gap_polyline(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

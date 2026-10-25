@@ -1,8 +1,8 @@
 //! Routing behaviour — the edges_spec.lua route oracle.
 
+use crate::geom::{self, Rect};
+use crate::route::route;
 use edn::parse;
-use scene::geom::{self, Rect};
-use scene::route::route;
 
 fn points_of(scene: &edn::Value, edge: usize) -> Vec<[f64; 2]> {
     let edges = match edn::record::get(scene, "edges").unwrap() {
@@ -88,19 +88,19 @@ fn same_rank_edges_route_below_the_rank_box() {
 fn face_picks_the_nearest_rect_side() {
     let r = Rect::new(0.0, 0.0, 400.0, 100.0);
     assert_eq!(
-        scene::route::Face::Left,
-        scene::route::face(r, [-50.0, 50.0])
+        crate::route::Face::Left,
+        crate::route::face(r, [-50.0, 50.0])
     );
     assert_eq!(
-        scene::route::Face::Right,
-        scene::route::face(r, [450.0, 50.0])
+        crate::route::Face::Right,
+        crate::route::face(r, [450.0, 50.0])
     );
     assert_eq!(
-        scene::route::Face::Top,
-        scene::route::face(r, [200.0, -30.0])
+        crate::route::Face::Top,
+        crate::route::face(r, [200.0, -30.0])
     );
     assert_eq!(
-        scene::route::Face::Bottom,
-        scene::route::face(r, [200.0, 150.0])
+        crate::route::Face::Bottom,
+        crate::route::face(r, [200.0, 150.0])
     );
 }

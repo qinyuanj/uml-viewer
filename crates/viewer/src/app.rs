@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use edn::Value;
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
+use scene::Rect;
 use scene::events::{self, Dims};
-use scene::geom::Rect;
 
 use crate::bench;
 use crate::driver::{self, Input, Runner, ViewRecord};

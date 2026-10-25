@@ -1,9 +1,9 @@
 //! Scene composition — the edges_spec.lua compose oracle; golden geometry
 //! parity is covered separately by golden_geometry.rs.
 
+use crate::compose::{compile_diagram, compile_document};
+use crate::geom::{self, Rect};
 use edn::{Value, parse};
-use scene::compose::{compile_diagram, compile_document};
-use scene::geom::{self, Rect};
 
 fn seq<'a>(v: &'a Value, key: &str) -> &'a [Value] {
     match edn::record::get(v, key) {
@@ -109,4 +109,50 @@ fn single_diagram_document_compiles_through_the_same_path() {
         Some(&Value::keyword("d0-a")),
         edn::record::get(&seq(&s, "classes")[0], "id")
     );
+}
+
+// Lua truthiness of authored IR flags (#147 review, #154), moved from
+// `tests/lua_truthiness.rs`: an authored `false` or `nil` is omission and
+// any other value (`:yes`, `1`) is `true`.
+
+const FALSY: [&str; 2] = ["false", "nil"];
+const TRUTHY: [&str; 2] = [":yes", "1"];
+
+fn encoded(v: &Value) -> String {
+    edn::encode(v).unwrap()
+}
+
+/// What the scene draws: class rects, packages and edges.
+fn drawn(scene: &Value) -> String {
+    let get = edn::record::get;
+    let rects: Vec<Value> = edn::record::seq(get(scene, "classes"))
+        .iter()
+        .map(|c| get(c, "rect").cloned().unwrap_or(Value::Nil))
+        .collect();
+    format!(
+        "{} {} {}",
+        encoded(&Value::Vector(rects)),
+        encoded(get(scene, "packages").unwrap_or(&Value::Nil)),
+        encoded(get(scene, "edges").unwrap_or(&Value::Nil)),
+    )
+}
+
+#[test]
+fn dummy_false_lays_out_and_routes_like_an_ordinary_class() {
+    // layout.lua:106/110, compose.lua:33, route.lua:117: `g(c,'dummy?')`.
+    let compiled = |flag: &str| {
+        compile_diagram(&edn::parse(&format!(
+            r#"{{:packages [{{:id :p :label "P" :classes [{{:id :a :name "A" {flag}}} {{:id :wall :name "W"}} {{:id :b :name "B"}}]}}]
+                :edges [{{:from :a :to :b :kind :dependency}} {{:from :b :to :a :kind :dependency}}]}}"#
+        )).unwrap())
+    };
+    let omitted = drawn(&compiled(""));
+    let dummy = drawn(&compiled(":dummy? true"));
+    assert_ne!(omitted, dummy, "fixture must tell a dummy apart");
+    for v in FALSY {
+        assert_eq!(omitted, drawn(&compiled(&format!(":dummy? {v}"))), "{v}");
+    }
+    for v in TRUTHY {
+        assert_eq!(dummy, drawn(&compiled(&format!(":dummy? {v}"))), "{v}");
+    }
 }

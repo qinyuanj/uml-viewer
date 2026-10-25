@@ -1,8 +1,8 @@
 //! Quality bands, grades and pooling — the config_spec.lua oracle.
 
+use crate::config::{self, crap_band, mutation_band};
 use edn::record::local_name;
 use edn::{Value, parse};
-use scene::config::{self, crap_band, mutation_band};
 
 fn band(v: &Value) -> &str {
     match v {

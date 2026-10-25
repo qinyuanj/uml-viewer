@@ -43,6 +43,12 @@ pub fn project(doc: &Value, snapshots: Option<&[Snapshot]>, focus: &Value, extra
     }
 }
 
+/// The `:curve` of a routed edge: the basis path through its `:points`,
+/// with the ends constrained to the rects of its two classes.
+pub fn edge_curve(points: &[Value], from: Option<geom::Rect>, to: Option<geom::Rect>) -> Value {
+    curve::constrain_ends(&curve::basis_path(points), from, to)
+}
+
 fn diagram_projection(scene: &Value, focus: &Value) -> Value {
     let classes = match get(scene, "classes") {
         Some(Value::Vector(v)) => v.clone(),
@@ -77,9 +83,8 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
             let from = get(e, "from").cloned().unwrap_or(Value::Nil);
             let to = get(e, "to").cloned().unwrap_or(Value::Nil);
             let points = get(e, "points").cloned().unwrap_or(Value::Vector(vec![]));
-            let pts = edn::record::seq(get(e, "points")).to_vec();
-            let path = curve::constrain_ends(
-                &curve::basis_path(&pts),
+            let path = edge_curve(
+                edn::record::seq(get(e, "points")),
                 index.get(&edn::encode(&from).unwrap()).copied(),
                 index.get(&edn::encode(&to).unwrap()).copied(),
             );
@@ -226,7 +231,7 @@ fn parse_args(args: &[OsString]) -> Result<Options, String> {
 
 /// Load quality snapshots from `<root>/.metrics`, mirroring the adapter's
 /// file discovery (CRAP tree plus every mutation snapshot).
-pub fn load_snapshots(root: &Path) -> Vec<Snapshot> {
+pub(crate) fn load_snapshots(root: &Path) -> Vec<Snapshot> {
     let mut files = Vec::new();
     let crap = root.join(".metrics/crap.edn");
     if let Ok(text) = std::fs::read_to_string(&crap) {

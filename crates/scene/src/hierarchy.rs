@@ -487,10 +487,6 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
     r
 }
 
-pub fn proposal_layers(x: &Value) -> Vec<Value> {
-    policy::proposal_layers(x)
-}
-
 pub fn named_proposals(x: &Value) -> Vec<Value> {
     policy::named_proposals(x)
 }
@@ -1086,3 +1082,6 @@ pub fn apply_declutter(view: &Value, mode: Option<&Value>) -> Value {
     }
     view
 }
+
+#[cfg(test)]
+mod tests;

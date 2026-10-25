@@ -42,10 +42,10 @@ impl Dims {
     }
 }
 
-pub const ZOOM_MIN: f64 = 0.1;
-pub const ZOOM_MAX: f64 = 10.0;
+pub(crate) const ZOOM_MIN: f64 = 0.1;
+pub(crate) const ZOOM_MAX: f64 = 10.0;
 pub const ZOOM_STEP: f64 = 1.1;
-pub const DRAG_THRESHOLD: f64 = 3.0;
+pub(crate) const DRAG_THRESHOLD: f64 = 3.0;
 
 fn clamp_zoom(z: f64) -> f64 {
     z.clamp(ZOOM_MIN, ZOOM_MAX)
@@ -214,33 +214,6 @@ pub fn delete_proposal(
         with_proposals(doc, Value::Vector(proposals)),
         boundary,
     )
-}
-
-/// A `{:op :rename :id :name}` record, or None for a blank name.
-pub fn rename_op(id: &Value, raw: Option<&str>) -> Option<Value> {
-    let name = raw?.trim();
-    if name.is_empty() {
-        return None;
-    }
-    Some(Value::Map(vec![
-        (Value::keyword("op"), Value::keyword("rename")),
-        (Value::keyword("id"), id.clone()),
-        (Value::keyword("name"), Value::String(name.to_owned())),
-    ]))
-}
-
-pub fn apply_proposal_op(s: &ViewState, op: &Value, boundary: Option<&dyn Boundary>) -> ViewState {
-    match get(op, "op").map(geom::name).as_deref() {
-        Some("rename") => {
-            let name = match get(op, "name") {
-                Some(Value::String(s)) => s.clone(),
-                _ => return s.clone(),
-            };
-            rename_proposal(s, get(op, "id"), &name, boundary)
-        }
-        Some("delete") => delete_proposal(s, get(op, "id"), boundary),
-        _ => s.clone(),
-    }
 }
 
 pub fn cycle_declutter(s: &ViewState) -> ViewState {
@@ -521,7 +494,7 @@ pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
 }
 
 /// Detail target identity of a class, child row or port hit.
-pub fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
+pub(crate) fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
     match get(hit_value, "kind").map(geom::name).as_deref() {
         Some("class") | Some("child") | Some("port") => get(hit_value, "id").cloned(),
@@ -540,7 +513,7 @@ pub fn select(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
     n
 }
 
-pub fn open_detail(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
+pub(crate) fn open_detail(s: &ViewState, hit_value: Option<&Value>) -> ViewState {
     let mut n = select(s, hit_value);
     if let Some(id) = detail_id_for(hit_value) {
         n.detail_id = Some(id);

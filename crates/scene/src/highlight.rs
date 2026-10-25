@@ -7,7 +7,7 @@ use std::collections::HashSet;
 
 /// The class a hit stands for: the class itself, or the parent of a child
 /// row or port. Packages, edges and dependency triangles focus no class.
-pub fn box_id(hit: Option<&Value>) -> Option<Value> {
+pub(crate) fn box_id(hit: Option<&Value>) -> Option<Value> {
     let hit = hit?;
     match get(hit, "kind").map(crate::geom::name).as_deref() {
         Some("class") => get(hit, "id").cloned(),

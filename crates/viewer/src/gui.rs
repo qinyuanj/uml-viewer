@@ -16,9 +16,9 @@ use edn::record::{get, local_name, num};
 use egui::{
     Align2, Color32, CursorIcon, FontFamily, FontId, Id, Pos2, Rect as ERect, RichText, Sense, Vec2,
 };
+use scene::Rect;
 use scene::document::ViewState;
 use scene::events;
-use scene::geom::Rect;
 
 use crate::detail::{self, Hover};
 use crate::inspector;

@@ -5,7 +5,7 @@
 //! - `Frames` (zoom < 0.4): frames, titles, C/M dots, edges decimated at 8px.
 //! - `Full`: the complete class-box detail.
 
-use scene::geom::Rect;
+use scene::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tier {

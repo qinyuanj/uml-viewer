@@ -160,14 +160,6 @@ pub fn identity(pid: i32) -> Result<Option<Owner>> {
     Ok(Some(Owner { pid, start, name }))
 }
 
-/// Like [`identity`] but without the process name (worker/viewer checks).
-pub fn owner_native(pid: i32) -> Result<Option<Owner>> {
-    Ok(identity(pid)?.map(|owner| Owner {
-        name: String::new(),
-        ..owner
-    }))
-}
-
 const TERM_GRACE_MS: i64 = 2000;
 const RUN_TIMEOUT_MS: i64 = 10000;
 
@@ -758,7 +750,7 @@ mod tests {
 
     #[test]
     fn identity_is_shared_by_every_observer() {
-        let own = owner_native(current_pid()).unwrap().unwrap();
+        let own = identity(current_pid()).unwrap().unwrap();
         assert_eq!(current_pid(), own.pid);
         assert!(!own.start.is_empty());
         let again = identity(own.pid).unwrap().unwrap();
@@ -767,7 +759,7 @@ mod tests {
 
     #[test]
     fn identity_is_none_for_a_pid_that_is_not_running() {
-        assert_eq!(None, owner_native(4194304).unwrap());
+        assert_eq!(None, identity(4194304).unwrap());
     }
 
     #[test]

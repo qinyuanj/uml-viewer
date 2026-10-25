@@ -3,9 +3,9 @@
 //! equivalent documents are written literally, which is exactly what the IR
 //! the scene core consumes looks like.
 
+use crate::hierarchy as H;
 use edn::record::{get, local_name, num};
 use edn::{Value, parse};
-use scene::hierarchy as H;
 
 fn kw(s: &str) -> Value {
     Value::keyword(s)
@@ -302,7 +302,7 @@ fn preserves_named_proposals_nested_groups_leftovers_omission_and_drill_views() 
     );
     assert_eq!(Some(&Value::Bool(true)), get(&v, "proposal"));
     assert_eq!(
-        Some(&Value::String(scene::policy::PROPOSAL_NOTICE.into())),
+        Some(&Value::String(crate::policy::PROPOSAL_NOTICE.into())),
         get(&v, "title")
     );
     assert_eq!(vec![kw("spare")], ids(seq(get(&pkgs[0], "classes"))));
@@ -333,7 +333,7 @@ fn preserves_named_proposals_nested_groups_leftovers_omission_and_drill_views() 
     assert!(H::proposal_package_id(Some(&kw("proposal.jvm"))));
     assert!(!H::proposal_package_id(Some(&kw("jvm"))));
     assert_eq!(vec![kw("split")], ids(&H::named_proposals(&d)));
-    assert_eq!(1, H::proposal_layers(&d).len());
+    assert_eq!(1, crate::policy::proposal_layers(&d).len());
 }
 
 #[test]
@@ -375,4 +375,98 @@ fn uses_actual_namespace_children_and_drills_with_self_modules_and_foreign_ovals
     assert_eq!(vec![kw("javax.swing")], ids(seq(get(&inner, "foreign"))));
     assert!(box_at(&inner, "layout").is_none());
     assert_eq!(Some(&Value::String("source".into())), get(&inner, "title"));
+}
+
+// Lua truthiness of authored IR flags (#147 review, #154), moved from
+// `tests/lua_truthiness.rs`: an authored `false` or `nil` is omission and
+// any other value (`:yes`, `1`) is `true`.
+
+const FALSY: [&str; 2] = ["false", "nil"];
+const TRUTHY: [&str; 2] = [":yes", "1"];
+
+fn encoded(v: &Value) -> String {
+    edn::encode(v).unwrap()
+}
+
+#[test]
+fn dummy_false_is_not_taken_as_the_package_endpoint_when_hiding_classes() {
+    // hierarchy.lua:239: `if get(c,'dummy?') then endpoint=…`.
+    let hidden = |flag: &str| {
+        let view = edn::parse(&format!(
+            r#"{{:packages [{{:id :p :classes [{{:id :a {flag}}} {{:id :b}}]}} {{:id :q :classes [{{:id :c}}]}}]
+                :edges []}}"#
+        ))
+        .unwrap();
+        let out = H::hide_classes(&view);
+        let ids: Vec<String> = edn::record::seq(get(&out, "packages"))
+            .iter()
+            .flat_map(|p| edn::record::seq(get(p, "classes")).to_vec())
+            .map(|c| encoded(get(&c, "id").unwrap()))
+            .collect();
+        ids.join(" ")
+    };
+    let omitted = hidden("");
+    let dummy = hidden(":dummy? true");
+    assert_ne!(omitted, dummy, "fixture must tell a dummy apart");
+    for v in FALSY {
+        assert_eq!(omitted, hidden(&format!(":dummy? {v}")), "{v}");
+    }
+    for v in TRUTHY {
+        assert_eq!(dummy, hidden(&format!(":dummy? {v}")), "{v}");
+    }
+}
+
+#[test]
+fn proposal_group_false_keeps_the_namespace_label() {
+    // hierarchy.lua:34 `module_name`: `if get(c,'proposal-group?')` uses :name.
+    let name = |flag: &str| {
+        let doc = edn::parse(&format!(
+            r#"{{:hierarchical true :classes [{{:id :a.x :name "Custom" {flag}}} {{:id :b}}] :edges []
+                :proposals [{{:id :p :layers [{{:id :l1 :nses [:a.x]}} {{:id :l2 :nses [:b]}}]}}]}}"#
+        ))
+        .unwrap();
+        let v = H::proposal_view(&doc, None);
+        let names: Vec<String> = edn::record::seq(get(&v, "packages"))
+            .iter()
+            .flat_map(|p| edn::record::seq(get(p, "classes")).to_vec())
+            .map(|c| encoded(get(&c, "name").unwrap_or(&Value::Nil)))
+            .collect();
+        names.join(" ")
+    };
+    let omitted = name("");
+    let group = name(":proposal-group? true");
+    assert_ne!(omitted, group, "fixture must tell a group apart");
+    for v in FALSY {
+        assert_eq!(omitted, name(&format!(":proposal-group? {v}")), "{v}");
+    }
+    for v in TRUTHY {
+        assert_eq!(group, name(&format!(":proposal-group? {v}")), "{v}");
+    }
+}
+
+#[test]
+fn violating_false_does_not_turn_a_collapsed_arrow_into_a_violation() {
+    // hierarchy.lua:222: `if get(e,'violating') and not viol then …`.
+    let collapsed = |flag: &str| {
+        let view = edn::parse(&format!(
+            r#"{{:packages [{{:id :p :classes [{{:id :a}} {{:id :b}}]}}]
+                :edges [{{:from :a :to :b :kind :association {flag}}}]}}"#
+        ))
+        .unwrap();
+        let out = H::collapse_arrows(&view);
+        let e = edn::record::seq(get(&out, "edges"))[0].clone();
+        (
+            encoded(get(&e, "kind").unwrap()),
+            get(&e, "violating").cloned(),
+        )
+    };
+    let omitted = collapsed("");
+    assert_eq!((":association".to_string(), None), omitted);
+    for v in FALSY {
+        assert_eq!(omitted, collapsed(&format!(":violating {v}")), "{v}");
+    }
+    let violating = collapsed(":violating true");
+    for v in TRUTHY {
+        assert_eq!(violating, collapsed(&format!(":violating {v}")), "{v}");
+    }
 }

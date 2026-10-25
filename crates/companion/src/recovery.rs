@@ -3,79 +3,19 @@
 //! references; this module is the sole journal writer when running detached.
 //! Journals are EDN; runner `started`/`exit` side files are JSON.
 
+use crate::host::Host;
 use crate::posix;
 use crate::record;
 use crate::recovery_domain as domain;
-use crate::vocab::{Failure, Owner, Result};
+use crate::vocab::{Failure, Result};
 use edn::Value;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Injected journal/process behaviour; the production host uses the real
-/// POSIX boundary, tests substitute in-memory journals.
-type ClockFn = Rc<dyn Fn() -> i64>;
-type SleepFn = Rc<dyn Fn(i64)>;
-type OwnerFn = Rc<dyn Fn(i64) -> Option<Owner>>;
-/// Raw journal bytes. `Ok(None)` is an absent file; `Err` is a transient lock
-/// or IO failure. Parsing happens in the caller, so a malformed journal is
-/// never mistaken for a transient failure.
-type ReadFn = Rc<dyn Fn(&Path) -> Result<Option<String>>>;
-type WriteFn = Rc<dyn Fn(&Path, &Value) -> Result<()>>;
-type RemoveFn = Rc<dyn Fn(&Path)>;
-type TokenFn = Rc<dyn Fn() -> String>;
-type RunnerStatePathFn = Rc<dyn Fn(&Value, i64) -> String>;
-
-#[derive(Clone)]
-pub struct Host {
-    pub clock: ClockFn,
-    pub sleep: SleepFn,
-    pub owner: OwnerFn,
-    pub read: ReadFn,
-    pub write: WriteFn,
-    pub remove: RemoveFn,
-    pub token: TokenFn,
-    pub runner_state_path: RunnerStatePathFn,
-}
-
-fn real_read(path: &Path) -> Result<Option<String>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    std::fs::read_to_string(path)
-        .map(Some)
-        .map_err(|error| Failure::new(format!("{error}")))
-}
-
-fn real_write(path: &Path, state: &Value) -> Result<()> {
-    posix::atomic::ensure_parent(path)?;
-    posix::atomic::write(path, edn::encode(state)?.as_bytes())
-}
 
 fn default_runner_state_path(identity: &Value, generation: i64) -> String {
     let cwd = record::get_name(identity, "cwd").unwrap_or_else(|| ".".to_owned());
     let session = record::get_name(identity, "session").unwrap_or_default();
     format!("{cwd}/.uml-viewer/{session}-runner-{generation}.edn")
-}
-
-pub fn real_host() -> Host {
-    Host {
-        clock: Rc::new(posix::monotonic_ms),
-        sleep: Rc::new(posix::sleep),
-        owner: Rc::new(|pid| {
-            if pid < 1 || pid > i32::MAX as i64 {
-                return None;
-            }
-            posix::identity(pid as i32).ok().flatten()
-        }),
-        read: Rc::new(real_read),
-        write: Rc::new(real_write),
-        remove: Rc::new(|path| {
-            let _ = std::fs::remove_file(path);
-        }),
-        token: Rc::new(new_token),
-        runner_state_path: Rc::new(default_runner_state_path),
-    }
 }
 
 /// Read a journal, retrying transient sharing violations for up to two
@@ -126,7 +66,7 @@ pub fn read_runner(state: &Value, host: &Host) -> Result<Option<Value>> {
 }
 
 pub fn write_state(path: &Path, state: &Value, host: &Host) -> Result<()> {
-    (host.write)(path, state)
+    (host.write)(path, edn::encode(state)?.as_bytes())
 }
 
 pub fn status(identity: &Value, host: &Host) -> Result<Option<Value>> {
@@ -269,7 +209,7 @@ pub fn step(step: &Step) -> Result<Value> {
         Some(state) => read_runner(state, host)?,
         None => None,
     };
-    let runner_state_fn = |generation: i64| (host.runner_state_path)(identity, generation);
+    let runner_state_fn = |generation: i64| default_runner_state_path(identity, generation);
     let owner = host.owner.clone();
     let owner_ref = move |pid: i64| owner(pid);
     let token = host.token.clone();
@@ -347,11 +287,6 @@ pub fn new_token() -> String {
     text
 }
 
-pub struct ControllerLauncher {
-    pub executable: std::ffi::OsString,
-    pub argv: Vec<std::ffi::OsString>,
-}
-
 /// Register a detached controller and wait for its journal (Lua `M.start`).
 pub fn start(
     identity: &Value,
@@ -380,8 +315,7 @@ pub fn start(
 /// The runner role body (Lua `M.run_child`): one generation lock, spawn the
 /// companion command attached, publish started/exited records. Returns the
 /// verified exit code, or `None` for an unknown exit.
-pub fn run_child(identity: &Value) -> Result<Option<i32>> {
-    let host = real_host();
+pub fn run_child(identity: &Value, host: &Host) -> Result<Option<i32>> {
     let runner_state = record::get_name(identity, "runner-state")
         .ok_or_else(|| Failure::new("Runner manifest is missing its state path"))?;
     let generation_lock = posix::try_acquire(Path::new(&format!("{runner_state}.lock")))?;
@@ -390,8 +324,8 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
     }
     let started_path = PathBuf::from(format!("{runner_state}.started.json"));
     let exit_path = PathBuf::from(format!("{runner_state}.exit.json"));
-    let _ = std::fs::remove_file(&started_path);
-    let _ = std::fs::remove_file(&exit_path);
+    (host.remove)(&started_path);
+    (host.remove)(&exit_path);
     let command: Vec<std::ffi::OsString> =
         record::string_vec(edn::record::seq(edn::record::get(identity, "command")))
             .into_iter()
@@ -415,19 +349,20 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
             return Err(error);
         }
     };
-    let deadline = posix::monotonic_ms() + 30000;
+    let deadline = (host.clock)() + 30000;
     let started = loop {
-        let started = std::fs::read_to_string(&started_path)
+        let started = (host.read)(&started_path)
             .ok()
+            .flatten()
             .and_then(|text| crate::json::decode(&text).ok());
         if let Some(started) = started {
             break started;
         }
-        if posix::monotonic_ms() >= deadline {
+        if (host.clock)() >= deadline {
             posix::release(generation_lock);
             return Err(Failure::new("Runner child did not report its identity"));
         }
-        posix::sleep(25);
+        (host.sleep)(25);
     };
     let child_record = edn::record::record(vec![
         (
@@ -460,19 +395,19 @@ pub fn run_child(identity: &Value) -> Result<Option<i32>> {
             ("phase", Value::keyword("started")),
             ("child", child_record.clone()),
         ]),
-        &host,
+        host,
     )?;
     let exit = posix::await_exit(&child, Some(&exit_path));
     let mut exited = edn::record::record(vec![
         ("token", token),
         ("phase", Value::keyword("exited")),
         ("child", child_record),
-        ("at", Value::Integer(posix::monotonic_ms())),
+        ("at", Value::Integer((host.clock)())),
     ]);
     if let Some(code) = exit {
         edn::record::put(&mut exited, "exit", Value::Integer(code as i64));
     }
-    write_state(Path::new(&runner_state), &exited, &host)?;
+    write_state(Path::new(&runner_state), &exited, host)?;
     posix::release(generation_lock);
     Ok(exit)
 }
@@ -527,47 +462,36 @@ pub fn controller_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::memory::Files;
+    use crate::vocab::Owner;
     use std::cell::RefCell;
-    use std::collections::HashMap;
     use std::rc::Rc;
 
-    /// In-memory journal: path → EDN value, exactly like the busted
-    /// `fast_write` fixtures.
+    /// In-memory journal over the fake host: path → EDN text, exactly like
+    /// the busted `fast_write` fixtures.
     struct Memory {
-        files: Rc<RefCell<HashMap<PathBuf, Value>>>,
+        files: Files,
     }
 
     impl Memory {
         fn new() -> Memory {
             Memory {
-                files: Rc::new(RefCell::new(HashMap::new())),
+                files: Files::new(),
             }
         }
 
+        fn insert(&self, path: &str, value: &Value) {
+            self.files.put(path, &edn::encode(value).unwrap());
+        }
+
         fn host(&self) -> Host {
-            let read_files = self.files.clone();
-            let write_files = self.files.clone();
-            let remove_files = self.files.clone();
-            Host {
+            self.files.serve(Host {
                 clock: Rc::new(|| 0),
                 sleep: Rc::new(|_| {}),
                 owner: Rc::new(|_| None),
-                read: Rc::new(move |path| match read_files.borrow().get(path) {
-                    Some(value) => edn::encode(value).map(Some).map_err(Failure::from),
-                    None => Ok(None),
-                }),
-                write: Rc::new(move |path, state| {
-                    write_files
-                        .borrow_mut()
-                        .insert(path.to_path_buf(), state.clone());
-                    Ok(())
-                }),
-                remove: Rc::new(move |path| {
-                    remove_files.borrow_mut().remove(path);
-                }),
                 token: Rc::new(|| "mem-token".to_owned()),
-                runner_state_path: Rc::new(default_runner_state_path),
-            }
+                ..Host::fake()
+            })
         }
     }
 
@@ -619,10 +543,7 @@ mod tests {
             launch_log.borrow_mut().push(submission.clone());
             Ok(())
         };
-        memory.files.borrow_mut().insert(
-            PathBuf::from("/r/.uml-viewer/runner.edn"),
-            exited("initial", 37),
-        );
+        memory.insert("/r/.uml-viewer/runner.edn", &exited("initial", 37));
         let first = step(&Step {
             identity: &identity,
             now: 1000,
@@ -663,16 +584,14 @@ mod tests {
         let memory = Memory::new();
         let writes = Rc::new(RefCell::new(0));
         let counted = writes.clone();
-        let write_files = memory.files.clone();
+        let base = memory.host();
+        let inner = base.write.clone();
         let host = Host {
-            write: Rc::new(move |path, state| {
+            write: Rc::new(move |path, bytes| {
                 *counted.borrow_mut() += 1;
-                write_files
-                    .borrow_mut()
-                    .insert(path.to_path_buf(), state.clone());
-                Ok(())
+                inner(path, bytes)
             }),
-            ..memory.host()
+            ..base
         };
         let identity = identity("/r");
         register(&identity, &controller(), &host).unwrap();
@@ -703,10 +622,7 @@ mod tests {
         let host = memory.host();
         let identity = identity("/r");
         register(&identity, &controller(), &host).unwrap();
-        memory.files.borrow_mut().insert(
-            PathBuf::from("/r/.uml-viewer/runner.edn"),
-            exited("initial", 37),
-        );
+        memory.insert("/r/.uml-viewer/runner.edn", &exited("initial", 37));
         let attempts = RefCell::new(0);
         let failing = |_: &Value| {
             *attempts.borrow_mut() += 1;
@@ -745,26 +661,22 @@ mod tests {
 
     #[test]
     fn read_state_retries_transient_locks_but_not_malformed_journals() {
-        let directory = tempfile();
-        let target = directory.join("state.edn");
-        std::fs::write(&target, "{:phase :running}").unwrap();
+        let memory = Memory::new();
+        let target = PathBuf::from("/r/state.edn");
+        memory.files.put(&target, "{:phase :running}");
         let calls = Rc::new(RefCell::new(0));
         let counted = calls.clone();
+        let base = memory.host();
+        let inner = base.read.clone();
         let host = Host {
-            clock: Rc::new(|| 0),
-            sleep: Rc::new(|_| {}),
-            owner: Rc::new(|_| None),
             read: Rc::new(move |path| {
                 *counted.borrow_mut() += 1;
                 if *counted.borrow() < 3 {
                     return Err(Failure::new("sharing violation"));
                 }
-                real_read(path)
+                inner(path)
             }),
-            write: Rc::new(real_write),
-            remove: Rc::new(|_| {}),
-            token: Rc::new(|| "t".to_owned()),
-            runner_state_path: Rc::new(default_runner_state_path),
+            ..base
         };
         let value = read_state(&target, &host).unwrap().unwrap();
         assert_eq!(
@@ -772,31 +684,22 @@ mod tests {
             record::get_name(&value, "phase")
         );
         assert_eq!(3, *calls.borrow());
-        std::fs::write(&target, "{:phase").unwrap();
+        memory.files.put(&target, "{:phase");
         assert!(read_state(&target, &host).is_err());
-        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
     fn a_sharing_violation_outlasting_the_budget_fails() {
-        let directory = tempfile();
-        let target = directory.join("state.edn");
-        std::fs::write(&target, "{:phase :running}").unwrap();
         let now = Rc::new(RefCell::new(0i64));
         let clock_now = now.clone();
         let sleep_now = now.clone();
         let host = Host {
             clock: Rc::new(move || *clock_now.borrow()),
             sleep: Rc::new(move |ms| *sleep_now.borrow_mut() += ms),
-            owner: Rc::new(|_| None),
             read: Rc::new(|_| Err(Failure::new("sharing violation"))),
-            write: Rc::new(real_write),
-            remove: Rc::new(|_| {}),
-            token: Rc::new(|| "t".to_owned()),
-            runner_state_path: Rc::new(default_runner_state_path),
+            ..Host::fake()
         };
-        assert!(read_state(&target, &host).is_err());
-        let _ = std::fs::remove_dir_all(&directory);
+        assert!(read_state(Path::new("/r/state.edn"), &host).is_err());
     }
 
     #[test]
@@ -867,20 +770,16 @@ mod tests {
 
     #[test]
     fn runner_state_must_carry_a_phase_to_count_as_acknowledgement() {
-        let directory = tempfile();
-        let good = directory.join("runner.edn");
-        std::fs::write(&good, "{:token \"t\" :phase :started}").unwrap();
-        let state = edn::record::record(vec![(
-            "runner-state",
-            Value::String(good.to_string_lossy().into_owned()),
-        )]);
-        let host = real_host();
+        let memory = Memory::new();
+        let host = memory.host();
+        let good = "/r/.uml-viewer/runner.edn";
+        memory.files.put(good, "{:token \"t\" :phase :started}");
+        let state = edn::record::record(vec![("runner-state", Value::String(good.to_owned()))]);
         assert!(read_runner(&state, &host).unwrap().is_some());
-        std::fs::write(&good, "broken EDN {{{").unwrap();
+        memory.files.put(good, "broken EDN {{{");
         assert!(read_runner(&state, &host).unwrap().is_none());
-        std::fs::write(&good, "{:token \"t\"}").unwrap();
+        memory.files.put(good, "{:token \"t\"}");
         assert!(read_runner(&state, &host).unwrap().is_none());
-        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
@@ -913,7 +812,7 @@ mod tests {
                 :runner-token "gen" :runner-state "{runner_state}"}}"#
         ))
         .unwrap();
-        let exit = run_child(&identity).unwrap();
+        let exit = run_child(&identity, &Host::posix()).unwrap();
         assert_eq!(Some(7), exit);
         let text = std::fs::read_to_string(&runner_state).unwrap();
         let state = edn::parse(&text).unwrap();
@@ -939,7 +838,7 @@ mod tests {
                 :runner-state "{runner_state}"}}"#
         ))
         .unwrap();
-        let error = run_child(&identity).unwrap_err();
+        let error = run_child(&identity, &Host::posix()).unwrap_err();
         assert_eq!("Runner generation already executing", error.message);
         posix::release(Some(held));
         let _ = std::fs::remove_dir_all(&directory);

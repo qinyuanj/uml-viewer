@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::{Align, Color32, FontFamily, FontId, Galley, Pos2, Rect as ERect, Stroke, StrokeKind};
+use scene::Rect;
 use scene::document::ViewState;
-use scene::geom::Rect;
 
 use crate::commands::{self, Command, EdgeCommand};
 use crate::render_cache::RenderCache;

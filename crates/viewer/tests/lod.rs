@@ -18,21 +18,15 @@ fn zoom_selects_one_of_three_tiers() {
 
 #[test]
 fn culling_keeps_only_rects_overlapping_the_viewport() {
-    let view = scene::geom::Rect::new(0.0, 0.0, 100.0, 100.0);
-    assert!(lod::visible(
-        scene::geom::Rect::new(50.0, 50.0, 10.0, 10.0),
-        view
-    ));
-    assert!(lod::visible(
-        scene::geom::Rect::new(-5.0, -5.0, 10.0, 10.0),
+    let view = scene::Rect::new(0.0, 0.0, 100.0, 100.0);
+    assert!(lod::visible(scene::Rect::new(50.0, 50.0, 10.0, 10.0), view));
+    assert!(lod::visible(scene::Rect::new(-5.0, -5.0, 10.0, 10.0), view));
+    assert!(!lod::visible(
+        scene::Rect::new(200.0, 50.0, 10.0, 10.0),
         view
     ));
     assert!(!lod::visible(
-        scene::geom::Rect::new(200.0, 50.0, 10.0, 10.0),
-        view
-    ));
-    assert!(!lod::visible(
-        scene::geom::Rect::new(50.0, -50.0, 10.0, 10.0),
+        scene::Rect::new(50.0, -50.0, 10.0, 10.0),
         view
     ));
 }

@@ -5,7 +5,7 @@
 
 use edn::Value;
 use edn::record::{get, seq};
-use scene::overlay::Snapshot;
+use scene::Snapshot;
 use scene::{Band, GRADE_WORST, metric_rating, rating};
 
 const IR: &str = r#"{:title "Rated" :packages [{:id :p :label "P" :classes [

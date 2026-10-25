@@ -567,3 +567,6 @@ pub fn layout(diagram: &Value) -> Value {
 fn union_all(rects: &[Rect]) -> Option<Rect> {
     geom::union(&rects.iter().map(|r| Some(*r)).collect::<Vec<_>>())
 }
+
+#[cfg(test)]
+mod tests;

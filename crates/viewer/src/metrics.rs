@@ -4,7 +4,7 @@
 //! carry nanoseconds so equal-byte-length edits still reload.
 
 use edn::Value;
-use scene::overlay::Snapshot;
+use scene::Snapshot;
 use std::path::{Path, PathBuf};
 
 use crate::watch;

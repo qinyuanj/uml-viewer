@@ -156,7 +156,7 @@ fn hits_hovers_and_selects_in_world_coordinates_without_touching_the_card() {
     let c = scene::hit::class_by_id(&s.scene, &kw("source"))
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let (x, y) = ((r.x + 5.0 - 10.0) * 2.0, (r.y + 5.0 - 20.0) * 2.0);
     let moved = events::on_move(&s, x, y);
     let pressed = events::on_press(&moved, x, y);
@@ -459,7 +459,7 @@ fn a_drag_starting_on_a_class_does_nothing_but_the_press_selects() {
     let c = scene::hit::class_by_id(&s.scene, &kw("source"))
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let z = events::zoom_of(&s);
     let (x, y) = ((r.x + 5.0 - s.cam_x) * z, (r.y + 5.0 - s.cam_y) * z);
     let a = events::on_left_press(&s, x, y);
@@ -539,7 +539,7 @@ fn locate_enters_the_namespace_selects_opens_the_card_and_centres() {
     let c = scene::hit::class_by_id(&a.scene, a.detail_id.as_ref().unwrap())
         .unwrap()
         .clone();
-    let r = scene::geom::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
+    let r = scene::Rect::from_value(get(&c, "rect").unwrap()).unwrap();
     let (x, y) = events::world_xy(&a, 400.0, 300.0);
     assert_eq!(r.cx(), x);
     assert_eq!(r.cy(), y);
@@ -583,11 +583,15 @@ fn search_results_refresh_on_document_replacement_and_stale_targets_are_rejected
 
 #[test]
 fn highlight_marks_edges_and_connected_classes_and_dims_the_rest() {
-    let scene = scene::compose::compile_diagram(
-        &parse(r#"{:packages [{:id :p :label "P" :classes [{:id :a :name "A"} {:id :b :name "B"} {:id :c :name "C"} {:id :d :name "D"}]}] :edges [{:from :a :to :b :kind :dependency} {:from :b :to :c :kind :dependency :violating true}]}"#).unwrap(),
+    // A hierarchical root view keeps the authored ids.
+    let scene = document::compile_view(
+        &parse(r#"{:hierarchical true :prefix "x" :order [a b c d] :classes [{:id :a :name "A" :ns "x.a"} {:id :b :name "B" :ns "x.b"} {:id :c :name "C" :ns "x.c"} {:id :d :name "D" :ns "x.d"}] :edges [{:from :a :to :b :kind :dependency} {:from :b :to :c :kind :dependency :violating true}]}"#).unwrap(),
+        &[],
+        &[],
+        &Value::Map(vec![]),
     );
     let selected = parse("{:kind :class :id :b}").unwrap();
-    let h = scene::highlight::Highlight::new(&scene, Some(&selected), None);
+    let h = scene::Highlight::new(&scene, Some(&selected), None);
     assert_eq!(Some(kw("b")), h.focus);
     for id in ["a", "c"] {
         assert!(h.related(&kw(id)), "{id}");
@@ -603,13 +607,13 @@ fn highlight_marks_edges_and_connected_classes_and_dims_the_rest() {
     assert!(h.hot(e, None));
     // Hover alone dims nothing and only warms its own edges.
     let hover = parse("{:kind :class :id :a}").unwrap();
-    let h2 = scene::highlight::Highlight::new(&scene, None, Some(&hover));
+    let h2 = scene::Highlight::new(&scene, None, Some(&hover));
     assert!(!h2.dimmed(&kw("d")));
     assert!(!h2.related(&kw("b")));
     assert!(h2.warm(e));
     // A child row or port focuses its parent class.
     let child = parse("{:kind :port :id :x :parent :a}").unwrap();
-    let h3 = scene::highlight::Highlight::new(&scene, Some(&child), None);
+    let h3 = scene::Highlight::new(&scene, Some(&child), None);
     assert_eq!(Some(kw("a")), h3.focus);
     assert!(h3.related(&kw("b")));
     assert!(h3.dimmed(&kw("c")));

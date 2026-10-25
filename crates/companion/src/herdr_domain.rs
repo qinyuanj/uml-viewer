@@ -260,6 +260,7 @@ pub fn cleanup_phase_valid(phase: Option<&str>) -> bool {
 }
 
 /// A runner event counts only for the current generation token.
+#[cfg(test)]
 pub fn runner_event<'a>(identity: &Value, event: &'a Value) -> Option<&'a Value> {
     let token = record::get_name(identity, "runner-token")?;
     if record::get_name(event, "token").as_deref() == Some(token.as_str()) {

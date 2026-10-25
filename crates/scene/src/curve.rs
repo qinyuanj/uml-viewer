@@ -243,3 +243,6 @@ pub fn flatten_path(path: &Value, step: f64) -> Vec<[f64; 2]> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

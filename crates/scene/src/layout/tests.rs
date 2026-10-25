@@ -1,9 +1,9 @@
 //! Text width and class box lines — the layout_text_spec.lua oracle plus the
 //! member-line rules exercised by viewer_spec.
 
+use crate::layout::{CHAR_W, class_box_size, class_lines, text_w};
 use edn::parse;
 use edn::record::{get, local_name};
-use scene::layout::{CHAR_W, class_box_size, class_lines, text_w};
 
 #[test]
 fn jvm_width_for_ascii_two_byte_and_astral_text() {
