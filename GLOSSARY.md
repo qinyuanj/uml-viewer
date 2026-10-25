@@ -18,6 +18,10 @@ _Avoid_: default herdr, PATH herdr
 **quality dispatch**:
 viewer 对 CRAP、mutation 与重复检测请求的通用分发：按项目配置调用标准工具，失败时停止后续 IR 与展示。
 
+**业务范围**:
+三个质量工具共享的源码集合，由项目质量配置声明；范围之外只有测试代码。难以测试的业务代码仍在范围内；缺数据的类在图上照常显示为红。
+_Avoid_: mutation 范围, scope（单独使用时）
+
 **Herdr migration**:
 将项目从旧 companion 后端迁到 Herdr 的过程：先由旧版本正常结束并归档旧 ownership，保留会话、policy/proposal 与邮件队列，再 fresh 创建 Herdr companion。不得跨后端使用 `--restart`。
 _Avoid_: reindexing, in-place upgrade
