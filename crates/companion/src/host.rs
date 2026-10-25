@@ -159,8 +159,8 @@ impl Host {
 
 #[cfg(test)]
 pub(crate) mod memory {
-    //! An in-memory file store for the fake host: path → text, exactly like
-    //! the busted `fast_write` fixtures.
+    //! An in-memory file store for the fake host: path → text, so tests
+    //! write and read project files without touching the disk.
 
     use super::Host;
     use std::cell::RefCell;
