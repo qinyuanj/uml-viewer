@@ -100,7 +100,12 @@ prerequisites. Install the pinned toolchain with `rustup toolchain install
 1.99.1`; the installer runs `cargo build --release --locked` in
 `.uml-viewer/uml-viewer/` and records the resulting binary in
 `.uml-viewer/install.json`. There is no LOVE, Lua, cimgui or LuaJIT
-provisioning any more (#144).
+provisioning any more (#144). Upgrading a project whose `install.json` still
+records `love` or `jvm` deletes the `.uml-viewer/cimgui-love-*` directories the
+old installer provisioned and prints one line naming them; nothing else is
+touched and symlinks are not followed (#167). `~/.local/share/love/uml-viewer/`
+(for example `imgui.ini`) is LOVE's own save directory, not managed by the
+installer; delete it by hand if you no longer run the LOVE version.
 The installer also provisions Sarasa Mono SC Regular v1.0.42: it downloads the
 pinned TTF release, verifies the archive and face SHA256 (the pins from #82),
 and extracts only that face into `.uml-viewer/fonts/`; any failure exits

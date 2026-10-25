@@ -273,6 +273,36 @@ def font(directory):
         shutil.copy2(face, target)
 
 
+# Runtime keys an install.json from before #144 carries. The LOVE installer
+# provisioned cimgui into `.uml-viewer/cimgui-love-<release>/` (#167).
+RETIRED_RUNTIMES = ('love', 'jvm')
+
+
+def remove_retired_runtime(state):
+    """Delete the cimgui directories a LOVE/JVM-era install left behind.
+
+    Only real directories named `cimgui-love-*` directly inside the project's
+    `.uml-viewer/` go; symlinks and files are kept, and rmtree never follows a
+    link out of the tree. One line names what was removed.
+    """
+    if state.is_symlink() or not state.is_dir():
+        return
+    try:
+        record = json.loads((state / 'install.json').read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(record, dict) or not any(key in record for key in RETIRED_RUNTIMES):
+        return
+    removed = []
+    for path in sorted(state.glob('cimgui-love-*')):
+        if path.is_symlink() or not path.is_dir():
+            continue
+        shutil.rmtree(path)
+        removed.append(f'.uml-viewer/{path.name}')
+    if removed:
+        print('已删除旧 LOVE 运行时残留：' + '、'.join(removed))
+
+
 def provisioned(path):
     name = path.rstrip('/').rsplit('/', 1)[-1]
     return name in PROVISIONED_DIRECTORIES or name.endswith('.egg-info')
@@ -376,6 +406,9 @@ def install(args):
             raise ValueError('已有自定义 ./uml，拒绝覆盖；请先改名保存。')
     shutil.copy2(state / 'uml-viewer/scripts/uml', entry)
     entry.chmod(0o755)
+    # Last, so a refused or failed install deletes nothing and a rerun still
+    # sees the old record.
+    remove_retired_runtime(state)
     atomic_write(state / 'install.json', json.dumps({'version': 1, 'projectRoot': str(root),
                  'rust': str(binary), 'herdr': str(herdr), 'repositories': versions}, ensure_ascii=False, indent=2) + '\n')
     print('已安装 ./uml；使用 ./uml ir 生成 EDN。')
