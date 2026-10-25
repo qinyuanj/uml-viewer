@@ -2,15 +2,16 @@
 //! `love/spec/detail_spec.lua` and `detail_view_spec.lua`.
 
 use edn::Value;
-use scene::config;
 use viewer::detail::{self, Hover, Model, Row};
 use viewer::theme;
 
 const TINY: &str = r#"{:title "Tiny" :packages [{:id :p :label "Domain" :classes [{:id :a :name "A" :ns "demo.a" :coverage 0.9 :crap 1.2 :ops [{:name "go" :args ["x"] :returns "void" :coverage 0.75 :cc 2 :crap 1.8 :killed 3 :survived 1 :uncovered 2 :sites 6} {:name "hide" :private true :crap 4.0} {:name "bare"} {:name "low" :coverage 0.3 :killed 4 :survived 0 :uncovered 0 :sites 4}]} {:id :b :name "B"}]}] :edges [{:from :a :to :b :kind :dependency}]}"#;
 
+/// The compiled view of a package document: its one section prefixes the
+/// ids with `d0-`.
 fn scene_of(text: &str) -> Value {
-    let doc = scene::ir::normalize(&edn::parse(text).unwrap()).unwrap();
-    scene::compose::compile_diagram(&doc)
+    let doc = scene::ir::read_document(text).unwrap();
+    scene::document::compile_view(&doc, &[], &[], &Value::Map(vec![]))
 }
 
 fn kw(s: &str) -> Value {
@@ -18,7 +19,7 @@ fn kw(s: &str) -> Value {
 }
 
 fn tiny_rows() -> (Model, Vec<Row>) {
-    let model = detail::model(&scene_of(TINY), &kw("a")).unwrap();
+    let model = detail::model(&scene_of(TINY), &kw("d0-a")).unwrap();
     let rows = detail::rows(&model);
     (model, rows)
 }
@@ -225,7 +226,7 @@ fn shows_class_and_member_quality_source_identity_and_relationships() {
     );
     let rel = rows.iter().find(|r| r.kind == "rel").unwrap();
     assert_eq!(rel.text, "依赖  B");
-    assert_eq!(detail::rel_at(&rows, rel.y + 1.0), Some(kw("b")));
+    assert_eq!(detail::rel_at(&rows, rel.y + 1.0), Some(kw("d0-b")));
     let module = rows.iter().find(|r| r.module).unwrap();
     assert!(detail::module_at(&rows, module.y));
     assert!(!detail::module_at(&rows, go.y));
@@ -297,7 +298,9 @@ fn view_colors_cells_with_the_semantic_rules() {
     let go = item(&items, "go");
     assert_eq!(
         cell(go, "crap").unwrap().color,
-        theme::stroke(Some(config::crap_grade(Some(1.8))))
+        theme::stroke(Some(
+            scene::metric_rating(Some(1.8), None, None, None).crap_grade,
+        ))
     );
     assert_eq!(cell(go, "cc").unwrap().color, theme::MUTED);
     assert_eq!(cell(go, "cov").unwrap().color, theme::GOLD);

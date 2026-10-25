@@ -583,11 +583,15 @@ fn search_results_refresh_on_document_replacement_and_stale_targets_are_rejected
 
 #[test]
 fn highlight_marks_edges_and_connected_classes_and_dims_the_rest() {
-    let scene = scene::compose::compile_diagram(
-        &parse(r#"{:packages [{:id :p :label "P" :classes [{:id :a :name "A"} {:id :b :name "B"} {:id :c :name "C"} {:id :d :name "D"}]}] :edges [{:from :a :to :b :kind :dependency} {:from :b :to :c :kind :dependency :violating true}]}"#).unwrap(),
+    // A hierarchical root view keeps the authored ids.
+    let scene = document::compile_view(
+        &parse(r#"{:hierarchical true :prefix "x" :order [a b c d] :classes [{:id :a :name "A" :ns "x.a"} {:id :b :name "B" :ns "x.b"} {:id :c :name "C" :ns "x.c"} {:id :d :name "D" :ns "x.d"}] :edges [{:from :a :to :b :kind :dependency} {:from :b :to :c :kind :dependency :violating true}]}"#).unwrap(),
+        &[],
+        &[],
+        &Value::Map(vec![]),
     );
     let selected = parse("{:kind :class :id :b}").unwrap();
-    let h = scene::highlight::Highlight::new(&scene, Some(&selected), None);
+    let h = scene::Highlight::new(&scene, Some(&selected), None);
     assert_eq!(Some(kw("b")), h.focus);
     for id in ["a", "c"] {
         assert!(h.related(&kw(id)), "{id}");
@@ -603,13 +607,13 @@ fn highlight_marks_edges_and_connected_classes_and_dims_the_rest() {
     assert!(h.hot(e, None));
     // Hover alone dims nothing and only warms its own edges.
     let hover = parse("{:kind :class :id :a}").unwrap();
-    let h2 = scene::highlight::Highlight::new(&scene, None, Some(&hover));
+    let h2 = scene::Highlight::new(&scene, None, Some(&hover));
     assert!(!h2.dimmed(&kw("d")));
     assert!(!h2.related(&kw("b")));
     assert!(h2.warm(e));
     // A child row or port focuses its parent class.
     let child = parse("{:kind :port :id :x :parent :a}").unwrap();
-    let h3 = scene::highlight::Highlight::new(&scene, Some(&child), None);
+    let h3 = scene::Highlight::new(&scene, Some(&child), None);
     assert_eq!(Some(kw("a")), h3.focus);
     assert!(h3.related(&kw("b")));
     assert!(h3.dimmed(&kw("c")));

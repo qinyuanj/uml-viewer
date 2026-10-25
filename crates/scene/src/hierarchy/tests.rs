@@ -333,7 +333,7 @@ fn preserves_named_proposals_nested_groups_leftovers_omission_and_drill_views() 
     assert!(H::proposal_package_id(Some(&kw("proposal.jvm"))));
     assert!(!H::proposal_package_id(Some(&kw("jvm"))));
     assert_eq!(vec![kw("split")], ids(&H::named_proposals(&d)));
-    assert_eq!(1, H::proposal_layers(&d).len());
+    assert_eq!(1, crate::policy::proposal_layers(&d).len());
 }
 
 #[test]

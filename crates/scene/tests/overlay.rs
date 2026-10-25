@@ -1,9 +1,11 @@
 //! Metrics overlay — the closed_overlay_parity_spec and metrics_spec oracle
-//! (pure parts; adapter IO stays outside this crate's core).
+//! (pure parts; adapter IO stays outside this crate's core). Each class is
+//! read through the interface: a view state loaded with the snapshots and
+//! the class card's record, which is the overlaid document's record.
 
 use edn::record::{get, local_name, num};
 use edn::{Value, parse};
-use scene::overlay::{self, Snapshot};
+use scene::Snapshot;
 
 fn snap(path: &str, text: &str, mtime: Value) -> Snapshot {
     Snapshot::new(path, text, mtime)
@@ -14,6 +16,19 @@ fn classes(doc: &Value) -> Vec<Value> {
         Some(Value::Vector(v)) => v.clone(),
         _ => vec![],
     }
+}
+
+/// The overlaid record of every document class, in document order.
+fn overlaid(doc: &Value, files: &[Snapshot]) -> Vec<Value> {
+    let state = scene::document::new_state(doc.clone(), None, None, None, files, None);
+    classes(doc)
+        .iter()
+        .map(|c| {
+            scene::class_card(&state, get(c, "id").unwrap())
+                .unwrap()
+                .class
+        })
+        .collect()
 }
 
 fn names(c: &Value) -> Vec<String> {
@@ -30,7 +45,7 @@ fn names(c: &Value) -> Vec<String> {
 #[test]
 fn joins_typescript_modules_and_rust_crate_metrics_without_leaking() {
     let doc = parse(r#"{:hierarchical true :prefix "bookwriter" :classes [{:id :model :ns "bookwriter.model" :lang :typescript} {:id :pdf :ns "bookwriter.pdf" :lang :typescript} {:id :rust :ns "bookwriter.rust" :lang :rust :file "src-tauri/src/lib.rs"} {:id :rust.main :ns "bookwriter.rust.main" :lang :rust :file "src-tauri/src/main.rs"}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc,
         &[
             snap(
@@ -50,7 +65,7 @@ fn joins_typescript_modules_and_rust_crate_metrics_without_leaking() {
                 Value::Integer(1),
             ),
         ],
-    ));
+    );
     assert_eq!(Some(2.0), num(get(&cs[0], "cc").unwrap()));
     assert_eq!(Some(1.0), num(get(&cs[0], "killed").unwrap()));
     assert_eq!(Some(1.0), num(get(&cs[0], "sites").unwrap()));
@@ -68,7 +83,7 @@ fn newer_mutation_snapshot_wins_over_older_explicit_or_derived() {
     let doc = parse(r#"{:hierarchical true :classes [{:id :config :ns "demo.config"}]}"#).unwrap();
     // Lua oracle order: (worse time, pool time, expected killed, expected form).
     for (worse_at, pool_at, killed, op) in [(2000, 1000, 1.0, "worse"), (2000, 3000, 2.0, "pool")] {
-        let cs = classes(&overlay::apply(
+        let cs = overlaid(
             &doc,
             &[
                 snap(
@@ -82,7 +97,7 @@ fn newer_mutation_snapshot_wins_over_older_explicit_or_derived() {
                     Value::Integer(pool_at),
                 ),
             ],
-        ));
+        );
         assert_eq!(Some(killed), num(get(&cs[0], "killed").unwrap()));
         assert_eq!(vec![op], names(&cs[0]));
     }
@@ -92,14 +107,14 @@ fn newer_mutation_snapshot_wins_over_older_explicit_or_derived() {
 fn derives_a_lua_namespace_with_underscores_from_its_source_path() {
     let doc =
         parse(r#"{:hierarchical true :classes [{:id :config :ns "demo.my_config"}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc,
         &[snap(
             ".metrics/mutate/config.edn",
             r#"{:source "src/demo/my_config.lua" :forms [{:id "defn/pool" :killed 2 :survived 0}]}"#,
             Value::Integer(1),
         )],
-    ));
+    );
     assert_eq!(Some(2.0), num(get(&cs[0], "killed").unwrap()));
     assert_eq!(vec!["pool"], names(&cs[0]));
 }
@@ -107,7 +122,7 @@ fn derives_a_lua_namespace_with_underscores_from_its_source_path() {
 #[test]
 fn paints_private_forms_and_percent_coverage_onto_lua_snapshots() {
     let doc = parse(r#"{:hierarchical true :classes [{:id :calc :ns "calc.util" :ops [{:name "M.clamp" :text "authored signature"}]}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc,
         &[
             snap(
@@ -121,7 +136,7 @@ fn paints_private_forms_and_percent_coverage_onto_lua_snapshots() {
                 Value::Integer(1),
             ),
         ],
-    ));
+    );
     let c = &cs[0];
     assert_eq!(Some(3.0), num(get(get(c, "crap").unwrap(), "mu").unwrap()));
     assert!((num(get(c, "coverage").unwrap()).unwrap() - 0.833333).abs() < 1e-9);
@@ -143,14 +158,14 @@ fn paints_private_forms_and_percent_coverage_onto_lua_snapshots() {
 #[test]
 fn assigns_rust_children_to_nearest_id_while_exact_namespace_wins() {
     let doc = parse(r#"{:hierarchical true :prefix :crate :classes [{:id :root :ns "root" :lang :rust} {:id :model :ns "my_model"} {:id :model.deep :ns "deep"} {:id :other :ns "model.deep.Exact"}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc,
         &[snap(
             ".metrics/crap.edn",
             r#"{:entries [{:namespace "my_model" :name "a" :complexity 1 :crap 1} {:namespace "model" :name "b" :complexity 2 :crap 2} {:namespace "model::deep::Child" :name "c" :complexity 3 :crap 3} {:namespace "model.deep.Exact" :name "d" :complexity 4 :crap 4} {:namespace "crate" :name "e" :complexity 5 :crap 5}]}"#,
             Value::Integer(1),
         )],
-    ));
+    );
     let ccs: Vec<f64> = cs
         .iter()
         .map(|c| num(get(c, "cc").unwrap()).unwrap())
@@ -161,7 +176,7 @@ fn assigns_rust_children_to_nearest_id_while_exact_namespace_wins() {
 #[test]
 fn newest_duplicate_namespace_wins_and_authored_fallback_is_kept() {
     let doc = parse(r#"{:hierarchical true :classes [{:id :calc :ns "calc.util" :ops [{:name "M.clamp" :text "authored signature"}]}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc,
         &[
             snap(
@@ -175,34 +190,37 @@ fn newest_duplicate_namespace_wins_and_authored_fallback_is_kept() {
                 Value::String("9".into()),
             ),
         ],
-    ));
+    );
     assert_eq!(Some(7.0), num(get(&cs[0], "killed").unwrap()));
     // :namespace wins over a contradictory :source path.
     let doc2 = parse(r#"{:hierarchical true :classes [{:id :a :ns "my_module"}]}"#).unwrap();
-    let cs = classes(&overlay::apply(
+    let cs = overlaid(
         &doc2,
         &[snap(
             ".metrics/mutate/a.edn",
             r#"{:namespace "my_module" :source "src/wrong.lua" :forms [{:id "defn/f" :killed 2}]}"#,
             Value::Integer(1),
         )],
-    ));
+    );
     assert_eq!(Some(2.0), num(get(&cs[0], "killed").unwrap()));
 }
 
 #[test]
 fn foreign_and_oval_classes_are_never_painted() {
     // The Lua spec compiled through read_document + compile_document, which
-    // flattens diagram classes and normalizes a numeric :crap.
+    // flattens diagram classes and normalizes a numeric :crap; compile_view
+    // of a non-hierarchical document is that compile of the overlay.
     let doc = scene::ir::read_document(r#"{:diagrams [{:packages [{:label "P" :classes [{:id :a :ns "a" :crap 2 :killed 1 :survived 0} {:id :b :ns "b" :shape :oval}]}]} {:packages [{:label "Q" :classes [{:id :c :ns "c"}]}]}]}"#).unwrap();
-    let cs = classes(&scene::compose::compile_document(&overlay::apply(
+    let cs = classes(&scene::document::compile_view(
         &doc,
         &[snap(
             ".metrics/crap.edn",
             r#"{:entries [{:namespace "b" :name "f" :complexity 5 :crap 5}]}"#,
             Value::Integer(1),
         )],
-    )));
+        &[],
+        &Value::Map(vec![]),
+    ));
     // The authored CRAP value survives; the oval class is never painted.
     assert_eq!(
         Some(2.0),
@@ -211,5 +229,5 @@ fn foreign_and_oval_classes_are_never_painted() {
     assert!(get(&cs[1], "crap").is_none());
     // Empty snapshots leave the document untouched.
     let raw = parse(r#"{:hierarchical true :classes [{:id :a}]}"#).unwrap();
-    assert_eq!(raw, overlay::apply(&raw, &[]));
+    assert_eq!(classes(&raw), overlaid(&raw, &[]));
 }
