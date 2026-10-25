@@ -539,13 +539,6 @@ impl Herdr {
         recovery::cancel(record, &recovery::real_host())
     }
 
-    pub fn recovery_status(&self, record: &Value) -> Result<Option<Value>> {
-        if edn::record::get(record, "supervisor").is_some() {
-            return recovery::status(record, &recovery::real_host());
-        }
-        Ok(None)
-    }
-
     /// Herdr derives its API socket from XDG_CONFIG_HOME and the session
     /// name. Measured against 0.9.5: a 101-byte path works and 102 fails, and
     /// the failure surfaces only later as a closed-channel error on workspace
