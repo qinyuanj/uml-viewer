@@ -70,6 +70,114 @@ pub fn combined_grade(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     }
 }
 
+/// A traffic-light band.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Band {
+    Red,
+    Yellow,
+    Green,
+}
+
+impl Band {
+    fn of(band: &Value) -> Band {
+        match edn::record::local_name(band).unwrap_or_default() {
+            "green" => Band::Green,
+            "yellow" => Band::Yellow,
+            _ => Band::Red,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Band::Red => "red",
+            Band::Yellow => "yellow",
+            Band::Green => "green",
+        }
+    }
+}
+
+/// The quality rating of a class or package record: the C and M bands and
+/// 1-10 grades its box and badges are drawn with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rating {
+    pub crap: Band,
+    pub mutation: Band,
+    pub crap_grade: f64,
+    pub mutation_grade: f64,
+    /// Either metric is absent: decided from the nil metrics, never
+    /// inferred from a red band.
+    pub missing: bool,
+}
+
+impl Rating {
+    /// The worse of the two bands.
+    pub fn band(&self) -> Band {
+        if self.crap == Band::Red || self.mutation == Band::Red {
+            Band::Red
+        } else if self.crap == Band::Yellow || self.mutation == Band::Yellow {
+            Band::Yellow
+        } else {
+            Band::Green
+        }
+    }
+
+    /// The 4e69e34 box grade: the average of the CRAP and mutation grades.
+    pub fn grade(&self) -> Option<f64> {
+        combined_grade(Some(self.crap_grade), Some(self.mutation_grade))
+    }
+
+    /// A class box grade: an unmeasured class is the worst grade.
+    pub fn class_grade(&self) -> Option<f64> {
+        if self.missing {
+            Some(GRADE_WORST)
+        } else {
+            self.grade()
+        }
+    }
+}
+
+/// Rate a class or package record of the overlaid scene.
+pub fn rating(record: &Value) -> Rating {
+    let risk = crap_risk(get(record, "crap"));
+    let ratio = mutation_ratio(record);
+    Rating {
+        crap: Band::of(&crap_band(risk)),
+        mutation: Band::of(&mutation_band(ratio)),
+        crap_grade: crap_grade(risk),
+        mutation_grade: mutation_grade(ratio),
+        missing: risk.is_none() || ratio.is_none(),
+    }
+}
+
+/// The rating of one class-card stats row (the class or one operation).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MetricRating {
+    pub crap_grade: f64,
+    /// killed / (killed + survived + uncovered), None when nothing counted.
+    pub kill_ratio: Option<f64>,
+    pub mutation_grade: f64,
+    /// Averaged swatch grade; a missing metric enters as grade 1.
+    pub grade: Option<f64>,
+}
+
+/// Rate a card row from its CRAP `mu` and mutation counts.
+pub fn metric_rating(
+    crap_mu: Option<f64>,
+    killed: Option<f64>,
+    survived: Option<f64>,
+    uncovered: Option<f64>,
+) -> MetricRating {
+    let total = killed.unwrap_or(0.0) + survived.unwrap_or(0.0) + uncovered.unwrap_or(0.0);
+    let kill_ratio = (total > 0.0).then(|| killed.unwrap_or(0.0) / total);
+    let (c, m) = (crap_grade(crap_mu), mutation_grade(kill_ratio));
+    MetricRating {
+        crap_grade: c,
+        kill_ratio,
+        mutation_grade: m,
+        grade: combined_grade(Some(c), Some(m)),
+    }
+}
+
 /// killed / (killed + survived + mut-gap), None when nothing was measured.
 pub fn mutation_ratio(m: &Value) -> Option<f64> {
     let k = get(m, "killed").and_then(num);

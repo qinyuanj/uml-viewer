@@ -15,6 +15,10 @@ pub fn run(args: &[OsString]) -> ExitCode {
     cli::run(args)
 }
 
+pub use config::{
+    Band, GRADE_BEST, GRADE_MID, GRADE_WORST, MetricRating, Rating, metric_rating, rating,
+};
+
 pub mod compose;
 pub mod config;
 pub mod curve;

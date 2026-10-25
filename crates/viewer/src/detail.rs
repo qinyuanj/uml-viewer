@@ -6,7 +6,6 @@
 
 use edn::Value;
 use edn::record::{get, local_name, num, seq};
-use scene::config;
 use scene::document::ViewState;
 
 use crate::source::Ident;
@@ -681,9 +680,8 @@ pub fn row_color(row: &Row) -> Rgb {
     }
 }
 
-fn kill_ratio(c: &Cells) -> Option<f64> {
-    let total = c.killed.unwrap_or(0.0) + c.survived.unwrap_or(0.0) + c.uncovered.unwrap_or(0.0);
-    (total > 0.0).then(|| c.killed.unwrap_or(0.0) / total)
+fn rating(c: &Cells) -> scene::MetricRating {
+    scene::metric_rating(c.crap_n, c.killed, c.survived, c.uncovered)
 }
 
 pub fn cell_color(c: &Cells, id: &str) -> Rgb {
@@ -696,7 +694,7 @@ pub fn cell_color(c: &Cells, id: &str) -> Rgb {
     };
     match id {
         "cov" => theme::coverage(c.coverage),
-        "crap" => theme::stroke(Some(config::crap_grade(c.crap_n))),
+        "crap" => theme::stroke(Some(rating(c).crap_grade)),
         "killed" => theme::WHITE,
         "survived" => positive(c.survived),
         "uncovered" => positive(c.uncovered),
@@ -706,10 +704,7 @@ pub fn cell_color(c: &Cells, id: &str) -> Rgb {
 
 /// Averaged CRAP / mutation grade; a missing metric enters as grade 1.
 pub fn swatch(c: &Cells) -> Rgb {
-    theme::stroke(config::combined_grade(
-        Some(config::crap_grade(c.crap_n)),
-        Some(config::mutation_grade(kill_ratio(c))),
-    ))
+    theme::stroke(rating(c).grade)
 }
 
 fn cell_text(c: &Cells, id: &str) -> Option<String> {
@@ -816,14 +811,17 @@ pub fn view(rows: &[Row], width: Option<f64>) -> Vec<Item> {
                             color: theme::MUTED,
                             tip: None,
                         });
-                    } else if let Some(ratio) = kill_ratio(&r.cells) {
-                        it.bars.push(Bar {
-                            id: "kill",
-                            left: groups[1].left,
-                            right: groups[1].right,
-                            fraction: ratio,
-                            color: theme::stroke(Some(config::mutation_grade(Some(ratio)))),
-                        });
+                    } else {
+                        let m = rating(&r.cells);
+                        if let Some(ratio) = m.kill_ratio {
+                            it.bars.push(Bar {
+                                id: "kill",
+                                left: groups[1].left,
+                                right: groups[1].right,
+                                fraction: ratio,
+                                color: theme::stroke(Some(m.mutation_grade)),
+                            });
+                        }
                     }
                     if let Some(cov) = r.cells.coverage {
                         it.bars.push(Bar {

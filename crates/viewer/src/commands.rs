@@ -7,7 +7,6 @@
 use edn::Value;
 use edn::record::{flag, get, local_name, seq};
 use egui::Color32;
-use scene::config as C;
 use scene::document::ViewState;
 use scene::geom::{self, Rect};
 use scene::highlight::Highlight;
@@ -292,70 +291,25 @@ pub enum EdgeCommand {
     },
 }
 
-fn bands(c: &Value) -> (&'static str, &'static str) {
-    (
-        match local_name(&C::crap_band(C::crap_risk(get(c, "crap"))))
-            .unwrap_or_default()
-            .to_owned()
-            .as_str()
-        {
-            "green" => "green",
-            "yellow" => "yellow",
-            _ => "red",
-        },
-        match local_name(&C::mutation_band(C::mutation_ratio(c)))
-            .unwrap_or_default()
-            .to_owned()
-            .as_str()
-        {
-            "green" => "green",
-            "yellow" => "yellow",
-            _ => "red",
-        },
-    )
-}
-
-fn worst_band(cb: &str, mb: &str) -> &'static str {
-    if cb == "red" || mb == "red" {
-        "red"
-    } else if cb == "yellow" || mb == "yellow" {
-        "yellow"
-    } else {
-        "green"
-    }
-}
-
-/// Missing means either metric is absent; it is decided from the nil
-/// metrics, never inferred from a red band.
-fn missing(c: &Value) -> bool {
-    C::crap_risk(get(c, "crap")).is_none() || C::mutation_ratio(c).is_none()
-}
-
-/// The 4e69e34 box grade: the average of the CRAP and mutation 1-10 grades.
-fn grade(c: &Value) -> Option<f64> {
-    C::combined_grade(
-        Some(C::crap_grade(C::crap_risk(get(c, "crap")))),
-        Some(C::mutation_grade(C::mutation_ratio(c))),
-    )
-}
-
 fn quality(commands: &mut Vec<Command>, c: &Value, owner: &'static str) {
     let Some(r) = Rect::from_value(get(c, "rect").unwrap_or(&Value::Nil)) else {
         return;
     };
-    let (cb, mb) = bands(c);
-    for (i, b) in [cb, mb].into_iter().enumerate() {
+    let rating = scene::rating(c);
+    for (i, (b, g)) in [
+        (rating.crap, rating.crap_grade),
+        (rating.mutation, rating.mutation_grade),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         commands.push(Command::Quality {
             owner,
             id: get(c, "id").cloned(),
             rect: r,
             text: if i == 0 { "C" } else { "M" },
-            band: b,
-            grade: Some(if i == 0 {
-                C::crap_grade(C::crap_risk(get(c, "crap")))
-            } else {
-                C::mutation_grade(C::mutation_ratio(c))
-            }),
+            band: b.name(),
+            grade: Some(g),
             radius: 6.0,
             x: r.right() - 24.0 + i as f64 * 14.0,
             y: r.y + 10.0,
@@ -488,8 +442,8 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
     let hover_id = h.hover.clone();
     let mut out = Vec::new();
     for p in seq(get(scene, "packages")) {
-        let (cb, mb) = bands(p);
-        let band = worst_band(cb, mb);
+        let rating = scene::rating(p);
+        let band = rating.band().name();
         let Some(pr) = Rect::from_value(get(p, "rect").unwrap_or(&Value::Nil)) else {
             continue;
         };
@@ -497,11 +451,11 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         // missing is counted from the member classes themselves.
         let mut count = 0i64;
         for c in seq(get(scene, "classes")) {
-            if get(c, "package") == get(p, "id") && missing(c) {
+            if get(c, "package") == get(p, "id") && scene::rating(c).missing {
                 count += 1;
             }
         }
-        let g = grade(p);
+        let g = rating.grade();
         out.push(Command::Package {
             id: get(p, "id").cloned(),
             rect: pr,
@@ -527,15 +481,11 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         let Some(r) = Rect::from_value(get(c, "rect").unwrap_or(&Value::Nil)) else {
             continue;
         };
-        let (cb, mb) = bands(c);
-        let band = worst_band(cb, mb);
+        let rating = scene::rating(c);
+        let band = rating.band().name();
         let id = get(c, "id").cloned();
-        let unmeasured = missing(c);
-        let g = if unmeasured {
-            Some(C::GRADE_WORST)
-        } else {
-            grade(c)
-        };
+        let unmeasured = rating.missing;
+        let g = rating.class_grade();
         let dimmed = id.as_ref().is_some_and(|id| h.dimmed(id));
         let tag = |command: &mut Command| match command {
             Command::Class {
