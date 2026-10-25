@@ -2,8 +2,9 @@
  :doc "LOVE 写的 session.edn 阶段（#142）：启动前把真实 LOVE 11.5 viewer 在 :quit-for-restart
        时写下的 session.edn 放进 .uml-viewer/（只把 :path 换成该项目的 diagram.edn，其余字段
        原字节保留；证据见 acceptance-evidence/142-mail-session-restart/love-session/）。
-       Rust viewer 以 --restart 打开时必须恢复窗口 1100x700、检查器 400、zoom 1.7、
-       cam (33,21)、选中项与类卡片 :a、讨论 context（提案 :plan）与 mail 游标 2。"
+       Rust viewer 以 --restart 打开时必须恢复窗口 1100x700、检查器 400，并截图。zoom、相机、
+       选中项与类卡片、讨论 context 与 mail 游标的恢复由 crates/viewer/tests/session.rs 的
+       LOVE 快照测试覆盖（#164）。"
  :steps [{:op :wait-frames :n 4}
          {:op :assert-gui :path [:window :w] :equals 1100
           :message "the LOVE-written window width must be restored"}
@@ -11,25 +12,8 @@
           :message "the LOVE-written window height must be restored"}
          {:op :assert-gui :path [:inspector :width] :equals 400
           :message "the LOVE-written inspector width must be restored"}
-         {:op :assert-gui :path [:session :zoom] :equals 1.7
-          :message "the LOVE-written zoom must be restored"}
-         {:op :assert-gui :path [:session :cam-x] :equals 33
-          :message "the LOVE-written camera must be restored"}
-         {:op :assert-gui :path [:session :cam-y] :equals 21
-          :message "the LOVE-written camera must be restored"}
-         {:op :assert-gui :path [:session :selected :id] :equals :a
-          :message "the LOVE-written selection must be restored"}
-         {:op :assert-gui :path [:session :detail-id] :equals :a
-          :message "the LOVE-written class card must be restored"}
-         {:op :assert-gui :path [:mail :context] :equals :proposal
-          :message "the LOVE-written discussion context must be restored"}
-         {:op :assert-gui :path [:session :discussion-context :proposal-id] :equals :plan
-          :message "the LOVE-written proposal context must be restored"}
-         {:op :assert-gui :path [:session :mail-seen] :equals 2
-          :message "the LOVE-written mailbox cursor must be restored"}
-         {:op :assert-view :fitted false :message "a restored LOVE view must not re-fit"}
          {:op :screenshot :evidence "love-session-restored.png"}
          {:op :dump-gui :evidence "love-session-gui.edn"}
          {:op :write :evidence "session-love-pass.edn"
-          :text "{:phase :love :window [1100 700] :inspector 400 :zoom 1.7}\n"}
+          :text "{:phase :love :window [1100 700] :inspector 400}\n"}
          {:op :quit :code 0}]}
