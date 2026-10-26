@@ -143,7 +143,10 @@ instead of the pinned `.uml-viewer/uml-viewer/` clone. The path must contain
 tool root is a different git checkout at a different commit, startup prints a
 one-line stderr warning with both short SHAs and never blocks the launch.
 `UML_VIEWER_RUST_EXECUTABLE` selects the built binary (default
-`<tool root>/target/release/uml-viewer`); the Herdr backend preflight reads one
+`<tool root>/target/release/uml-viewer`). The default binary is rebuilt with
+`cargo build --release --locked` before use whenever a crate source, a
+manifest, `Cargo.lock` or `rust-toolchain.toml` is newer than it, so a
+relaunch never runs code older than the tree; the Herdr backend preflight reads one
 line from its stdout. The viewer launcher starts that binary with individual
 arguments and writes its output to `.uml-viewer/viewer.log`.
 Fresh startup uses **Herdr as the sole companion backend** on WSL.

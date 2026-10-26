@@ -142,12 +142,30 @@ def take_runtime(args):
     return args[:index] + args[index + 2:]
 
 
+def rust_sources(tool_root):
+    """What the binary is built from: every crate's src, the manifests and the pin."""
+    root = Path(tool_root)
+    yield from root.glob('crates/*/src/**/*.rs')
+    yield from root.glob('crates/*/Cargo.toml')
+    for name in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml'):
+        yield root / name
+
+
+def stale(binary, tool_root):
+    built = binary.stat().st_mtime
+    return any(path.is_file() and path.stat().st_mtime > built for path in rust_sources(tool_root))
+
+
 def rust_command(tool_root):
     configured = os.environ.get('UML_VIEWER_RUST_EXECUTABLE')
     executable = Path(configured) if configured else Path(tool_root) / 'target/release/uml-viewer'
     if not (executable.is_file() and os.access(executable, os.X_OK)):
         raise ValueError(f'缺少 Rust 二进制 {executable}；请运行 get-uml-viewer 构建（或在 {tool_root} '
                          '运行 cargo build --release --locked），或设置 UML_VIEWER_RUST_EXECUTABLE。')
+    # A development tool root changes under the session: rebuild a binary its
+    # sources have outgrown, so a relaunch never runs the code before an edit.
+    if not configured and stale(executable, tool_root):
+        rust_build(cargo_command(), tool_root)
     return str(executable)
 
 

@@ -587,6 +587,40 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn('cargo build --release --locked', result.stderr)
 
+    def test_a_binary_older_than_its_sources_is_rebuilt_before_use(self):
+        """A development tool root must not run yesterday's viewer.
+
+        `./uml --restart` once relaunched a binary built before the fix under
+        test, and the fix was reported live. The entry now rebuilds when any
+        Rust source or manifest is newer than the binary, and only then.
+        """
+        import importlib.util
+        from unittest import mock
+        specification = importlib.util.spec_from_file_location(
+            'uml_posix', REPO / 'scripts/uml_posix.py')
+        entry = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(entry)
+        tool = self.root / 'tool'
+        source = tool / 'crates/viewer/src/paint.rs'
+        source.parent.mkdir(parents=True)
+        source.write_text('fn main() {}\n')
+        (tool / 'Cargo.toml').write_text('[workspace]\n')
+        os.utime(tool / 'Cargo.toml', (0, 0))
+        binary = tool / 'target/release/uml-viewer'
+        binary.parent.mkdir(parents=True)
+        binary.write_text('#!/bin/sh\n')
+        binary.chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if k != 'UML_VIEWER_RUST_EXECUTABLE'}
+        for source_age, built in ((100, 200), (300, 200)):
+            os.utime(binary, (built, built))
+            os.utime(source, (source_age, source_age))
+            with self.subTest(source=source_age, binary=built), \
+                    mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(entry, 'cargo_command', return_value='cargo'), \
+                    mock.patch.object(entry, 'rust_build') as build:
+                self.assertEqual(str(binary), entry.rust_command(tool))
+                self.assertEqual(source_age > built, build.called)
+
     def test_default_runtime_reaches_the_real_binary(self):
         binary = REPO / 'target/release/uml-viewer'
         if not binary.is_file():
