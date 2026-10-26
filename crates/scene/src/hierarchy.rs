@@ -475,7 +475,13 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             Value::keyword("packages"),
             Value::Vector(vec![Value::Map(vec![
                 (Value::keyword("id"), Value::keyword("view")),
-                (Value::keyword("label"), title),
+                // The chrome title carries the whole path; the frame names
+                // only the focused segment.
+                (
+                    Value::keyword("label"),
+                    path.last()
+                        .map_or(title, |last| Value::String(geom::name(last))),
+                ),
                 (Value::keyword("classes"), Value::Vector(boxes)),
             ])]),
         ),

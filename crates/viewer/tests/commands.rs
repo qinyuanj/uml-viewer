@@ -593,3 +593,32 @@ fn a_name_the_layout_sized_its_box_for_draws_at_the_canvas_size() {
         assert_eq!(16.0, size, "{name}");
     }
 }
+
+#[test]
+fn a_package_title_as_wide_as_its_slot_draws_at_the_canvas_size() {
+    // A title whose characters fill the frame beside the C/M dots: its
+    // italic shear overhangs into the dots' reserve, as a class name's does
+    // into its padding.
+    // se-fish's component_scripts frame: 184 wide, 17 characters.
+    let s = edn::parse(
+        "{:packages [{:id :p :label \"component_scripts\" :rect {:x 0 :y 0 :w 184 :h 100}}] \
+          :classes [] :edges []}",
+    )
+    .unwrap();
+    let mut packages = 0;
+    for command in commands_of(&s) {
+        if let Command::Package {
+            rect, size, max_w, ..
+        } = command
+        {
+            let title = "x".repeat(((rect.w - commands::PACKAGE_TITLE_RESERVE) / 8.0) as usize);
+            let measure = |s: f64, t: &str| commands::estimate_w(t, s);
+            assert_eq!(
+                16.0,
+                commands::fit(measure, size, &title, max_w, false, true)
+            );
+            packages += 1;
+        }
+    }
+    assert_eq!(1, packages);
+}

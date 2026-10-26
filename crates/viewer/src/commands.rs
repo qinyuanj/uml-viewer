@@ -468,7 +468,8 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             band,
             red: band == "red",
             size: fonts::CANVAS as f64,
-            max_w: pr.w - PACKAGE_TITLE_RESERVE,
+            // The italic shear overhangs into the dots' reserve.
+            max_w: pr.w - PACKAGE_TITLE_RESERVE + fonts::CANVAS as f64 * 0.2,
             missing: count > 0,
             missing_count: count,
             grade: g,

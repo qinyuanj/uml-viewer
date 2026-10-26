@@ -532,3 +532,28 @@ fn lists_named_proposals_in_policy_order_then_the_legacy_singular() {
     assert_eq!(Some(&Value::String("Only".into())), get(&only[0], "name"));
     assert!(scene::proposals(&parse("{:classes []}").unwrap()).is_empty());
 }
+
+#[test]
+fn a_drilled_package_frame_names_only_its_own_segment() {
+    // The chrome title and the back link carry the whole path; the frame
+    // repeats only the last segment, so a deep path fits the frame title.
+    let doc = scene::ir::read_document(
+        "{:hierarchical true :prefix \"x\" \
+          :classes [{:id :a.b.c :name \"C\" :ns \"x.a.b.c\"} {:id :a.b.d :name \"D\" :ns \"x.a.b.d\"}] \
+          :edges []}",
+    )
+    .unwrap();
+    let focus = [kw("a"), kw("b")];
+    let view = document::compile_view(&doc, &[], &focus, &Value::Map(vec![]));
+    let diagram = get(&view, "diagram").unwrap();
+    assert_eq!(Some(&Value::String("a.b".into())), get(diagram, "title"));
+    let packages = match get(&view, "packages") {
+        Some(Value::Vector(ps)) => ps.clone(),
+        other => panic!("{other:?}"),
+    };
+    let labels: Vec<_> = packages
+        .iter()
+        .map(|p| get(p, "title").or_else(|| get(p, "label")).cloned())
+        .collect();
+    assert_eq!(vec![Some(Value::String("b".into()))], labels);
+}
