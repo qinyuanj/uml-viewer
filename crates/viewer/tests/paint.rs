@@ -1,80 +1,22 @@
-//! Canvas painting under zoom: world-space labels scale with the camera.
+//! Canvas painting under zoom: world-space text scales with the camera.
 
 use scene::document::ViewState;
 use viewer::paint::TextCache;
 use viewer::render_cache::RenderCache;
 
-/// The font size of every painted galley whose text is `label`.
-fn painted_sizes(state: &ViewState, label: &str) -> Vec<f32> {
+/// Every painted label at `zoom`, as (text, world position, world size):
+/// screen values divided by the zoom, the camera at the origin.
+fn painted(scene: &edn::Value, zoom: f64) -> Vec<(String, egui::Pos2, f32)> {
+    let state = ViewState {
+        scene: scene.clone(),
+        revision: 1,
+        zoom,
+        ..ViewState::default()
+    };
     let ctx = egui::Context::default();
     let (mut cache, mut text) = (RenderCache::default(), TextCache::default());
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
-        let painter = ui.painter_at(screen);
-        viewer::paint::paint(
-            ui.ctx(),
-            &painter,
-            state,
-            screen,
-            None,
-            None,
-            None,
-            false,
-            &mut cache,
-            &mut text,
-        );
-    });
-    out.textures_delta.clear();
-    out.shapes
-        .iter()
-        .filter_map(|clipped| match &clipped.shape {
-            egui::Shape::Text(t) if t.galley.text() == label => {
-                Some(t.galley.job.sections[0].format.font_id.size)
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-#[test]
-fn a_port_label_scales_with_zoom() {
-    let scene = edn::parse(
-        "{:classes [{:id :a :rect {:x 10 :y 10 :w 120 :h 60} \
-          :out-ports [{:id :common :name \"Common\" :rect {:x 20 :y 100 :w 80 :h 24}}]}] \
-          :packages [] :edges []}",
-    )
-    .unwrap();
-    let mut state = ViewState {
-        scene,
-        revision: 1,
-        zoom: 1.0,
-        ..ViewState::default()
-    };
-    let near = painted_sizes(&state, "Common");
-    state.zoom = 2.0;
-    let far = painted_sizes(&state, "Common");
-    assert_eq!(vec![10.0], near);
-    assert_eq!(vec![20.0], far);
-}
-
-#[test]
-fn a_quality_letter_stays_centred_in_its_dot_under_zoom() {
-    let scene = edn::parse(
-        "{:classes [{:id :a :name \"A\" :rect {:x 10 :y 40 :w 120 :h 60} :crap {:mu 2}}] \
-          :packages [] :edges []}",
-    )
-    .unwrap();
-    let mut state = ViewState {
-        scene,
-        revision: 1,
-        zoom: 4.0,
-        ..ViewState::default()
-    };
-    state.cam_x = 0.0;
-    let ctx = egui::Context::default();
-    let (mut cache, mut text) = (RenderCache::default(), TextCache::default());
-    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(2000.0, 2000.0));
         let painter = ui.painter_at(screen);
         viewer::paint::paint(
             ui.ctx(),
@@ -90,29 +32,54 @@ fn a_quality_letter_stays_centred_in_its_dot_under_zoom() {
         );
     });
     out.textures_delta.clear();
-    let dot = out
+    let z = zoom as f32;
+    let mut labels: Vec<_> = out
         .shapes
         .iter()
-        .find_map(|c| match &c.shape {
-            egui::Shape::Circle(circle) if circle.fill != egui::Color32::TRANSPARENT => {
-                Some(circle.center)
-            }
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(t) => Some((
+                t.galley.text().to_owned(),
+                (t.pos.to_vec2() / z).to_pos2(),
+                t.galley.job.sections[0].format.font_id.size / z,
+            )),
             _ => None,
         })
-        .expect("a C dot");
-    let letter = out
-        .shapes
-        .iter()
-        .find_map(|c| match &c.shape {
-            egui::Shape::Text(t) if t.galley.text() == "C" => {
-                Some(t.pos.y + t.galley.size().y / 2.0)
-            }
-            _ => None,
-        })
-        .expect("a C label");
-    assert!(
-        (letter - dot.y).abs() < 2.0,
-        "letter middle {letter} vs dot centre {}",
-        dot.y
-    );
+        .collect();
+    labels.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.y.total_cmp(&b.1.y)));
+    labels
+}
+
+#[test]
+fn every_canvas_label_scales_and_moves_with_zoom() {
+    // One of each world-space label: package title, class name and member,
+    // level, α/I marker, C/M letters and a port.
+    let scene = edn::parse(
+        "{:packages [{:id :p :label \"Pkg\" :rect {:x 20 :y 20 :w 400 :h 300}}] \
+          :classes [{:id :a :name \"Alpha\" :stereotype :abstract :level 2 \
+                     :crap {:mu 2} :killed 1 :survived 0 \
+                     :rect {:x 60 :y 70 :w 160 :h 72} \
+                     :lines [{:kind :name :text \"Alpha\"} {:kind :rule} {:kind :op :text \"run\"}] \
+                     :out-ports [{:id :common :name \"Common\" :rect {:x 80 :y 200 :w 80 :h 24}}]}] \
+          :edges []}",
+    )
+    .unwrap();
+    let near = painted(&scene, 1.0);
+    let far = painted(&scene, 3.0);
+    let names: Vec<&str> = near.iter().map(|(t, ..)| t.as_str()).collect();
+    for label in ["Pkg", "Alpha", "run", "2", "α", "C", "M", "Common"] {
+        assert!(names.contains(&label), "{label} not painted: {names:?}");
+    }
+    assert_eq!(near.len(), far.len(), "{near:?}\n{far:?}");
+    for ((text, at, size), (_, far_at, far_size)) in near.iter().zip(&far) {
+        // Whole-pixel font sizes round per zoom; anything fixed in screen
+        // pixels is off by its own size times (1 - 1/3).
+        assert!(
+            (size - far_size).abs() <= 0.5,
+            "{text}: size {size} vs {far_size} at 3x"
+        );
+        assert!(
+            at.distance(*far_at) <= 1.5,
+            "{text}: at {at:?} vs {far_at:?} at 3x"
+        );
+    }
 }
