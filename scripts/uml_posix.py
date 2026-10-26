@@ -480,6 +480,9 @@ def main():
             raise ValueError('需要 Python 3.11+')
         if sys.argv[1] == 'install':
             return install(sys.argv[2:])
+        if sys.argv[1] == 'font':
+            # The font step alone, for the viewer's real-font test.
+            return font(Path(sys.argv[2]))
         return command(Path(sys.argv[2]), sys.argv[3:])
     except subprocess.CalledProcessError as error:
         print(f'uml: 命令失败（退出 {error.returncode}）：{error.cmd[0]}', file=sys.stderr)

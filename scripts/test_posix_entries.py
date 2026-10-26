@@ -333,6 +333,35 @@ class PosixEntries(unittest.TestCase):
                 self.assertIn('archive SHA256 mismatch', str(caught.exception))
             self.assertFalse((fonts / 'SarasaMonoSC-Regular.ttf').exists())
 
+    def test_the_font_step_runs_on_its_own(self):
+        """`uml_posix.py font <dir>` provisions only the pinned face.
+
+        The viewer's real-font test provisions Sarasa through it when a clone
+        has none, instead of skipping.
+        """
+        import hashlib
+        face = self.root / 'face.ttf'
+        face.write_bytes(b'pinned sarasa face')
+        archive = self.root / 'fixture.7z'
+        archive.write_bytes(b'archive bytes')
+        extractor = self.root / 'extractor'
+        extractor.write_text('#!/bin/sh\n'
+                             'mkdir -p "$5"\n'
+                             f'cp "{face}" "$5/SarasaMonoSC-Regular.ttf"\n'
+                             'echo SarasaMonoSC-Regular.ttf\n')
+        extractor.chmod(0o755)
+        fonts = self.root / 'fonts'
+        env = dict(os.environ,
+                   UML_VIEWER_FONT_URL='file://' + str(archive),
+                   UML_VIEWER_FONT_ARCHIVE_SHA256=hashlib.sha256(archive.read_bytes()).hexdigest(),
+                   UML_VIEWER_FONT_SHA256=hashlib.sha256(face.read_bytes()).hexdigest(),
+                   UML_VIEWER_FONT_EXTRACTOR=str(extractor))
+        result = subprocess.run([sys.executable, '-I', str(REPO / 'scripts/uml_posix.py'),
+                                 'font', str(fonts)], env=env, capture_output=True, text=True,
+                                timeout=60)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(face.read_bytes(), (fonts / 'SarasaMonoSC-Regular.ttf').read_bytes())
+
     def test_install_refuses_existing_ownership(self):
         state = self.root / '.uml-viewer'
         state.mkdir()

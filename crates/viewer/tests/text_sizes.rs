@@ -1,7 +1,8 @@
 //! Canvas text draws at one size (the 16px canvas size) in every view of
-//! this repository's own diagram, under the provisioned Sarasa face and the
-//! real fit the painter applies. Without Sarasa the test reports a skip:
-//! another face has other advances, so it would measure nothing.
+//! this repository's own diagram, under the pinned Sarasa face and the real
+//! fit the painter applies. A clone without the face provisions it through
+//! the installer's font step first: another face has other advances, so it
+//! would measure nothing.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -15,14 +16,24 @@ use viewer::theme::fonts;
 #[test]
 fn every_view_draws_its_canvas_text_at_the_canvas_size() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Verifies the pinned hash and downloads the face only when it is
+    // missing or wrong.
+    let fonts_dir = root.join(".uml-viewer/fonts");
+    let step = std::process::Command::new("python3")
+        .arg("-I")
+        .arg(root.join("scripts/uml_posix.py"))
+        .arg("font")
+        .arg(&fonts_dir)
+        .output()
+        .expect("python3 runs the installer's font step");
+    assert!(
+        step.status.success(),
+        "provisioning Sarasa failed: {}",
+        String::from_utf8_lossy(&step.stderr)
+    );
+    let face = std::fs::read(fonts_dir.join(viewer::fonts::SARASA)).unwrap();
     let ctx = egui::Context::default();
-    match viewer::fonts::install(&ctx, &root) {
-        Some((_, "sarasa")) => {}
-        other => {
-            eprintln!("skip: needs the provisioned Sarasa face (get-uml-viewer); found {other:?}");
-            return;
-        }
-    }
+    ctx.set_fonts(viewer::fonts::definitions(egui::FontData::from_owned(face)));
     ctx.begin_pass(egui::RawInput::default());
     // The layout sizes boxes for Sarasa's half-width Latin at the canvas
     // size; the painter must measure the same advance.
