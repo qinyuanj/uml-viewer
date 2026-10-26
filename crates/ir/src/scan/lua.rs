@@ -308,6 +308,142 @@ fn require_at(text: &[u8], i: usize) -> Option<Require> {
     }
 }
 
+fn skip_ws(t: &[u8], p: usize) -> usize {
+    p + t[p.min(t.len())..]
+        .iter()
+        .take_while(|&&c| is_space(c))
+        .count()
+}
+
+/// An identifier at 0-based `p`: its end, or `None`.
+fn ident_end(t: &[u8], p: usize) -> Option<usize> {
+    if !t.get(p).is_some_and(|&c| is_alpha_(c)) {
+        return None;
+    }
+    Some(p + t[p..].iter().take_while(|&&c| is_word(c)).count())
+}
+
+/// `{ "a.b", 'c' }` at 0-based `p`: the module names of a constructor that
+/// holds only string literals; anything else is not a literal list.
+fn literal_modules(t: &[u8], p: usize) -> Option<Vec<Vec<u8>>> {
+    if t.get(p) != Some(&b'{') {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut p = skip_ws(t, p + 1);
+    while t.get(p) != Some(&b'}') {
+        let quote = *t.get(p).filter(|&&c| c == b'"' || c == b'\'')?;
+        let start = p + 1;
+        let len = t[start..]
+            .iter()
+            .take_while(|&&c| c != quote && c != b'\n')
+            .count();
+        let name = &t[start..start + len];
+        let module = name.first().is_some_and(|&c| is_alpha_(c))
+            && name.iter().all(|&c| is_word(c) || c == b'.');
+        if !module || t.get(start + len) != Some(&quote) {
+            return None;
+        }
+        out.push(name.to_vec());
+        p = skip_ws(t, start + len + 1);
+        if matches!(t.get(p), Some(b',' | b';')) {
+            p = skip_ws(t, p + 1);
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The literal list bound by the last `local name = {` before 0-based `end`.
+fn local_literal_modules(t: &[u8], name: &[u8], end: usize) -> Option<Vec<Vec<u8>>> {
+    (0..end).rev().find_map(|j| {
+        if !keyword(t, j + 1, b"local") {
+            return None;
+        }
+        let p = skip_ws(t, j + 5);
+        let e = ident_end(t, p)?;
+        if &t[p..e] != name {
+            return None;
+        }
+        let p = skip_ws(t, e);
+        (t.get(p) == Some(&b'=')).then(|| literal_modules(t, skip_ws(t, p + 1)))?
+    })
+}
+
+/// Whether the block opened just before 0-based `from` is still open at `to`.
+fn block_open(t: &[u8], holes: &[(usize, usize)], from: usize, to: usize) -> bool {
+    let mut depth = 1usize;
+    for j in from + 1..=to {
+        if in_hole(holes, j) {
+            continue;
+        }
+        if ["function", "if", "do", "repeat"]
+            .iter()
+            .any(|w| keyword(t, j, w.as_bytes()))
+        {
+            depth += 1;
+        } else if keyword(t, j, b"end") || keyword(t, j, b"until") {
+            depth -= 1;
+            if depth == 0 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// `require(name)` at 1-based `i` where `name` is the value of the nearest
+/// open `for _, name in ipairs(list) do` over a literal list (inline, or a
+/// `local list = {...}`): the listed modules, which are static after all.
+fn loop_literal_modules(t: &[u8], holes: &[(usize, usize)], i: usize) -> Option<Vec<Vec<u8>>> {
+    let p = skip_ws(t, i - 1 + 7);
+    let p = skip_ws(t, p + (t.get(p) == Some(&b'(')) as usize);
+    let name_end = ident_end(t, p)?;
+    let name = &t[p..name_end];
+    if t.get(skip_ws(t, name_end)) != Some(&b')') {
+        return None;
+    }
+    let f = (0..i - 1)
+        .rev()
+        .find(|&j| !in_hole(holes, j + 1) && keyword(t, j + 1, b"for"))?;
+    let q = skip_ws(t, f + 3);
+    let q = skip_ws(t, ident_end(t, q)?);
+    if t.get(q) != Some(&b',') {
+        return None;
+    }
+    let q = skip_ws(t, q + 1);
+    let e = ident_end(t, q)?;
+    if &t[q..e] != name {
+        return None;
+    }
+    let q = skip_ws(t, e);
+    if !keyword(t, q + 1, b"in") {
+        return None;
+    }
+    let q = skip_ws(t, q + 2);
+    let e = ident_end(t, q)?;
+    if !matches!(&t[q..e], b"ipairs" | b"pairs") {
+        return None;
+    }
+    let q = skip_ws(t, e);
+    if t.get(q) != Some(&b'(') {
+        return None;
+    }
+    let q = skip_ws(t, q + 1);
+    let (modules, q) = match ident_end(t, q) {
+        Some(e) => (local_literal_modules(t, &t[q..e], f)?, e),
+        None => {
+            let close = q + t[q..].iter().position(|&c| c == b'}')?;
+            (literal_modules(t, q)?, close + 1)
+        }
+    };
+    let q = skip_ws(t, q);
+    if t.get(q) != Some(&b')') {
+        return None;
+    }
+    let q = skip_ws(t, q + 1);
+    (keyword(t, q + 1, b"do") && block_open(t, holes, q + 2, i - 1)).then_some(modules)
+}
+
 /// 1-based line of position `i`.
 fn line_of(text: &[u8], i: usize) -> i64 {
     text[..i - 1].iter().filter(|&&c| c == b'\n').count() as i64 + 1
@@ -349,7 +485,8 @@ fn dynamic_require_warning(file: &str, lines: &[Value]) -> Option<String> {
 /// `read_module(source)`: requires, definitions and setmetatable bases.
 /// A definition is nested inside a function body or a table constructor,
 /// as crapper counts entries; a top-level `if`/`do` block does not nest.
-/// `require(name)` cannot be resolved statically; its line is reported.
+/// `require(name)` cannot be resolved statically; its line is reported,
+/// unless `name` iterates a literal module list.
 pub fn read_module(source: &[u8]) -> Value {
     let (text, holes) = mask(source);
     let mut requires = Vec::new();
@@ -367,7 +504,12 @@ pub fn read_module(source: &[u8]) -> Value {
         }
         match require_at(&text, i) {
             Some(Require::Module(m)) => requires.push(Value::String(text::text(&m))),
-            Some(Require::Dynamic) => dynamic_requires.push(Value::Integer(line_of(&text, i))),
+            Some(Require::Dynamic) => match loop_literal_modules(&text, &holes, i) {
+                Some(modules) => {
+                    requires.extend(modules.iter().map(|m| Value::String(text::text(m))))
+                }
+                None => dynamic_requires.push(Value::Integer(line_of(&text, i))),
+            },
             None => {}
         }
         let c = at(&text, i);
@@ -713,6 +855,53 @@ mod tests {
         assert_eq!(
             Some("Unresolved dynamic require: a.lua:3, a.lua:9".to_owned()),
             dynamic_require_warning("a.lua", &[Value::Integer(3), Value::Integer(9)])
+        );
+    }
+
+    fn strings(values: &[Value]) -> Vec<&str> {
+        values
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_require_over_a_literal_module_list_resolves_each_module() {
+        let source = "local function load()\n\
+                      \x20 local mods = {\n    \"a.b\",\n    'c', -- note\n  }\n\
+                      \x20 for _, m in ipairs(mods) do\n    reg(require(m))\n  end\n\
+                      \x20 for _, n in pairs({ \"d\"; \"e.f\" }) do require(n) end\n\
+                      end\n";
+        let surface = read_module(source.as_bytes());
+        assert_eq!(
+            vec!["a.b", "c", "d", "e.f"],
+            strings(seq(get(&surface, "requires")))
+        );
+        assert!(seq(get(&surface, "dynamic-requires")).is_empty());
+    }
+
+    #[test]
+    fn a_require_outside_a_literal_list_loop_stays_dynamic() {
+        let source = "local mods = { \"a\", x }\n\
+                      for _, m in ipairs(mods) do require(m) end\n\
+                      local ok = { \"b\" }\n\
+                      for _, m in ipairs(ok) do end\n\
+                      require(m)\n\
+                      for i, m in ipairs(ok) do require(i) end\n\
+                      for _, m in ipairs(other) do require(m) end\n";
+        let surface = read_module(source.as_bytes());
+        assert!(seq(get(&surface, "requires")).is_empty());
+        assert_eq!(
+            &[
+                Value::Integer(2),
+                Value::Integer(5),
+                Value::Integer(6),
+                Value::Integer(7)
+            ][..],
+            seq(get(&surface, "dynamic-requires"))
         );
     }
 
