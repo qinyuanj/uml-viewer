@@ -21,6 +21,8 @@ The diagram is already on screen.
   them when rewriting policy. Do not invent them on launch. The inspector
   lists them; **P** returns to the namespace tree. If instructed, add a
   named proposal (default name is a timestamp) and regenerate the IR.
+  Edit policy in place: change only the keys you mean to and keep its
+  comments, ordering and line layout; never re-serialize the whole file.
 - Developing this repository: the maintainer runs the quality refresh by
   hand (`./uml crap`, a differential `./uml mutate` on the changed source
   files, then `./uml ir`). Your hand-off ends with the list of changed

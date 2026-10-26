@@ -26,6 +26,9 @@ After every later source or policy change:
    diagram above Proposals to return to the namespace tree. If instructed,
    add a named proposal to :proposals in the policy (default name is a
    timestamp) and regenerate the IR.
+   Edit the policy file in place: change only the keys you mean to
+   change and keep its comments, ordering and line layout. Never
+   re-serialize the whole policy; its comments carry the reasons.
 TypeScript, Rust, Python, and Lua are the supported scanners. One language sets
 :lang for the whole tree; more than one language sets :sources, each
 entry {:lang :root :prefix?}. The policy :prefix is stripped to make
@@ -460,6 +463,7 @@ mod tests {
         assert!(STANDING_RULES.starts_with("You are the UML-viewer companion."));
         assert!(STANDING_RULES.contains("validResult exactly true"));
         assert!(STANDING_RULES.contains("at most three retries (1, 2, 4 seconds)"));
+        assert!(STANDING_RULES.contains("Never\n   re-serialize the whole policy"));
         assert!(STANDING_RULES.ends_with("Do not commit or push unless asked.\n"));
         assert!(LAUNCH_PROMPT.starts_with("On launch: from this working directory,"));
         assert!(RECOVERY_PROMPT.starts_with("Recovery: do not scan sources or rewrite policy."));
