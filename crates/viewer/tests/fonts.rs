@@ -51,3 +51,13 @@ fn the_probe_reports_the_reason_when_the_text_is_empty() {
     assert!(viewer::paint::italic_glyph_probe_text(&ctx, "").is_err());
     let _ = Path::new("/");
 }
+
+#[test]
+fn the_resolved_font_draws_monospace_latin_too() {
+    // The layout sizes boxes for Sarasa's half-width Latin (8px a char at
+    // 16px); egui's built-in monospace face is a fifth wider, so labels
+    // shrank to fit each box at a size of their own.
+    let fonts = viewer::fonts::definitions(egui::FontData::from_static(b""));
+    let monospace = &fonts.families[&egui::FontFamily::Monospace];
+    assert_eq!(Some("uml_cjk"), monospace.first().map(String::as_str));
+}

@@ -15,14 +15,11 @@ use crate::strings;
 use crate::theme::{self, Rgb, fonts};
 
 // Text keeps the layout's 12px side padding; package titles also clear the
-// C/M dots.
+// C/M dots. A class stacks its C/M dots in the right padding and puts its
+// α/I marker in the left one, so its text rows keep the full width the
+// layout sized the box for.
 pub const PAD: f64 = 12.0;
 pub const PACKAGE_TITLE_RESERVE: f64 = 48.0;
-// The corner band holds the level (top-left) and the C/M dots and α/I marker
-// (top-right); text whose slot reaches into it must stop short of the badges.
-pub const BAND_BOTTOM: f64 = 16.0;
-pub const DOTS_RESERVE: f64 = 32.0;
-pub const MARKER_RESERVE: f64 = 46.0;
 /// An unmeasured class reserves a bottom strip for its 无数据 marker.
 pub const NO_DATA_STRIP: f64 = 12.0;
 
@@ -310,9 +307,17 @@ fn quality(commands: &mut Vec<Command>, c: &Value, owner: &'static str) {
             text: if i == 0 { "C" } else { "M" },
             band: b.name(),
             grade: Some(g),
-            radius: 6.0,
-            x: r.right() - 24.0 + i as f64 * 14.0,
-            y: r.y + 10.0,
+            radius: if owner == "class" { 5.0 } else { 6.0 },
+            x: if owner == "class" {
+                r.right() - 6.0
+            } else {
+                r.right() - 24.0 + i as f64 * 14.0
+            },
+            y: if owner == "class" {
+                r.y + 9.0 + i as f64 * 12.0
+            } else {
+                r.y + 10.0
+            },
             owner_id: None,
             dimmed: false,
         });
@@ -322,7 +327,7 @@ fn quality(commands: &mut Vec<Command>, c: &Value, owner: &'static str) {
 /// Vertical slots for a class's text lines (port of `text_slots`): the
 /// layout keeps its golden 18px line pitch; nominal sizes when they fit,
 /// scaled down together when they do not, with even gaps.
-pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Command> {
+pub fn text_slots(c: &Value, r: Rect, unmeasured: bool) -> Vec<Command> {
     let (x, ry, w, h) = (r.x, r.y, r.w, r.h);
     let mut out = Vec::new();
     let mut run: Vec<usize> = Vec::new();
@@ -331,11 +336,7 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
     let stereo = local_name(get(c, "stereotype").unwrap_or(&Value::Nil))
         .unwrap_or_default()
         .to_owned();
-    let flush = |out: &mut Vec<Command>,
-                 run: &mut Vec<usize>,
-                 run_top: f64,
-                 run_bottom: f64,
-                 marker: bool| {
+    let flush = |out: &mut Vec<Command>, run: &mut Vec<usize>, run_top: f64, run_bottom: f64| {
         let total: f64 = run
             .iter()
             .map(|&i| match &out[i] {
@@ -354,17 +355,21 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
                     top: t,
                     h: hh,
                     max_w,
+                    x: tx,
+                    bold,
+                    italic,
                     ..
                 } = &mut out[i]
                 {
                     *t = Some(top);
                     *hh = Some(*size * k);
-                    *max_w = w - 2.0 * PAD
-                        + if top < ry + BAND_BOTTOM {
-                            PAD - if marker { MARKER_RESERVE } else { DOTS_RESERVE }
-                        } else {
-                            0.0
-                        };
+                    // The bold offset and italic shear overhang into the
+                    // side padding, so a name as wide as the layout's
+                    // estimate still draws at full size.
+                    let overhang =
+                        *size * (if *bold { 0.05 } else { 0.0 } + if *italic { 0.2 } else { 0.0 });
+                    *max_w = w - 2.0 * PAD + overhang;
+                    *tx = x + PAD - overhang / 2.0;
                     top += *size * k + gap;
                 }
             }
@@ -376,7 +381,7 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
             .unwrap_or_default()
             .to_owned();
         if kind == "rule" {
-            flush(&mut out, &mut run, run_top, y - 5.0, marker);
+            flush(&mut out, &mut run, run_top, y - 5.0);
             out.push(Command::Rule {
                 x,
                 y: y - 4.0,
@@ -408,11 +413,7 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
                     Some(Value::String(s)) => s.clone(),
                     _ => String::new(),
                 },
-                size: if kind == "name" {
-                    fonts::TITLE as f64
-                } else {
-                    fonts::BODY as f64
-                },
+                size: fonts::CANVAS as f64,
                 top: None,
                 h: None,
                 max_w: w - 2.0 * PAD,
@@ -424,7 +425,7 @@ pub fn text_slots(c: &Value, r: Rect, marker: bool, unmeasured: bool) -> Vec<Com
         }
     }
     let bottom = ry + h - 4.0 - if unmeasured { NO_DATA_STRIP } else { 0.0 };
-    flush(&mut out, &mut run, run_top, bottom, marker);
+    flush(&mut out, &mut run, run_top, bottom);
     out
 }
 
@@ -466,7 +467,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             },
             band,
             red: band == "red",
-            size: fonts::TITLE as f64,
+            size: fonts::CANVAS as f64,
             max_w: pr.w - PACKAGE_TITLE_RESERVE,
             missing: count > 0,
             missing_count: count,
@@ -571,6 +572,11 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         let stereo = local_name(get(c, "stereotype").unwrap_or(&Value::Nil))
             .unwrap_or_default()
             .to_owned();
+        let level = get(c, "level").map(|level| match level {
+            Value::Integer(n) => n.to_string(),
+            Value::Float(x) => format!("{x}"),
+            _ => local_name(level).unwrap_or_default().to_owned(),
+        });
         let marker = stereo == "abstract" || stereo == "interface";
         if marker {
             class_commands.push(Command::Marker {
@@ -580,7 +586,12 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 } else {
                     "I".into()
                 },
-                x: r.right() - 44.0,
+                // Top-left, after the level number when there is one.
+                x: r.x
+                    + 4.0
+                    + level
+                        .as_deref()
+                        .map_or(0.0, |t| estimate_w(t, fonts::LEVEL as f64) + 3.0),
                 y: r.y + 3.0,
                 size: fonts::MARKER as f64,
                 color: Color32::WHITE,
@@ -588,14 +599,10 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 dimmed: false,
             });
         }
-        if let Some(level) = get(c, "level") {
+        if let Some(level) = level {
             class_commands.push(Command::Level {
                 rect: r,
-                text: match level {
-                    Value::Integer(n) => n.to_string(),
-                    Value::Float(x) => format!("{x}"),
-                    _ => local_name(level).unwrap_or_default().to_owned(),
-                },
+                text: level,
                 x: r.x + 4.0,
                 y: r.y + 3.0,
                 size: fonts::LEVEL as f64,
@@ -604,7 +611,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 dimmed: false,
             });
         }
-        let mut slots = text_slots(c, r, marker, unmeasured);
+        let mut slots = text_slots(c, r, unmeasured);
         // The 2px title band runs under the name slot in the box stroke color.
         for s in &slots {
             if let Command::Text {
@@ -819,8 +826,8 @@ pub fn estimate_w(text: &str, size: f64) -> f64 {
     scene::text_w(Some(text)) / 16.0 * size
 }
 
-/// The layout's 8px/char estimate fixes box widths (JVM goldens); an 18px
-/// name may be wider, so the drawn size shrinks until the text, bold offset
+/// The layout's 8px/char estimate fixes box widths (JVM goldens); a bold or
+/// italic name may be wider, so the drawn size shrinks until the text, bold offset
 /// and italic shear fit inside `max_w`. Never grows past the nominal size.
 pub fn fit(
     measure: impl Fn(f64, &str) -> f64,

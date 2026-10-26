@@ -57,8 +57,9 @@ fn separate_c_and_m_dots_keep_either_absent_metric_red() {
             continue;
         }
         statuses.push((*text, *band));
-        assert!(x - radius >= rect.x && y - radius >= rect.y);
-        assert!(x + radius <= rect.right() && y + radius <= rect.bottom());
+        // Stacked inside the right padding, clear of the text rows.
+        assert!(x - radius >= rect.right() - commands::PAD && x + radius <= rect.right());
+        assert!(y - radius >= rect.y && y + radius <= rect.bottom());
     }
     assert_eq!(
         vec![
@@ -137,11 +138,11 @@ fn italic_distinguishes_classifier_and_grouping_names() {
         };
         if role == "name" {
             styles.push(*italic);
-            assert_eq!(18.0, *size);
+            assert_eq!(16.0, *size);
             assert!(bold);
         } else if text == "field" {
             assert!(!italic && !bold);
-            assert_eq!(18.0, *size);
+            assert_eq!(16.0, *size);
         }
     }
     assert_eq!(vec![true, true, true, true, false], styles);
@@ -537,5 +538,58 @@ fn proposal_banner_reads_the_diagram_proposal_as_a_lua_truthy_flag() {
     }
     for v in TRUTHY {
         assert!(banner(&format!(":proposal {v}")), "{v}");
+    }
+}
+
+/// Every class name with the size it draws at under the layout's monospace
+/// estimate (Sarasa's half-width Latin, 8px a char at 16px).
+fn fitted_names(s: &Value) -> Vec<(String, f64)> {
+    commands_of(s)
+        .iter()
+        .filter_map(|command| match command {
+            Command::Text {
+                role,
+                text,
+                size,
+                max_w,
+                bold,
+                italic,
+                ..
+            } if role == "name" => Some((
+                text.clone(),
+                commands::fit(
+                    |s, t| commands::estimate_w(t, s),
+                    *size,
+                    text,
+                    *max_w,
+                    *bold,
+                    *italic,
+                ),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_name_the_layout_sized_its_box_for_draws_at_the_canvas_size() {
+    // The C/M dots and the α/I marker must not take the name row's width:
+    // the layout sizes a box for its widest line and nothing else.
+    let s = scene(
+        "[{:id :a :name \"RenderCacheInvalidation\" :crap {:mu 2}} \
+          {:id :b :name \"AbstractSceneProjection\" :stereotype :abstract} \
+          {:id :c :name \"ItalicContainerName\" :contents [{:id :k :name \"K\"}]}]",
+    );
+    let doc = scene::ir::read_document(
+        "{:hierarchical true :prefix \"x\" :order [a] \
+          :classes [{:id :a :name \"A\" :ns \"x.a\"} {:id :eframe :name \"eframe\" :foreign true}] \
+          :edges [{:from :a :to :eframe}]}",
+    )
+    .unwrap();
+    let ovals = compile_view(&doc, &[], &[], &Value::Map(vec![]));
+    let names = [fitted_names(&s), fitted_names(&ovals)].concat();
+    assert!(names.iter().any(|(n, _)| n == "eframe"), "{names:?}");
+    for (name, size) in names {
+        assert_eq!(16.0, size, "{name}");
     }
 }

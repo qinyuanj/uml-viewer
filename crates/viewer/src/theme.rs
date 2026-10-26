@@ -21,10 +21,14 @@ impl Rgb {
 pub mod fonts {
     pub const BODY: f32 = 18.0;
     pub const TITLE: f32 = 18.0;
+    /// Canvas class, member and package text: the size the layout's 8px a
+    /// char estimate sizes boxes for, so labels draw at one size.
+    pub const CANVAS: f32 = 16.0;
     pub const BADGE: f32 = 9.0;
     pub const LEVEL: f32 = 11.0;
     pub const MARKER: f32 = 12.0;
     pub const CODE: f32 = 13.0;
+    pub const PORT: f32 = 10.0;
 }
 
 pub mod radius {

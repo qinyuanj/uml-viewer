@@ -46,11 +46,10 @@ pub fn resolve(root: &Path) -> Option<(PathBuf, &'static str)> {
     resolve_with(env.as_deref(), root, &SYSTEM_FONTS)
 }
 
-/// Install the resolved font into egui as a fallback for proportional and
-/// monospace text. Glyphs rasterise into the atlas on demand, at the size
-/// and pixels-per-point they are drawn with, so CJK text needs no prebuilt
-/// atlas. Returns the chosen path and its source (`env`, `sarasa`,
-/// `system`) so the viewer can report it.
+/// Install the resolved font into egui. Glyphs rasterise into the atlas on
+/// demand, at the size and pixels-per-point they are drawn with, so CJK text
+/// needs no prebuilt atlas. Returns the chosen path and its source (`env`,
+/// `sarasa`, `system`) so the viewer can report it.
 pub fn install(ctx: &egui::Context, root: &Path) -> Option<(PathBuf, &'static str)> {
     let (path, source) = resolve(root)?;
     let bytes = std::fs::read(&path).ok()?;
@@ -60,17 +59,28 @@ pub fn install(ctx: &egui::Context, root: &Path) -> Option<(PathBuf, &'static st
     if path.extension().is_some_and(|e| e == "ttc") {
         font.index = 2;
     }
+    ctx.set_fonts(definitions(font));
+    Some((path, source))
+}
+
+/// egui's fonts with `font` first for monospace text and as a fallback for
+/// proportional text. Canvas text is monospace and the layout sizes boxes
+/// for Sarasa's half-width Latin, so egui's wider built-in monospace face
+/// must not draw it.
+pub fn definitions(font: egui::FontData) -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     fonts
         .font_data
         .insert("uml_cjk".into(), std::sync::Arc::new(font));
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        fonts
-            .families
-            .entry(family)
-            .or_default()
-            .push("uml_cjk".into());
-    }
-    ctx.set_fonts(fonts);
-    Some((path, source))
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "uml_cjk".into());
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .push("uml_cjk".into());
+    fonts
 }

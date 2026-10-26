@@ -611,7 +611,7 @@ pub fn paint(
                     r.min.x + commands::PAD as f32 * transform.scale,
                     r.min.y + 8.0 * transform.scale,
                     label,
-                    lod::font_px(theme::fonts::TITLE as f64 * transform.scale as f64, 1.0),
+                    lod::font_px(theme::fonts::CANVAS as f64 * transform.scale as f64, 1.0),
                     theme::GOLD.color32(),
                     true,
                     false,
@@ -718,15 +718,20 @@ pub fn paint(
                     ),
                 );
                 if tier == lod::Tier::Full {
+                    // Centred on the dot by the laid-out row height, which
+                    // scales with the zoom.
+                    let px = lod::font_px(9.0 * transform.scale as f64, 1.0);
+                    let color = ink(Color32::WHITE, *dimmed);
+                    let row = text.galley(ctx, label, px, color, false, true).size().y;
                     draw_text(
                         ctx,
                         text,
                         &clipped,
                         center.x,
-                        center.y - 4.5,
+                        center.y - row / 2.0,
                         label,
-                        lod::font_px(9.0 * transform.scale as f64, 1.0),
-                        ink(Color32::WHITE, *dimmed),
+                        px,
+                        color,
                         false,
                         false,
                         true,
@@ -1005,9 +1010,9 @@ pub fn paint(
                     text,
                     &clipped,
                     r.center().x,
-                    r.center().y - 5.0,
+                    r.center().y - 5.0 * transform.scale,
                     label,
-                    10.0,
+                    lod::font_px(theme::fonts::PORT as f64 * transform.scale as f64, 1.0),
                     ink(
                         if *marked {
                             theme::INK.color32()
@@ -1019,7 +1024,7 @@ pub fn paint(
                     false,
                     false,
                     true,
-                    Some(r.width() - 6.0),
+                    Some(r.width() - 6.0 * transform.scale),
                 );
             }
             _ => {}
