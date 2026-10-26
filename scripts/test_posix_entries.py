@@ -256,6 +256,34 @@ class PosixEntries(unittest.TestCase):
         (self.root / 'src/a.lua').write_text('local M={}\nfunction M.hello() return "hello" end\nreturn M\n')
         (self.root / 'policy.edn').write_text(self.policy)
 
+    def test_ignore_block_is_left_where_another_tool_put_it(self):
+        """Another tool (magpie) also appends its block last; an intact
+        UML-VIEWER block anywhere is left as is, so the two never trade
+        places and the project's `.gitignore` stays clean across installs."""
+        import importlib.util
+        specification = importlib.util.spec_from_file_location(
+            'uml_posix', REPO / 'scripts/uml_posix.py')
+        installer = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(installer)
+        ignore = self.root / '.gitignore'
+        block = '# BEGIN UML-VIEWER\n.uml-viewer/\numl-viewer-log.txt\n# END UML-VIEWER\n'
+        middle = f'/target/\n{block}\n# >>> magpie >>>\n/.agents/skills/a\n# <<< magpie <<<\n'
+        ignore.write_text(middle)
+        installer.ensure_ignore_block(self.root)
+        self.assertEqual(middle, ignore.read_text())
+        # Missing or altered: the stale block goes and the canonical one is appended.
+        for before in ('/target/\n', f'/target/\n{block.replace("uml-viewer-log.txt", "old.txt")}x\n'):
+            with self.subTest(before=before):
+                ignore.write_text(before)
+                installer.ensure_ignore_block(self.root)
+                text = ignore.read_text()
+                self.assertTrue(text.endswith('\n' + block), text)
+                self.assertEqual(1, text.count('# BEGIN UML-VIEWER'))
+                self.assertNotIn('old.txt', text)
+        ignore.unlink()
+        installer.ensure_ignore_block(self.root)
+        self.assertEqual(block, ignore.read_text().lstrip())
+
     def test_installer_refuses_hosts_other_than_wsl_x86_64(self):
         """Only WSL2 x86_64 is delivered; macOS is not committed (ADR 0007)."""
         import importlib.util

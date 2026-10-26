@@ -213,6 +213,23 @@ def atomic_write(path, data):
         Path(name).unlink(missing_ok=True)
 
 
+IGNORE_BLOCK = '# BEGIN UML-VIEWER\n.uml-viewer/\numl-viewer-log.txt\n# END UML-VIEWER\n'
+
+
+def ensure_ignore_block(root):
+    """Keep the project's `.gitignore` block intact without moving it.
+
+    Other tools (magpie) also append their own block last; rewriting an
+    intact block to the end would make the two trade places on every run.
+    Only a missing or altered block is removed and re-appended."""
+    ignore = root / '.gitignore'
+    text = ignore.read_text() if ignore.exists() else ''
+    if re.search(r'(?m)^' + re.escape(IGNORE_BLOCK), text):
+        return
+    text = re.sub(r'(?ms)^# BEGIN UML-VIEWER\n.*?^# END UML-VIEWER\n?', '', text)
+    atomic_write(ignore, text.rstrip() + '\n' + IGNORE_BLOCK)
+
+
 # Paths this installer creates inside a tool checkout. They must not read as
 # the user's own work, otherwise the second install would refuse its own venv.
 # Filtering happens here rather than in a git pathspec: glob semantics differ
@@ -456,10 +473,7 @@ def install(args):
     binary = rust_build(cargo, state / 'uml-viewer')
     for warning in x11_warnings():
         print(f'提示：{warning}', file=sys.stderr)
-    ignore = root / '.gitignore'
-    text = ignore.read_text() if ignore.exists() else ''
-    text = re.sub(r'(?ms)^# BEGIN UML-VIEWER\n.*?^# END UML-VIEWER\n?', '', text)
-    atomic_write(ignore, text.rstrip() + '\n# BEGIN UML-VIEWER\n.uml-viewer/\numl-viewer-log.txt\n# END UML-VIEWER\n')
+    ensure_ignore_block(root)
     entry = root / 'uml'
     if entry.exists() and entry.read_bytes() != (state / 'uml-viewer/scripts/uml').read_bytes():
         if b'Thin Unix entry' not in entry.read_bytes():
