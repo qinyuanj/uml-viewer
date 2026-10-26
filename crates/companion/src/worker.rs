@@ -9,7 +9,9 @@
 //!   the progress stages, `ready`, `stopping`, `stopped` and `failed`.
 //!
 //! Every file is written to a temporary sibling, then renamed, through the
-//! companion host.
+//! companion host. The viewer removes a generation's files once it settled
+//! (terminal phase read, helper exited); a launch whose lock probe finds no
+//! live helper first removes every older generation's files (#169).
 
 use crate::herdr::{Herdr, ProgressFn};
 use crate::host::Host;
@@ -45,6 +47,11 @@ fn read(host: &Host, path: &Path) -> Option<Value> {
     edn::parse(&text).ok()
 }
 
+/// The per-project helper lock: held by a live helper for its whole run.
+fn lock_path(root: &str) -> String {
+    format!("{root}/.uml-viewer/companion-worker.lock")
+}
+
 /// The process identity without its name, as the worker and viewer compare
 /// it (starttime only).
 fn identity(host: &Host, pid: i32) -> Option<Owner> {
@@ -68,6 +75,64 @@ pub struct Worker {
     pub started: Option<i64>,
     pub timed_out: bool,
     pub exited: bool,
+    /// This generation's protocol files were removed once it settled.
+    pub reclaimed: bool,
+}
+
+/// Whether `rest`, the part of a file name after `<base>.`, names a protocol
+/// file: `request.edn`, `command-<n>.edn` or `event-<n>.edn`.
+fn protocol_suffix(rest: &str) -> bool {
+    let numbered = |kind: &str| {
+        rest.strip_prefix(kind)
+            .and_then(|tail| tail.strip_suffix(".edn"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    rest == "request.edn" || numbered("command-") || numbered("event-")
+}
+
+/// Remove the protocol files in `directory` whose names `claims` accepts.
+/// Removal is best effort; a vanished file is not an error.
+fn remove_protocol_files(host: &Host, directory: &Path, claims: impl Fn(&str) -> bool) {
+    for name in (host.list)(directory) {
+        if claims(&name) {
+            (host.remove)(&directory.join(&name));
+        }
+    }
+}
+
+/// Remove this generation's protocol files: the request, every command and
+/// every event under its base.
+fn reclaim(worker: &mut Worker) {
+    worker.reclaimed = true;
+    let base = Path::new(&worker.base);
+    let Some(stem) = base
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+    else {
+        return;
+    };
+    let directory = base.parent().unwrap_or(Path::new(""));
+    remove_protocol_files(&worker.host, directory, |name| {
+        name.strip_prefix(stem.as_str())
+            .and_then(|rest| rest.strip_prefix('.'))
+            .is_some_and(protocol_suffix)
+    });
+}
+
+/// The launch-time reclaim of crashed or accumulated generations. Only a free
+/// helper lock proves no helper is alive; it is released before the new
+/// helper spawns, which takes it itself. A held or unopenable lock skips.
+fn reclaim_stale(host: &Host, root: &str) {
+    let Ok(Some(lock)) = posix::try_acquire(Path::new(&lock_path(root))) else {
+        return;
+    };
+    let state = format!("{root}/.uml-viewer");
+    remove_protocol_files(host, Path::new(&state), |name| {
+        name.strip_prefix("companion-worker-")
+            .and_then(|rest| rest.split_once('.'))
+            .is_some_and(|(token, rest)| !token.is_empty() && protocol_suffix(rest))
+    });
+    posix::release(Some(lock));
 }
 
 /// The viewer-side start: write the request, then spawn the helper natively.
@@ -90,6 +155,7 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
             ]),
         ),
     ]);
+    reclaim_stale(&host, root);
     let request_path = format!("{base}.request.edn");
     write(&host, Path::new(&request_path), &request)?;
     let executable = std::env::current_exe()
@@ -112,6 +178,7 @@ pub fn start(root: &str, restart: bool) -> Result<Worker> {
         started,
         timed_out: false,
         exited: false,
+        reclaimed: false,
     })
 }
 
@@ -155,7 +222,8 @@ pub fn wake(worker: &mut Worker, id: i64) -> Result<()> {
 
 /// Consume up to 32 matching events, enforce the startup deadline once, and
 /// notice a helper that exited without a final result. A stale generation
-/// result is an error before the cursor advances.
+/// result is an error before the cursor advances. The poll that settles the
+/// worker (terminal phase, helper exited) removes its protocol files once.
 pub fn poll(worker: &mut Worker) -> Result<()> {
     let host = worker.host.clone();
     let start = worker.seen;
@@ -201,6 +269,11 @@ pub fn poll(worker: &mut Worker) -> Result<()> {
             );
         }
         worker.exited = true;
+    }
+    // The moment the viewer's link settles: nothing will write or read this
+    // generation again.
+    if worker.exited && matches!(worker.phase.as_str(), "stopped" | "failed") && !worker.reclaimed {
+        reclaim(worker);
     }
     Ok(())
 }
@@ -315,9 +388,7 @@ pub fn run(request_path: &str, attach: bool, host: &Host) -> Result<i32> {
         viewer_pid: record::get_i64(&viewer, "pid").unwrap_or(0) as i32,
         viewer_start: record::get_name(&viewer, "start").unwrap_or_default(),
     }));
-    let lock = posix::try_acquire(Path::new(&format!(
-        "{root}/.uml-viewer/companion-worker.lock"
-    )))?;
+    let lock = posix::try_acquire(Path::new(&lock_path(&root)))?;
     if lock.is_none() {
         session.borrow_mut().event(
             "failed",
@@ -497,6 +568,8 @@ mod tests {
         let files = journal.files.clone();
         let written = journal.events.clone();
         let write_files = journal.files.clone();
+        let listed = journal.files.clone();
+        let removed = journal.files.clone();
         Host {
             read: Rc::new(move |path| {
                 let key = path.to_string_lossy().into_owned();
@@ -514,6 +587,11 @@ mod tests {
                     .borrow_mut()
                     .insert(path.to_string_lossy().into_owned(), value);
                 Ok(())
+            }),
+            // The journal is one flat directory.
+            list: Rc::new(move |_| listed.borrow().keys().cloned().collect()),
+            remove: Rc::new(move |path| {
+                removed.borrow_mut().remove(&*path.to_string_lossy());
             }),
             owner: Rc::new(move |pid| owner(pid as i32)),
             clock: Rc::new(move || *now.borrow()),
@@ -538,6 +616,7 @@ mod tests {
             started: None,
             timed_out: false,
             exited: false,
+            reclaimed: false,
         }
     }
 
@@ -667,6 +746,176 @@ mod tests {
         let worker = poll_with(vec![event("generation", "stopped")], None);
         assert_eq!("stopped", worker.phase);
         assert!(worker.exited);
+    }
+
+    fn alive() -> Option<Owner> {
+        Some(Owner {
+            pid: 2,
+            start: "original".to_owned(),
+            name: String::new(),
+        })
+    }
+
+    /// A journal holding this generation's request, one command and the
+    /// given events, beside another generation's files.
+    fn journal_with(phases: &[&str]) -> Journal {
+        let journal = Journal {
+            files: Rc::new(RefCell::new(HashMap::new())),
+            events: Rc::new(RefCell::new(Vec::new())),
+        };
+        let mut files = journal.files.borrow_mut();
+        files.insert("journal.request.edn".to_owned(), Value::Nil);
+        files.insert("journal.command-1.edn".to_owned(), Value::Nil);
+        for (index, phase) in phases.iter().enumerate() {
+            files.insert(
+                format!("journal.event-{}.edn", index + 1),
+                event("generation", phase),
+            );
+        }
+        files.insert("other.event-1.edn".to_owned(), Value::Nil);
+        files.insert("journal.lock".to_owned(), Value::Nil);
+        drop(files);
+        journal
+    }
+
+    fn names(journal: &Journal) -> Vec<String> {
+        let mut names: Vec<String> = journal.files.borrow().keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_stopped_and_exited_generation_reclaims_its_protocol_files() {
+        let journal = journal_with(&["ready", "stopping", "stopped"]);
+        let host = host(&journal, |_| None, Rc::new(RefCell::new(0)));
+        let mut worker = worker(host);
+        poll(&mut worker).unwrap();
+        assert_eq!("stopped", worker.phase);
+        assert!(worker.exited);
+        assert_eq!(vec!["journal.lock", "other.event-1.edn"], names(&journal));
+    }
+
+    #[test]
+    fn a_failed_and_exited_generation_is_reclaimed_too() {
+        let journal = journal_with(&["starting", "failed"]);
+        let host = host(&journal, |_| None, Rc::new(RefCell::new(0)));
+        let mut worker = worker(host);
+        poll(&mut worker).unwrap();
+        assert_eq!("failed", worker.phase);
+        assert_eq!(vec!["journal.lock", "other.event-1.edn"], names(&journal));
+    }
+
+    #[test]
+    fn an_unsettled_generation_keeps_its_protocol_files() {
+        // Stop sent, `stopped` not yet published: the helper is alive.
+        let journal = journal_with(&["ready", "stopping"]);
+        let mut stopping = worker(host(&journal, |_| alive(), Rc::new(RefCell::new(0))));
+        poll(&mut stopping).unwrap();
+        assert_eq!(6, names(&journal).len());
+        // `stopped` published, but the helper has not exited yet.
+        let journal = journal_with(&["ready", "stopping", "stopped"]);
+        let host = host(&journal, |_| alive(), Rc::new(RefCell::new(0)));
+        let mut worker = worker(host);
+        poll(&mut worker).unwrap();
+        assert_eq!("stopped", worker.phase);
+        assert_eq!(7, names(&journal).len());
+    }
+
+    #[test]
+    fn a_settled_generation_is_reclaimed_only_once() {
+        let journal = journal_with(&["stopped"]);
+        let host = host(&journal, |_| None, Rc::new(RefCell::new(0)));
+        let mut worker = worker(host);
+        poll(&mut worker).unwrap();
+        // A command written after settling (a late stop) stays for the next
+        // launch's reclaim; a repeated poll does not delete again.
+        journal
+            .files
+            .borrow_mut()
+            .insert("journal.command-2.edn".to_owned(), Value::Nil);
+        poll(&mut worker).unwrap();
+        assert_eq!(
+            vec!["journal.command-2.edn", "journal.lock", "other.event-1.edn"],
+            names(&journal)
+        );
+    }
+
+    fn state_dir(label: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "uml worker {label} {} {}",
+            std::process::id(),
+            crate::posix::monotonic_ms()
+        ));
+        std::fs::create_dir_all(directory.join(".uml-viewer")).unwrap();
+        directory
+    }
+
+    /// Two old generations' protocol files beside files reclaim must keep.
+    fn stale_files(state: &Path) -> Vec<&'static str> {
+        let protocol = [
+            "companion-worker-aaaa.request.edn",
+            "companion-worker-aaaa.command-1.edn",
+            "companion-worker-aaaa.event-1.edn",
+            "companion-worker-aaaa.event-12.edn",
+            "companion-worker-bbbb.request.edn",
+            "companion-worker-bbbb.event-3.edn",
+        ];
+        let kept = vec![
+            "companion-worker.lock",
+            "companion.edn",
+            "companion-worker-aaaa.event-x.edn",
+            "companion-worker-.request.edn",
+            "companion-worker-aaaa.notes.edn",
+            "to-viewer.edn",
+        ];
+        for name in protocol.iter().chain(kept.iter()) {
+            std::fs::write(state.join(name), "{}").unwrap();
+        }
+        kept
+    }
+
+    fn listing(state: &Path) -> Vec<String> {
+        let mut names = (Host::posix().list)(state);
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_free_lock_lets_the_launch_reclaim_every_stale_generation() {
+        let directory = state_dir("reclaim");
+        let state = directory.join(".uml-viewer");
+        let mut kept: Vec<String> = stale_files(&state).into_iter().map(str::to_owned).collect();
+        kept.sort();
+        reclaim_stale(&Host::posix(), &directory.to_string_lossy());
+        assert_eq!(kept, listing(&state));
+        // The probe released the lock, so the new helper can take it.
+        let lock = posix::try_acquire(&state.join("companion-worker.lock")).unwrap();
+        assert!(lock.is_some());
+        posix::release(lock);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_held_lock_leaves_every_stale_generation_in_place() {
+        let directory = state_dir("reclaim held");
+        let state = directory.join(".uml-viewer");
+        stale_files(&state);
+        let before = listing(&state);
+        let held = posix::try_acquire(&state.join("companion-worker.lock"))
+            .unwrap()
+            .expect("lock");
+        reclaim_stale(&Host::posix(), &directory.to_string_lossy());
+        assert_eq!(before, listing(&state));
+        posix::release(Some(held));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn reclaim_without_a_state_directory_is_a_no_op() {
+        let directory = state_dir("reclaim none");
+        std::fs::remove_dir_all(&directory).unwrap();
+        reclaim_stale(&Host::posix(), &directory.to_string_lossy());
+        assert!(!directory.exists());
     }
 
     #[test]

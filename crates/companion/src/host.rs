@@ -33,6 +33,8 @@ type ReadFn = Rc<dyn Fn(&Path) -> Result<Option<String>>>;
 type WriteFn = Rc<dyn Fn(&Path, &[u8]) -> Result<()>>;
 /// Best-effort removal; an absent file is not an error.
 type RemoveFn = Rc<dyn Fn(&Path)>;
+/// The file names in a directory; empty when it cannot be read.
+type ListFn = Rc<dyn Fn(&Path) -> Vec<String>>;
 /// Whether a file can be opened for reading (an executable probe).
 type OpenableFn = Rc<dyn Fn(&Path) -> bool>;
 /// A fresh generation token (UUIDv4 shape).
@@ -63,6 +65,7 @@ pub struct Host {
     pub read: ReadFn,
     pub write: WriteFn,
     pub remove: RemoveFn,
+    pub list: ListFn,
     pub openable: OpenableFn,
     pub token: TokenFn,
 }
@@ -125,6 +128,16 @@ impl Host {
             remove: Rc::new(|path| {
                 let _ = std::fs::remove_file(path);
             }),
+            list: Rc::new(|directory| {
+                std::fs::read_dir(directory)
+                    .map(|entries| {
+                        entries
+                            .filter_map(|entry| entry.ok())
+                            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }),
             openable: Rc::new(|path| std::fs::File::open(path).is_ok()),
             token: Rc::new(crate::recovery::new_token),
         }
@@ -151,6 +164,7 @@ impl Host {
             read: Rc::new(|_| undeclared("read")),
             write: Rc::new(|_, _| undeclared("write")),
             remove: Rc::new(|_| undeclared("remove")),
+            list: Rc::new(|_| undeclared("list")),
             openable: Rc::new(|_| undeclared("openable")),
             token: Rc::new(|| undeclared("token")),
         }
