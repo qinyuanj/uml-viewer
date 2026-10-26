@@ -450,6 +450,28 @@ class PosixEntries(unittest.TestCase):
         self.assertIn('本地修改', result.stderr)
         self.assertEqual('用户未提交内容', user_file.read_text())
 
+    def test_installer_leaves_a_linked_checkout_on_its_branch(self):
+        # A link is a development checkout; fetching through it detached the
+        # linked repository's HEAD.
+        linked = self.root / 'linked'
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(linked)], check=True)
+        subprocess.run(['git', '-C', str(linked), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.org', 'commit', '-q',
+                        '--allow-empty', '-m', 'work'], check=True)
+        state = self.root / '.uml-viewer'
+        state.mkdir()
+        (state / 'uml-viewer').symlink_to(linked, target_is_directory=True)
+        missing = str(self.root / 'no such remote')
+        env = dict(self.env, UML_VIEWER_TOOL_ROOT='', UML_VIEWER_REPO_URL=str(linked),
+                   **{f'{tool.upper()}_REPO_URL': missing for tool in ('crapper', 'mutator', 'dryer')})
+        result = subprocess.run([str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
+                                cwd=self.root, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('UML_VIEWER_TOOL_ROOT', result.stderr)
+        branch = subprocess.run(['git', '-C', str(linked), 'symbolic-ref', '--short', 'HEAD'],
+                                capture_output=True, text=True)
+        self.assertEqual('main', branch.stdout.strip())
+
     def test_standard_mutation_passes_every_file_to_one_call(self):
         # One mutator call shares its coverage run and baseline across files;
         # mutator still publishes each source's snapshot on its own.

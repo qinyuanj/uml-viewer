@@ -364,6 +364,11 @@ def fetch(directory, tool):
     url = os.environ.get(('UML_VIEWER' if tool == 'uml-viewer' else tool.upper()) + '_REPO_URL',
                          f'https://github.com/qinyuanj/{tool}.git')
     ref = os.environ.get(('UML_VIEWER' if tool == 'uml-viewer' else tool.upper()) + '_REF', 'main')
+    if directory.is_symlink():
+        # A link is a development checkout; fetching through it detaches that
+        # repository's HEAD.
+        raise ValueError(f'拒绝通过链接更新开发副本：{directory}；'
+                         '开发安装请设置 UML_VIEWER_TOOL_ROOT 指向链接目标。')
     if directory.exists():
         if not (directory / '.git').exists():
             raise ValueError(f'拒绝替换非 Git 目录：{directory}')
