@@ -108,3 +108,16 @@ Issues 和 specs 使用 GitHub Issues；操作前读取 `docs/agents/issue-track
 ### Domain docs
 
 领域文档采用 single-context；探索代码前读取 `docs/agents/domain.md`。
+
+## Cursor Cloud specific instructions
+
+Cloud Agent machines run native Ubuntu 24.04 with an X display on `DISPLAY=:1`. The public `./uml` entry accepts a WSL2 kernel (ADR 0007). On this host, generate IR and open the diagram with the release binary:
+
+```sh
+target/release/uml-viewer ir examples/uml-viewer.policy.edn /tmp/diagram.edn
+GALLIUM_DRIVER=llvmpipe LIBGL_ALWAYS_SOFTWARE=1 WGPU_BACKEND=gl \
+  UML_CJK_FONT="$PWD/.uml-viewer/fonts/SarasaMonoSC-Regular.ttf" \
+  target/release/uml-viewer viewer /tmp/diagram.edn
+```
+
+The binary selects the WSLg `d3d12` Gallium driver when `GALLIUM_DRIVER` is unset, so set `llvmpipe` before a launch on this display. Sarasa is provisioned at `.uml-viewer/fonts/SarasaMonoSC-Regular.ttf`. Herdr 0.9.5 (protocol 22) is on `PATH`; companion attach still belongs on WSL with Windows Terminal. `cargo fmt --all -- --check` and `cargo test --workspace --locked` are the checks that run here. Leave the viewer stopped until a turn is demonstrating the GUI.
