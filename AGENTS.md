@@ -30,7 +30,9 @@ The diagram is already on screen.
   under their own rules.
 - In a git worktree of this repository, run `./uml` with
   `UML_VIEWER_TOOL_ROOT` set to that worktree so it uses the tree under
-  change, not the clone in `.uml-viewer/uml-viewer/`.
+  change, not the clone in `.uml-viewer/uml-viewer/`. The viewer on
+  screen may be another project's; its working directory names it:
+  `for p in $(pgrep -f '[u]ml-viewer viewer'); do readlink /proc/$p/cwd; done`.
 - Mail files are queues `{:next-id n :queue [cmd …]}`. Pop the head of
   `:queue` as you handle it (rewrite the file). Oldest first.
 - Right-click quality mail uses public `./uml crap` / `./uml mutate` dispatch
