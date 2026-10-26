@@ -170,7 +170,7 @@ impl TextCache {
 /// `size` whose text, bold offset and italic shear fit `budget`. Spec #134
 /// requires integer font sizes; fractional fits miss egui's galley cache and
 /// rasterize a new glyph size every zoom frame.
-fn fit_px(
+pub fn fit_px(
     ctx: &egui::Context,
     text: &mut TextCache,
     size: f32,
