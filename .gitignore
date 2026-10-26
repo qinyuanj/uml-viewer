@@ -13,8 +13,8 @@ assets/
 learning-records/
 lessons/
 reference/
+__pycache__/
 # BEGIN UML-VIEWER
 .uml-viewer/
 uml-viewer-log.txt
 # END UML-VIEWER
-__pycache__/
