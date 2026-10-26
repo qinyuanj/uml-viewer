@@ -106,7 +106,10 @@ under `.uml-viewer/` (real directories holding `cimgui.so`, `cimgui.dll` or
 `cimgui/init.lua`), whatever `install.json` records, and names each removed
 path on stderr. Symlinks are not followed, unmarked directories of that name
 and everything else stay, and an install refused because of live runtime
-state deletes nothing (#167). The installer leaves two things for you to
+state deletes nothing (#167). Live means held companion ownership, a
+recovery not in a terminal phase (`failed`, `cancelled`, `normal`) or the
+identity of a viewer still running; the records a normal close leaves do not
+block an install. The installer leaves two things for you to
 remove by hand: `~/.local/share/love/uml-viewer/` (LOVE's own save directory,
 for example `imgui.ini`) and the apt `love` / `lua` packages, if nothing else
 uses them.

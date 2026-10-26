@@ -360,6 +360,46 @@ def fetch(directory, tool):
                                                   capture_output=True, text=True).stdout.strip()}
 
 
+def proc_identity(pid):
+    """读取 PID 的创建身份；进程不存在返回 None。"""
+    try:
+        text = Path(f'/proc/{pid}/stat').read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    fields = text.rsplit(')', 1)[-1].split()
+    # fields[0] 是 state（第 3 字段）；starttime 是第 22 字段，即此处 index 19。
+    return {'pid': pid, 'start': fields[19]}
+
+
+# recovery_domain::terminal: phases after which no recovery runs.
+TERMINAL_RECOVERY = ('failed', 'cancelled', 'normal')
+
+
+def live(record):
+    """Whether a runtime record still describes a running session.
+
+    A normal close leaves a terminal recovery record and the identity of an
+    exited viewer behind; those are history. Held ownership, an unknown
+    phase and an unreadable identity count as live.
+    """
+    text = record.read_text().strip()
+    if text in ('', '{}', 'nil'):
+        return False
+    if record.name == 'recovery.edn':
+        phase = re.search(r':phase\s+:([\w-]+)', text)
+        return not (phase and phase.group(1) in TERMINAL_RECOVERY)
+    if record.name == 'viewer-process-identity.json':
+        try:
+            identity = json.loads(text)
+        except ValueError:
+            return True
+        if not isinstance(identity, dict) or type(identity.get('pid')) is not int:
+            return True
+        observed = proc_identity(identity['pid'])
+        return observed is not None and observed['start'] == identity.get('started')
+    return True
+
+
 def install(args):
     if args == ['--help'] or args == ['-h']:
         print('usage: get-uml-viewer [--install-only]')
@@ -375,7 +415,7 @@ def install(args):
     state.mkdir(exist_ok=True)
     for name in ('companion.edn', 'recovery.edn', 'viewer-process-identity.json'):
         record = state / name
-        if record.exists() and record.read_text().strip() not in ('', '{}', 'nil'):
+        if record.exists() and live(record):
             raise ValueError(f'保留已有运行态并拒绝安装：{record}；请先通过原有入口正常关闭会话并归档。')
     development = os.environ.get('UML_VIEWER_TOOL_ROOT')
     versions = {}

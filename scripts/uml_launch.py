@@ -10,21 +10,10 @@ import subprocess
 import sys
 import time
 
-from uml_posix import RUNTIME, atomic_write, runtime_argv
+from uml_posix import RUNTIME, atomic_write, proc_identity, runtime_argv
 
 LAUNCHER = 'viewer-process.json'
 IDENTITY = 'viewer-process-identity.json'
-
-
-def proc_identity(pid):
-    """读取 PID 的创建身份；进程不存在返回 None。"""
-    try:
-        text = Path(f'/proc/{pid}/stat').read_text()
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-    fields = text.rsplit(')', 1)[-1].split()
-    # fields[0] 是 state（第 3 字段）；starttime 是第 22 字段，即此处 index 19。
-    return {'pid': pid, 'start': fields[19]}
 
 
 def read_record(path):

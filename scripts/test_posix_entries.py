@@ -379,6 +379,36 @@ class PosixEntries(unittest.TestCase):
         self.assertEqual('{:backend :unknown :pid 123}', ownership.read_text())
         self.assertEqual(before, self.tree(state))
 
+    def test_install_passes_over_a_closed_session_and_refuses_a_live_one(self):
+        """A normal close leaves a terminal recovery record and the identity
+        of an exited viewer; those are history, not a running session."""
+        import json
+        state = self.root / '.uml-viewer'
+        directory = state / 'crapper'
+        directory.mkdir(parents=True)
+        subprocess.run(['git', 'init', '-q', str(directory)], check=True)
+        (directory / 'unique-work.txt').write_text('用户未提交内容')
+        (state / 'uml-viewer').symlink_to(REPO, target_is_directory=True)
+        stat = Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[-1].split()
+        alive = {'pid': os.getpid(), 'started': stat[19], 'runtime': 'rust', 'cwd': str(self.root)}
+        closed = dict(alive, started=str(int(stat[19]) + 1))
+        cases = [
+            ('closed', '{:phase :cancelled :reason "Viewer closed; recovery revoked"}', closed, False),
+            ('recovering', '{:phase :backoff}', closed, True),
+            ('viewer alive', '{:phase :normal}', alive, True),
+        ]
+        for label, recovery, identity, refused in cases:
+            with self.subTest(label):
+                (state / 'companion.edn').write_text('{}')
+                (state / 'recovery.edn').write_text(recovery)
+                (state / 'viewer-process-identity.json').write_text(json.dumps(identity))
+                result = subprocess.run(
+                    [str(REPO / 'scripts/get-uml-viewer'), '--install-only'],
+                    cwd=self.root, env=self.env, capture_output=True, text=True, timeout=30)
+                self.assertEqual(1, result.returncode)
+                # A passed check runs on to the dirty tool checkout.
+                self.assertIn('保留已有运行态' if refused else '本地修改', result.stderr)
+
     def test_installer_preserves_dirty_tool_checkout(self):
         directory = self.root / '.uml-viewer/crapper'
         directory.mkdir(parents=True)
