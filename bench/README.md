@@ -22,7 +22,7 @@ luajit bench/export_scene.lua bench/scenes/synthetic-500.edn bench/scenes/synthe
 luajit bench/export_scene.lua bench/scenes/synthetic-2000.edn bench/scenes/synthetic-2000
 ```
 
-已提交的场景文件是当前基准的输入；重新生成需要历史提交里的 Lua 工具。
+已提交的场景文件是当前基准的输入；重新生成需要 tag `archive/benchmark-protocol` 里的 Lua 工具。
 
 分布按 `examples/uml-viewer.edn`（89 类、262 边）校准：每类成员数 p50 3 / p90 13 /
 最大 34，类名长度 p50 7 / p90 13，成员文本长度 p50 10 / p90 17，约 3 条依赖边/类
@@ -133,7 +133,7 @@ UML_CJK_FONT=<SarasaMonoSC-Regular.ttf> bench/run_love.sh bench/scenes/synthetic
 ```
 
 `love_protocol_driver.lua` 通过 `UML_VIEWER_TEST_DRIVER` 注入当时的 LOVE viewer，按上表设置
-相机，输出 `protocol.edn` 和 `summary.txt`。两个脚本都已随 #144 删除；结果见下节。
+相机，输出 `protocol.edn` 和 `summary.txt`。两个脚本都已随 #144 删除（存档于 tag `archive/benchmark-protocol`）；结果见下节。
 
 ## 结果
 

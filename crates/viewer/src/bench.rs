@@ -4,7 +4,7 @@
 //! `protocol.edn` + `summary.txt` for the acceptance evidence.
 //!
 //! The trajectory, statistics and verdict rules are ported from the #131
-//! prototype (`bench/egui-proto`), so the numbers are comparable with the
+//! prototype (`bench/egui-proto`, tag `archive/egui-bench`), so the numbers are comparable with the
 //! selection runs. This module is window-free: the eframe seam in `app.rs`
 //! supplies the timestamp of each painted frame and applies the camera.
 
