@@ -31,6 +31,13 @@ pub struct Capture {
     pub dragging: bool,
 }
 
+/// The host owns platform key names; text and paste never enter this stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Named(&'static str),
+    PerformanceToggle,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Frame {
     pub capture: Capture,
@@ -39,6 +46,9 @@ pub struct Frame {
     pub size: [f64; 2],
     pub pointer: Pointer,
     pub modifiers: Modifiers,
+    pub keys: Vec<Key>,
+    pub text_edit_focused: bool,
+    pub search_active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +66,12 @@ pub enum Action {
     },
     /// Execute only if the session is dragging after preceding actions.
     ReleaseCandidate(f64, f64),
+    Key {
+        key: &'static str,
+        ctrl: bool,
+        shift: bool,
+    },
+    TogglePerformance,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +111,23 @@ pub fn convert(frame: &Frame) -> Converted {
             }
         } else if !frame.pointer.down {
             actions.push(Action::Leave);
+        }
+        // Rename text fields own keys before even the local F3 shortcut.
+        // Search keeps routing named keys through the existing pending path.
+        for key in frame
+            .keys
+            .iter()
+            .filter(|_| !frame.text_edit_focused || frame.search_active)
+        {
+            match key {
+                Key::PerformanceToggle => actions.push(Action::TogglePerformance),
+                Key::Named("") => {}
+                Key::Named(key) => actions.push(Action::Key {
+                    key,
+                    ctrl: frame.modifiers.ctrl,
+                    shift: frame.modifiers.shift,
+                }),
+            }
         }
     }
     Converted {

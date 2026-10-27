@@ -1020,6 +1020,23 @@ impl Viewer {
                 down,
             },
             modifiers: Modifiers { ctrl, shift },
+            keys: ctx.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|event| match event {
+                        egui::Event::Key {
+                            key, pressed: true, ..
+                        } => Some(if *key == egui::Key::F3 {
+                            real_input::Key::PerformanceToggle
+                        } else {
+                            real_input::Key::Named(key_name(*key))
+                        }),
+                        _ => None,
+                    })
+                    .collect()
+            }),
+            text_edit_focused: ctx.text_edit_focused(),
+            search_active: self.search.active,
             capture: Capture {
                 ordinary,
                 dragging: self.session.state().drag.is_some(),
@@ -1030,19 +1047,41 @@ impl Viewer {
         let mut dims = self.dims(ctx);
         dims.control = converted.modifiers.ctrl;
         dims.shift = converted.modifiers.shift;
-        for action in converted.actions {
-            self.execute_real_action(action, &dims);
+        // Until #176 supplies ordered Wheel actions, execute its existing
+        // collection between the pointer and keyboard portions of this frame.
+        let mut actions = converted.actions.into_iter().peekable();
+        while actions.peek().is_some_and(|action| {
+            !matches!(
+                action,
+                RealAction::Key { .. } | RealAction::TogglePerformance
+            )
+        }) {
+            self.execute_real_action(actions.next().expect("peeked action"), &dims);
         }
         if owner != StreamOwner::Real {
             return;
         }
         self.collect_real_wheel(ctx, pos, screen);
-        self.collect_real_keys(ctx);
+        for action in actions {
+            self.execute_real_action(action, &dims);
+        }
     }
 
     /// Ordered execution only; #175 replaces the remaining pointer handoff.
     fn execute_real_action(&mut self, action: RealAction, dims: &Dims) {
         let input = match action {
+            RealAction::Key { key, ctrl, shift } => {
+                self.pending.push(Input::Key {
+                    key: key.into(),
+                    ctrl,
+                    shift,
+                });
+                return;
+            }
+            RealAction::TogglePerformance => {
+                self.show_performance = !self.show_performance;
+                return;
+            }
             RealAction::Press(x, y) => {
                 if self.chrome_press(x, y) {
                     return;
@@ -1127,44 +1166,6 @@ impl Viewer {
                 dy: (wheel.y / 50.0) as f64,
                 ctrl: false,
                 shift: false,
-            });
-        }
-    }
-
-    /// Existing keyboard collection; #177 owns this independent migration.
-    fn collect_real_keys(&mut self, ctx: &egui::Context) {
-        let keys: Vec<egui::Key> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Key {
-                        key, pressed: true, ..
-                    } => Some(*key),
-                    _ => None,
-                })
-                .collect()
-        });
-        let (ctrl, shift) = ctx.input(|i| (i.modifiers.ctrl, i.modifiers.shift));
-        // A focused rename field owns the keyboard (the search box routes its
-        // own keys through search_key).
-        let keys = if ctx.text_edit_focused() && !self.search.active {
-            Vec::new()
-        } else {
-            keys
-        };
-        for key in keys {
-            if key == egui::Key::F3 {
-                self.show_performance = !self.show_performance;
-                continue;
-            }
-            let name = key_name(key);
-            if name.is_empty() {
-                continue;
-            }
-            self.pending.push(Input::Key {
-                key: name.into(),
-                ctrl,
-                shift,
             });
         }
     }
