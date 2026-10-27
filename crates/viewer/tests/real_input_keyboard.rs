@@ -123,6 +123,7 @@ fn known_keys_keep_names_modifiers_and_order_after_pointer_actions() {
     assert_eq!(
         result.actions,
         vec![
+            Action::ChromePress(25.0, 30.0),
             Action::Press(25.0, 30.0),
             Action::Key {
                 key: "r",

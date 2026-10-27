@@ -26,7 +26,10 @@ fn ordinary_press_uses_view_units_and_preserves_modifiers() {
             shift: true
         }
     );
-    assert_eq!(result.actions, vec![Action::Press(25.0, 30.0)]);
+    assert_eq!(
+        result.actions,
+        vec![Action::ChromePress(25.0, 30.0), Action::Press(25.0, 30.0)]
+    );
 }
 
 #[test]
@@ -77,6 +80,7 @@ fn ordinary_pointer_capture_and_canvas_edges_select_one_action() {
             capture: Capture {
                 ordinary: captured,
                 dragging: false,
+                ..Capture::default()
             },
             ..Frame::default()
         });
@@ -100,19 +104,14 @@ fn drag_capture_bypasses_ordinary_capture_and_release_follows_pointer_action() {
         capture: Capture {
             ordinary: true,
             dragging: true,
+            ..Capture::default()
         },
         ..Frame::default()
     });
     assert_eq!(
         result.actions,
         vec![
-            Action::LegacyPointer {
-                x: 25.0,
-                y: 30.0,
-                double: false,
-                pressed: false,
-                down: true
-            },
+            Action::Drag(25.0, 30.0),
             Action::ReleaseCandidate(25.0, 30.0)
         ]
     );

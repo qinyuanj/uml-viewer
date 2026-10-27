@@ -14,14 +14,14 @@ use std::time::{Duration, Instant};
 use edn::Value;
 use eframe::egui;
 use egui::{FontFamily, FontId, ViewportCommand};
-use scene::{Dims, Rect, ZOOM_STEP};
+use scene::{Dims, Rect};
 
 use crate::bench;
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
 use crate::gui::{Action, Gui};
 use crate::real_input::{
-    self, Action as RealAction, Capture, Frame, Modifiers, Pointer, StreamOwner,
+    self, Action as RealAction, Capture, Frame, Modifiers, Pointer, StreamOwner, Wheel,
 };
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
@@ -931,16 +931,15 @@ impl Viewer {
         }
     }
 
-    /// Undecorated fallback: the top strip drags, the edges resize. Returns
-    /// true when the press was consumed by a window region.
-    fn window_chrome_input(&mut self, ctx: &egui::Context) -> bool {
+    /// Geometry remains host-owned; Some(None) is the window drag strip.
+    fn window_chrome_hit(
+        &self,
+        ctx: &egui::Context,
+    ) -> Option<Option<egui::viewport::ResizeDirection>> {
         if self.decorated || self.driver.is_some() {
-            return false;
+            return None;
         }
-        let Some(pointer) = ctx.input(|i| i.pointer.hover_pos()) else {
-            return false;
-        };
-        let pressed = ctx.input(|i| i.pointer.primary_pressed());
+        let pointer = ctx.input(|i| i.pointer.hover_pos())?;
         let screen = ctx.content_rect();
         let direction = if pointer.y <= screen.min.y + RESIZE_GRIP {
             if pointer.x <= screen.min.x + RESIZE_GRIP * 3.0 {
@@ -965,13 +964,24 @@ impl Viewer {
         } else if window_controls(screen).iter().any(|r| r.contains(pointer)) {
             // The minimise/close buttons take the press (egui sees it); the
             // canvas and the drag must not.
-            return true;
+            return Some(None);
         } else if pointer.y <= screen.min.y + DRAG_STRIP {
             None
         } else {
+            return None;
+        };
+        Some(direction)
+    }
+
+    fn window_chrome_input(&mut self, ctx: &egui::Context) -> bool {
+        let Some(direction) = self.window_chrome_hit(ctx) else {
             return false;
         };
-        if pressed {
+        let pointer = ctx.input(|i| i.pointer.hover_pos()).unwrap();
+        let controls = window_controls(ctx.content_rect())
+            .iter()
+            .any(|r| r.contains(pointer));
+        if !controls && ctx.input(|i| i.pointer.primary_pressed()) {
             match direction {
                 Some(direction) => ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction)),
                 None => ctx.send_viewport_cmd(ViewportCommand::StartDrag),
@@ -1020,6 +1030,25 @@ impl Viewer {
                 down,
             },
             modifiers: Modifiers { ctrl, shift },
+            wheel: ctx.input(|i| Wheel {
+                zoom: i.zoom_delta() as f64,
+                scroll: [
+                    i.smooth_scroll_delta.x as f64,
+                    i.smooth_scroll_delta.y as f64,
+                ],
+                over_search: pos.is_some_and(|p| {
+                    self.search
+                        .captures((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64)
+                }),
+                over_gui: pos.is_some_and(|p| {
+                    self.gui.captures(
+                        (p.x - screen.min.x) as f64,
+                        (p.y - screen.min.y) as f64,
+                        screen.width() as f64,
+                    )
+                }),
+                over_card: self.gui.card_hovered(),
+            }),
             keys: ctx.input(|i| {
                 i.events
                     .iter()
@@ -1040,6 +1069,7 @@ impl Viewer {
             capture: Capture {
                 ordinary,
                 dragging: self.session.state().drag.is_some(),
+                window_chrome: self.window_chrome_hit(ctx).is_some(),
             },
         };
         let converted = real_input::convert(&frame);
@@ -1047,27 +1077,12 @@ impl Viewer {
         let mut dims = self.dims(ctx);
         dims.control = converted.modifiers.ctrl;
         dims.shift = converted.modifiers.shift;
-        // Until #176 supplies ordered Wheel actions, execute its existing
-        // collection between the pointer and keyboard portions of this frame.
-        let mut actions = converted.actions.into_iter().peekable();
-        while actions.peek().is_some_and(|action| {
-            !matches!(
-                action,
-                RealAction::Key { .. } | RealAction::TogglePerformance
-            )
-        }) {
-            self.execute_real_action(actions.next().expect("peeked action"), &dims);
-        }
-        if owner != StreamOwner::Real {
-            return;
-        }
-        self.collect_real_wheel(ctx, pos, screen);
-        for action in actions {
+        for action in converted.actions {
             self.execute_real_action(action, &dims);
         }
     }
 
-    /// Ordered execution only; #175 replaces the remaining pointer handoff.
+    /// Execute in order; release observes state after the preceding actions.
     fn execute_real_action(&mut self, action: RealAction, dims: &Dims) {
         let input = match action {
             RealAction::Key { key, ctrl, shift } => {
@@ -1082,24 +1097,32 @@ impl Viewer {
                 self.show_performance = !self.show_performance;
                 return;
             }
-            RealAction::Press(x, y) => {
-                if self.chrome_press(x, y) {
-                    return;
+            RealAction::Wheel {
+                dx,
+                dy,
+                ctrl,
+                shift,
+            } => {
+                self.pending.push(Input::Wheel {
+                    dx,
+                    dy,
+                    ctrl,
+                    shift,
+                });
+                return;
+            }
+            RealAction::Press(x, y) => Canvas::Press(x, y),
+            RealAction::DoublePress(x, y) => Canvas::DoublePress(x, y),
+            RealAction::Drag(x, y) => Canvas::Drag(x, y),
+            RealAction::ChromePress(x, y) => {
+                let ctx = self.ctx.clone();
+                if !self.window_chrome_input(&ctx) {
+                    self.chrome_press(x, y);
                 }
-                Canvas::Press(x, y)
+                return;
             }
             RealAction::Move(x, y) => Canvas::Move(x, y),
             RealAction::Leave => Canvas::Leave,
-            RealAction::LegacyPointer {
-                x,
-                y,
-                double,
-                pressed,
-                down,
-            } => {
-                self.legacy_real_pointer(x, y, double, pressed, down, dims);
-                return;
-            }
             RealAction::ReleaseCandidate(x, y) => {
                 if self.session.state().drag.is_none() {
                     return;
@@ -1108,66 +1131,6 @@ impl Viewer {
             }
         };
         self.canvas(input, dims.clone());
-    }
-
-    /// Unmigrated double/drag/chrome behavior, kept for the #175 slice.
-    fn legacy_real_pointer(
-        &mut self,
-        x: f64,
-        y: f64,
-        double: bool,
-        pressed: bool,
-        down: bool,
-        dims: &Dims,
-    ) {
-        if (pressed || double) && self.chrome_press(x, y) {
-            return;
-        }
-        let input = if double {
-            Canvas::DoublePress(x, y)
-        } else if pressed {
-            Canvas::Press(x, y)
-        } else if down && self.session.state().drag.is_some() {
-            Canvas::Drag(x, y)
-        } else {
-            return;
-        };
-        self.canvas(input, dims.clone());
-    }
-
-    /// Existing wheel collection; #176 owns this independent migration.
-    fn collect_real_wheel(
-        &mut self,
-        ctx: &egui::Context,
-        pos: Option<egui::Pos2>,
-        screen: egui::Rect,
-    ) {
-        let over_search = pos.is_some_and(|p| {
-            let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
-            self.search.captures(x, y)
-                || (self.gui.captures(x, y, self.window_w) && !self.gui.card_hovered())
-        });
-        // egui turns ctrl+wheel into a zoom factor; convert it back to wheel
-        // notches so the canvas zooms by ZOOM_STEP^notches at the cursor.
-        let zoom = ctx.input(|i| i.zoom_delta()) as f64;
-        if zoom != 1.0 && zoom > 0.0 && !over_search {
-            self.pending.push(Input::Wheel {
-                dx: 0.0,
-                dy: zoom.ln() / ZOOM_STEP.ln(),
-                ctrl: true,
-                shift: false,
-            });
-        }
-        let wheel = ctx.input(|i| i.smooth_scroll_delta);
-        if wheel != egui::Vec2::ZERO && !over_search {
-            self.pending.push(Input::Wheel {
-                dx: wheel.x as f64,
-                // egui reports points; LOVE wheelmoved reports notches.
-                dy: (wheel.y / 50.0) as f64,
-                ctrl: false,
-                shift: false,
-            });
-        }
     }
 }
 
@@ -1332,7 +1295,7 @@ impl eframe::App for Viewer {
 
         // Real input (unless a driver owns the stream).
         self.collect_real_input(ctx);
-        let chrome_consumed = self.window_chrome_input(ctx);
+        let chrome_consumed = self.window_chrome_hit(ctx).is_some();
         if !chrome_consumed {
             let pending = std::mem::take(&mut self.pending);
             for input in pending {
