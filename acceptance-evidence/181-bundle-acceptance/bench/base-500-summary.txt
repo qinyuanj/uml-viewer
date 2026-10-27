@@ -1,0 +1,14 @@
+{:stack "uml-viewer egui/eframe 0.37 wgpu (#139/#143)" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync "eframe default (AutoVsync)" :dpi 1 :view-w 1500 :view-h 920 :scene-w 8298.198994391038 :scene-h 13742 :fit-zoom 0.06694804249745306 :classes 500 :edges 1617 :packages 5 :commit "556da7446373b601d3e4c4d2d1e2963cbbcf275b" :dirty false :load-1m-start 1.91 :load-1m-end 1.71 :load-1m-max 2 :load-wait-s 130}
+phase=idle frames=1 fps=24.53 mean_ms=40.77 median_ms=40.77 p95_ms=40.77 p99_ms=40.77 max_ms=40.77 cpu_pct=0.40 app_cpu_ms_p95=36.63 zoom=-..-
+phase=pan-detail frames=216 fps=21.57 mean_ms=46.35 median_ms=45.42 p95_ms=54.42 p99_ms=61.09 max_ms=65.23 cpu_pct=83.70 app_cpu_ms_p95=49.45 zoom=1.00..1.00
+phase=zoom-detail frames=214 fps=21.38 mean_ms=46.76 median_ms=46.09 p95_ms=55.48 p99_ms=58.71 max_ms=59.09 cpu_pct=83.54 app_cpu_ms_p95=50.04 zoom=0.50..2.00
+phase=pan-fit frames=216 fps=21.51 mean_ms=46.50 median_ms=45.64 p95_ms=54.02 p99_ms=59.80 max_ms=69.74 cpu_pct=84.34 app_cpu_ms_p95=47.58 zoom=0.07..0.07
+phase=zoom-fit frames=213 fps=21.22 mean_ms=47.12 median_ms=46.27 p95_ms=55.66 p99_ms=59.59 max_ms=63.28 cpu_pct=83.99 app_cpu_ms_p95=49.65 zoom=0.07..0.27
+criterion name="renderer contains D3D12 (otherwise the run is void)" pass=true detail=D3D12 (NVIDIA GeForce GTX 1080 Ti)
+criterion name="idle CPU <= 2%" pass=true detail=cpu_pct=0.40
+criterion name="pan-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=21.57 >= 58 && p95_ms=54.42 <= 18.3
+criterion name="zoom-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=21.38 >= 58 && p95_ms=55.48 <= 18.3
+criterion name="pan-fit fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=21.51 >= 58 && p95_ms=54.02 <= 18.3
+criterion name="zoom-fit fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=21.22 >= 58 && p95_ms=55.66 <= 18.3
+provenance commit=556da7446373b601d3e4c4d2d1e2963cbbcf275b dirty=false load_1m_start=1.91 load_1m_end=1.71 load_1m_max=2 load_wait_s=130.00
+verdict=FAIL

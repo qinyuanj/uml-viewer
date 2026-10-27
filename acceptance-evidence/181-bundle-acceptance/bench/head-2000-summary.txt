@@ -1,0 +1,15 @@
+{:stack "uml-viewer egui/eframe 0.37 wgpu (#139/#143)" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync "eframe default (AutoVsync)" :dpi 1 :view-w 1500 :view-h 920 :scene-w 14606.344350539897 :scene-h 29034.920749557165 :fit-zoom 0.03168598281825969 :classes 2000 :edges 6495 :packages 10 :commit "7085cb9229c83a7bef733a767e0d4bc92065cd9d" :dirty false :load-1m-start 1.79 :load-1m-end 3.49 :load-1m-max 2 :load-wait-s 50}
+phase=idle frames=1 fps=7.22 mean_ms=138.53 median_ms=138.53 p95_ms=138.53 p99_ms=138.53 max_ms=138.53 cpu_pct=0.50 app_cpu_ms_p95=133.91 zoom=-..-
+phase=pan-detail frames=59 fps=5.74 mean_ms=174.15 median_ms=157.12 p95_ms=285.11 p99_ms=325.18 max_ms=325.18 cpu_pct=93.72 app_cpu_ms_p95=260.96 zoom=1.00..1.00
+phase=zoom-detail frames=47 fps=4.65 mean_ms=214.90 median_ms=210.82 p95_ms=253.40 p99_ms=263.87 max_ms=263.87 cpu_pct=95.15 app_cpu_ms_p95=248.99 zoom=0.50..1.99
+phase=pan-fit frames=56 fps=5.55 mean_ms=180.13 median_ms=174.94 p95_ms=202.36 p99_ms=220.86 max_ms=220.86 cpu_pct=96.16 app_cpu_ms_p95=193.99 zoom=0.03..0.03
+phase=zoom-fit frames=61 fps=6.01 mean_ms=166.36 median_ms=165.75 p95_ms=179.35 p99_ms=200.31 max_ms=200.31 cpu_pct=95.29 app_cpu_ms_p95=170.11 zoom=0.03..0.13
+criterion name="renderer contains D3D12 (otherwise the run is void)" pass=true detail=D3D12 (NVIDIA GeForce GTX 1080 Ti)
+criterion name="idle CPU <= 2%" pass=true detail=cpu_pct=0.50
+criterion name="pan-detail p95 <= 33.3ms" pass=false detail=p95_ms=285.11 <= 33.3
+criterion name="zoom-detail p95 <= 33.3ms" pass=false detail=p95_ms=253.40 <= 33.3
+criterion name="pan-fit p95 <= 33.3ms" pass=false detail=p95_ms=202.36 <= 33.3
+criterion name="zoom-fit p95 <= 33.3ms" pass=false detail=p95_ms=179.35 <= 33.3
+provenance commit=7085cb9229c83a7bef733a767e0d4bc92065cd9d dirty=false load_1m_start=1.79 load_1m_end=3.49 load_1m_max=2 load_wait_s=50.00
+void reason=1-min load at end 3.49 > max 2
+verdict=VOID

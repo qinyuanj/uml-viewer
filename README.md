@@ -447,6 +447,18 @@ ADR 0008 的 `1e-6` parity 约束固定迁移时的**基础路由**，不是永�
 前后人工对照；这些结果不证明大量平行线束性能及全视图生命周期已验收。当前线束只识别
 精确共线的已有基础通道，参与成员使用显式折线分支；未参与的边保持基础曲线。
 
+#179 起，同方向、同违规样式且两端都有 level 的普通依赖，也可以并入偏移不超过 48 px 的
+近邻平行通道（每个主干最多 12 个成员）；类框、组件标题或 ports 部分遮挡，或者会新增交叉时，
+保留基础路由。
+
+#181 的组合验收见 `acceptance-evidence/181-bundle-acceptance/README.md`。
+`crates/viewer/tests/bundle_acceptance.rs` 在 `fixtures/bundle_acceptance.ir.edn` 的每个当前视图上
+检查逻辑边、端点、头部、命中、悬停、依赖链和违规样式；
+`python3 -I scripts/run_viewer_driver.py bundle_acceptance` 在真实窗口重放同一组合。
+`bench_scene` 要求计时场景产生非空主干，并用不成线束的关联孪生场景限制平行边规划开销。
+真实窗口性能协议在基线和本实现上都判为 FAIL，阈值未改；fs-monopoly 前后截图中端点不变，
+但视觉拥挤没有明显改善。
+
 ### Linux / WSL2
 
 Linux is the primary delivery path, exercised through WSL2 + Ubuntu 24.04 +

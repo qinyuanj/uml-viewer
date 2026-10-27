@@ -1,0 +1,14 @@
+{:stack "uml-viewer egui/eframe 0.37 wgpu (#139/#143)" :renderer "D3D12 (NVIDIA GeForce GTX 1080 Ti)" :backend "Gl" :driver "" :driver-info "4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.2" :gallium-driver "d3d12" :wgpu-backend "gl" :vsync "eframe default (AutoVsync)" :dpi 1 :view-w 1500 :view-h 920 :scene-w 8298.198994391038 :scene-h 13742 :fit-zoom 0.06694804249745306 :classes 500 :edges 1617 :packages 5 :commit "7085cb9229c83a7bef733a767e0d4bc92065cd9d" :dirty false :load-1m-start 1.94 :load-1m-end 1.52 :load-1m-max 2 :load-wait-s 165}
+phase=idle frames=1 fps=18.27 mean_ms=54.72 median_ms=54.72 p95_ms=54.72 p99_ms=54.72 max_ms=54.72 cpu_pct=3.90 app_cpu_ms_p95=11.97 zoom=-..-
+phase=pan-detail frames=192 fps=19.14 mean_ms=52.23 median_ms=51.20 p95_ms=62.07 p99_ms=75.48 max_ms=78.85 cpu_pct=83.96 app_cpu_ms_p95=55.54 zoom=1.00..1.00
+phase=zoom-detail frames=186 fps=18.55 mean_ms=53.89 median_ms=52.20 p95_ms=64.89 p99_ms=97.51 max_ms=158.68 cpu_pct=83.40 app_cpu_ms_p95=59.22 zoom=0.50..2.00
+phase=pan-fit frames=203 fps=20.25 mean_ms=49.38 median_ms=48.83 p95_ms=55.45 p99_ms=60.82 max_ms=71.90 cpu_pct=84.30 app_cpu_ms_p95=49.87 zoom=0.07..0.07
+phase=zoom-fit frames=184 fps=18.36 mean_ms=54.48 median_ms=53.48 p95_ms=65.69 p99_ms=109.14 max_ms=118.59 cpu_pct=84.10 app_cpu_ms_p95=58.87 zoom=0.07..0.27
+criterion name="renderer contains D3D12 (otherwise the run is void)" pass=true detail=D3D12 (NVIDIA GeForce GTX 1080 Ti)
+criterion name="idle CPU <= 2%" pass=false detail=cpu_pct=3.90
+criterion name="pan-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=19.14 >= 58 && p95_ms=62.07 <= 18.3
+criterion name="zoom-detail fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=18.55 >= 58 && p95_ms=64.89 <= 18.3
+criterion name="pan-fit fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=20.25 >= 58 && p95_ms=55.45 <= 18.3
+criterion name="zoom-fit fps >= 58 && p95 <= 18.3ms" pass=false detail=fps=18.36 >= 58 && p95_ms=65.69 <= 18.3
+provenance commit=7085cb9229c83a7bef733a767e0d4bc92065cd9d dirty=false load_1m_start=1.94 load_1m_end=1.52 load_1m_max=2 load_wait_s=165.00
+verdict=FAIL
