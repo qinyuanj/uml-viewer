@@ -225,9 +225,152 @@ fn ports(c: &mut Value) {
     put(c, "out-ports", Value::Vector(op));
 }
 
+/// How `place` orders the classes inside each rank.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RankOrder {
+    /// The barycentric sweeps alone: the migration geometry the historical
+    /// JVM/Lua and route goldens pin.
+    Base,
+    /// The barycentric order, then the least sum of dependency spans (#183).
+    #[default]
+    Span,
+}
+
+/// Across gap between neighbouring classes of one rank.
+const GAP: f64 = 40.0;
+/// Improvement passes over every rank, and work units per class or edge:
+/// each slot a scan passes costs one unit plus the edges it re-measures, and
+/// each accepted move costs its rank's length, so the search stays linear in
+/// the view whatever its shape.
+const SPAN_PASSES: usize = 8;
+const SPAN_WORK: usize = 400;
+
+/// Reorder each rank (`orders`, class indices) for the least sum over
+/// `edges` of the across distance between class centres. A centre is the
+/// rank's `offset` plus the sizes and gaps before it plus its own `mid`
+/// (where the drawn box centre sits inside its slot). Each step moves one
+/// class to its best slot in its rank, found as a chain of neighbour swaps;
+/// only strict gains move, so equal costs keep the incoming order.
+fn span_order(
+    orders: &mut [Vec<usize>],
+    size: &[f64],
+    mid: &[f64],
+    offset: &[f64],
+    edges: &[(usize, usize)],
+) {
+    let n = size.len();
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for &(f, t) in edges {
+        if f != t {
+            adj[f].push(t);
+            adj[t].push(f);
+        }
+    }
+    let mut x = vec![0.0; n];
+    for (xs, at) in orders.iter().zip(offset) {
+        spread(xs, size, mid, *at, &mut x);
+    }
+    let mut budget = SPAN_WORK * (n + edges.len());
+    for _ in 0..SPAN_PASSES {
+        let mut improved = false;
+        for (xs, at) in orders.iter_mut().zip(offset) {
+            for i in 0..xs.len() {
+                let Some(j) = best_slot(xs, i, size, &adj, &mut x, &mut budget) else {
+                    if budget == 0 {
+                        return;
+                    }
+                    continue;
+                };
+                if xs.len() > budget {
+                    return;
+                }
+                budget -= xs.len();
+                let id = xs.remove(i);
+                xs.insert(j, id);
+                spread(xs, size, mid, *at, &mut x);
+                improved = true;
+            }
+        }
+        if !improved {
+            return;
+        }
+    }
+}
+
+/// Centres of one rank's classes laid out from `at`.
+fn spread(xs: &[usize], size: &[f64], mid: &[f64], mut at: f64, x: &mut [f64]) {
+    for &id in xs {
+        x[id] = at + mid[id];
+        at += size[id] + GAP;
+    }
+}
+
+/// The slot that most lowers the span when `xs[i]` moves there, if any.
+/// `x` is restored before returning; `budget` runs out mid-scan to `None`.
+fn best_slot(
+    xs: &[usize],
+    i: usize,
+    size: &[f64],
+    adj: &[Vec<usize>],
+    x: &mut [f64],
+    budget: &mut usize,
+) -> Option<usize> {
+    let a = xs[i];
+    let home = x[a];
+    let mut best: Option<(usize, f64)> = None;
+    for step in [1isize, -1] {
+        let mut gain = 0.0;
+        let mut k = i as isize + step;
+        while k >= 0 && (k as usize) < xs.len() {
+            let b = xs[k as usize];
+            let cost = 1 + adj[a].len() + adj[b].len();
+            if cost > *budget {
+                *budget = 0;
+                restore(xs, i, k, size, home, x);
+                return None;
+            }
+            *budget -= cost;
+            let s = step as f64;
+            let (na, nb) = (x[a] + s * (size[b] + GAP), x[b] - s * (size[a] + GAP));
+            let moved = |me: f64, to: f64, other: usize, x: &[f64]| {
+                adj[other]
+                    .iter()
+                    .filter(|&&o| o != a && o != b)
+                    .map(|&o| (to - x[o]).abs() - (me - x[o]).abs())
+                    .sum::<f64>()
+            };
+            gain += moved(x[a], na, a, x) + moved(x[b], nb, b, x);
+            x[a] = na;
+            x[b] = nb;
+            if gain < best.map_or(-1e-9, |(_, g)| g - 1e-9) {
+                best = Some((k as usize, gain));
+            }
+            k += step;
+        }
+        restore(xs, i, k, size, home, x);
+    }
+    best.map(|(j, _)| j)
+}
+
+/// Undo a scan of `xs[i]` that stopped before slot `k`.
+fn restore(xs: &[usize], i: usize, k: isize, size: &[f64], home: f64, x: &mut [f64]) {
+    let a = xs[i];
+    let (lo, hi) = if k > i as isize {
+        (i + 1, k as usize)
+    } else {
+        ((k + 1) as usize, i)
+    };
+    let back = if k > i as isize { 1.0 } else { -1.0 };
+    for &b in &xs[lo..hi] {
+        x[b] += back * (size[a] + GAP);
+    }
+    x[a] = home;
+}
+
 /// Rank classes by dependency depth and place them in rank columns/rows
-/// (Lua `place`). Positions are multiples of 80 with barycentric sweeps.
-fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
+/// (Lua `place`). Positions are multiples of 80 with barycentric sweeps;
+/// `order` may then rearrange each rank (see [`RankOrder`]).
+fn place(classes: &[Value], edges: &[Value], direction: &str, order: RankOrder) -> Vec<Value> {
     use std::collections::HashMap;
     let mut cs: Vec<Value> = Vec::with_capacity(classes.len());
     let mut ids: Vec<String> = Vec::with_capacity(classes.len());
@@ -235,6 +378,7 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
     let mut out_edges: HashMap<String, Vec<String>> = HashMap::new();
     let mut nbr: HashMap<String, Vec<String>> = HashMap::new();
     let mut high: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
     for (i, c) in classes.iter().enumerate() {
         let packed = pack(c);
         let id = edn::encode(get(&packed, "id").unwrap()).unwrap();
@@ -250,6 +394,9 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
         if !idx.contains_key(&f) || !idx.contains_key(&t) {
             continue;
         }
+        // Every relation between placed classes counts toward the span,
+        // whatever its kind, like the barycentric neighbours.
+        pairs.push((idx[&f], idx[&t]));
         if !nbr[&f].contains(&t) {
             nbr.get_mut(&f).unwrap().push(t.clone());
         }
@@ -362,16 +509,61 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
             }
         }
     }
+    let mut orders: Vec<Vec<String>> = keys
+        .iter()
+        .map(|r| ordered(&groups[&rank_key(*r)], &pos))
+        .collect();
+    let dim = |id: &str, k: &str| num(get(&cs[idx[id]], k).unwrap()).unwrap();
+    let colh = |xs: &[String]| {
+        xs.iter().map(|id| dim(id, "h")).sum::<f64>() + GAP * xs.len().saturating_sub(1) as f64
+    };
+    if order == RankOrder::Span {
+        let total = orders.iter().map(|xs| colh(xs)).fold(0.0, f64::max);
+        let offset: Vec<f64> = orders
+            .iter()
+            .map(|xs| {
+                if horizontal {
+                    (total - colh(xs)) / 2.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let size: Vec<f64> = ids
+            .iter()
+            .map(|id| dim(id, if horizontal { "h" } else { "w" }))
+            .collect();
+        // The drawn rect is centred across a tb slot; in lr/rl it starts
+        // below the in-ports.
+        let mid: Vec<f64> = ids
+            .iter()
+            .map(|id| {
+                if horizontal {
+                    dim(id, "in-space") + dim(id, "content-h") / 2.0
+                } else {
+                    dim(id, "w") / 2.0
+                }
+            })
+            .collect();
+        let mut by_index: Vec<Vec<usize>> = orders
+            .iter()
+            .map(|xs| xs.iter().map(|id| idx[id]).collect())
+            .collect();
+        span_order(&mut by_index, &size, &mid, &offset, &pairs);
+        orders = by_index
+            .iter()
+            .map(|xs| xs.iter().map(|&i| ids[i].clone()).collect())
+            .collect();
+    }
     let mut gs: Vec<(f64, Vec<String>, f64, f64, f64)> = Vec::new();
     let mut total_h: f64 = 0.0;
-    for r in &keys {
-        let xs = ordered(&groups[&rank_key(*r)], &pos);
+    for (r, xs) in keys.iter().zip(orders) {
         let (mut w, mut h, mut colh): (f64, f64, f64) = (0.0, 0.0, 0.0);
         for (i, id) in xs.iter().enumerate() {
             let c = &cs[idx[id]];
             w = w.max(num(get(c, "w").unwrap()).unwrap());
             h = h.max(num(get(c, "h").unwrap()).unwrap());
-            colh += num(get(c, "h").unwrap()).unwrap() + if i > 0 { 40.0 } else { 0.0 };
+            colh += num(get(c, "h").unwrap()).unwrap() + if i > 0 { GAP } else { 0.0 };
         }
         gs.push((*r, xs, w, h, colh));
         total_h = total_h.max(colh);
@@ -411,7 +603,7 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
             );
             put(&mut c, "rank", numval(*rank));
             result.push(c);
-            across += (if horizontal { ch } else { cw }) + 40.0;
+            across += (if horizontal { ch } else { cw }) + GAP;
         }
         along += (if horizontal { *gw } else { *gh }) + 140.0;
     }
@@ -426,7 +618,7 @@ fn rank_key(r: f64) -> String {
 
 /// `L.layout`: package rows with pooled quality, then foreign ovals to the
 /// right of the package bounding box.
-pub fn layout(diagram: &Value) -> Value {
+pub fn layout(diagram: &Value, order: RankOrder) -> Value {
     let mut pkgs: Vec<Value> = Vec::new();
     let mut classes: Vec<Value> = Vec::new();
     let mut y = 40.0;
@@ -441,6 +633,7 @@ pub fn layout(diagram: &Value) -> Value {
             &get(diagram, "direction")
                 .map(geom::name)
                 .unwrap_or_else(|| "tb".into()),
+            order,
         );
         let mut rects: Vec<Rect> = Vec::new();
         let mut real: Vec<Value> = Vec::new();

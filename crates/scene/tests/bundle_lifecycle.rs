@@ -4,14 +4,19 @@ use edn::record::{get, seq};
 use scene::{document, events};
 
 const FIXTURE: &str = include_str!("../../../fixtures/bundle_lifecycle.ir.edn");
+/// The fixture pins bundles planned on the base layout, like the historical
+/// goldens: the span order (#183) uncrowds exactly these fan-outs.
 fn state() -> document::ViewState {
-    document::new_state(
-        scene::ir::read_document(FIXTURE).unwrap(),
-        None,
-        None,
-        None,
-        &[],
-        None,
+    document::with_rank_order(
+        document::new_state(
+            scene::ir::read_document(FIXTURE).unwrap(),
+            None,
+            None,
+            None,
+            &[],
+            None,
+        ),
+        scene::RankOrder::Base,
     )
 }
 
@@ -42,7 +47,13 @@ fn kw(s: &str) -> Value {
 }
 
 fn assert_current(s: &document::ViewState) {
-    let compiled = document::compile_view(s.document.as_ref().unwrap(), &[], &s.focus, &s.extra);
+    let compiled = document::compile_view_with(
+        s.document.as_ref().unwrap(),
+        &[],
+        &s.focus,
+        &s.extra,
+        s.rank_order,
+    );
     assert_eq!(
         compiled, s.scene,
         "当前视图独立编译，包含端点、分支、头部与成员顺序"

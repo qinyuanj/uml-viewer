@@ -1,0 +1,16 @@
+   Compiling scene v0.1.0 (/home/lzx/dev/github/uml-viewer/crates/scene)
+    Finished `release` profile [optimized] target(s) in 0.57s
+     Running tests/bench_scene.rs (target/release/deps/bench_scene-99cc52f815f088ff)
+
+running 5 tests
+test many_parallel_dependencies_form_real_trunks_at_a_bounded_planning_cost ... scene: 240 parallel edges 0.070s bundled, 0.046s twin, 1.53x
+ok
+test prepare_scene_scales_near_linearly_from_500_to_2000_classes ... scene: 500-class 0.247s, 2000-class 1.812s, ratio 7.3x (4x data)
+ok
+test the_2000_class_scene_compiles_in_seconds ... scene: 2000-class compile 2.108s (2000 classes, 6495 edges)
+ok
+test the_bench_scenes_load_with_the_expected_size ... ok
+test the_exported_projection_covers_every_bench_class_and_edge ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.66s
+

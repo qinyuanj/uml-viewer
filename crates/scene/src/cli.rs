@@ -11,8 +11,9 @@
 //! without it the scene has no quality overlay, exactly like the parity specs.
 
 use crate::curve;
-use crate::document::compile_view;
+use crate::document::compile_view_with;
 use crate::geom;
+use crate::layout::RankOrder;
 use crate::overlay::Snapshot;
 use edn::Value;
 use edn::record::get;
@@ -28,6 +29,19 @@ const EX_FAILURE: u8 = 1;
 
 /// Geometry projection of one compiled view: the golden view shape.
 pub fn project(doc: &Value, snapshots: Option<&[Snapshot]>, focus: &Value, extra: &Value) -> Value {
+    project_with(doc, snapshots, focus, extra, RankOrder::default())
+}
+
+/// [`project`] with an explicit rank order: the historical JVM/Lua and route
+/// goldens pin the migration geometry of [`RankOrder::Base`], while the
+/// viewer and the `scene` command lay out with the default span order.
+pub fn project_with(
+    doc: &Value,
+    snapshots: Option<&[Snapshot]>,
+    focus: &Value,
+    extra: &Value,
+    order: RankOrder,
+) -> Value {
     let snapshots = snapshots.unwrap_or(&[]);
     let empty = Vec::new();
     let focus_path = match focus {
@@ -35,7 +49,7 @@ pub fn project(doc: &Value, snapshots: Option<&[Snapshot]>, focus: &Value, extra
         Value::Nil => empty,
         _ => empty,
     };
-    let scene = compile_view(doc, snapshots, &focus_path, extra);
+    let scene = compile_view_with(doc, snapshots, &focus_path, extra, order);
     if get(&scene, "sections").is_some() {
         section_projection(&scene, focus)
     } else {

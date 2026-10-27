@@ -17,14 +17,19 @@ fn kw(s: &str) -> Value {
     Value::keyword(s)
 }
 
+/// The fixture pins bundles planned on the base layout, like the historical
+/// goldens: the span order (#183) uncrowds exactly these fan-outs.
 fn state() -> ViewState {
-    document::new_state(
-        scene::ir::read_document(FIXTURE).unwrap(),
-        None,
-        None,
-        None,
-        &[],
-        None,
+    document::with_rank_order(
+        document::new_state(
+            scene::ir::read_document(FIXTURE).unwrap(),
+            None,
+            None,
+            None,
+            &[],
+            None,
+        ),
+        scene::RankOrder::Base,
     )
 }
 

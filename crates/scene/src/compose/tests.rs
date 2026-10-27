@@ -3,6 +3,7 @@
 
 use crate::compose::{compile_diagram, compile_document};
 use crate::geom::{self, Rect};
+use crate::layout::RankOrder;
 use edn::{Value, parse};
 
 fn seq<'a>(v: &'a Value, key: &str) -> &'a [Value] {
@@ -16,7 +17,7 @@ fn seq<'a>(v: &'a Value, key: &str) -> &'a [Value] {
 fn stacks_flat_diagrams_with_qualified_endpoints_and_prepared_strokes() {
     let s = compile_document(&parse(
         "{:title \"D\" :diagrams [{:packages [{:id :p :label \"P\" :classes [{:id :a} {:id :b}]}] :edges [{:from :a :to :b}]} {:packages [{:id :p :label \"P\" :classes [{:id :a} {:id :b}]}] :edges [{:from :a :to :b}]}]}",
-    ).unwrap());
+    ).unwrap(), RankOrder::Span);
     assert_eq!(2, seq(&s, "sections").len());
     let edges = seq(&s, "edges");
     assert_eq!(2, edges.len());
@@ -38,7 +39,7 @@ fn stacks_flat_diagrams_with_qualified_endpoints_and_prepared_strokes() {
 fn hide_edges_replaces_strokes_with_incoming_and_outgoing_indicators() {
     let s = compile_diagram(&parse(
         "{:hide-edges true :packages [{:id :p :label \"P\" :classes [{:id :a :name \"A\"} {:id :b :name \"B\"}]}] :edges [{:from :a :to :b :kind :dependency :violating true}]}",
-    ).unwrap());
+    ).unwrap(), RankOrder::Span);
     let indicators = seq(&s, "dep-indicators");
     assert_eq!(2, indicators.len());
     for ind in indicators {
@@ -53,7 +54,7 @@ fn hide_edges_is_a_lua_truthy_flag() {
     let compiled = |hide: &str| {
         compile_diagram(&parse(&format!(
             "{{{hide} :packages [{{:id :p :label \"P\" :classes [{{:id :a :name \"A\"}} {{:id :b :name \"B\"}}]}}] :edges [{{:from :a :to :b :kind :dependency}}]}}"
-        )).unwrap())
+        )).unwrap(), RankOrder::Span)
     };
     for hide in ["", ":hide-edges false", ":hide-edges nil"] {
         let s = compiled(hide);
@@ -70,7 +71,7 @@ fn prepare_scene_clips_strokes_around_a_wall() {
     // hidden middle never hits.
     let s = compile_diagram(&parse(
         "{:packages [{:id :p :label \"P\" :classes [{:id :a} {:id :wall} {:id :b}]}] :edges [{:from :a :to :b :kind :dependency}]}",
-    ).unwrap());
+    ).unwrap(), RankOrder::Span);
     let edges = seq(&s, "edges");
     assert_eq!(1, edges.len());
     let strokes = seq(&edges[0], "strokes");
@@ -102,6 +103,7 @@ fn single_diagram_document_compiles_through_the_same_path() {
     let s = compile_document(
         &parse("{:title \"Solo\" :packages [{:id :p :label \"P\" :classes [{:id :a}]}] :edges []}")
             .unwrap(),
+        RankOrder::Span,
     );
     assert_eq!(1, seq(&s, "sections").len());
     assert_eq!(1, seq(&s, "classes").len());
@@ -144,7 +146,7 @@ fn dummy_false_lays_out_and_routes_like_an_ordinary_class() {
         compile_diagram(&edn::parse(&format!(
             r#"{{:packages [{{:id :p :label "P" :classes [{{:id :a :name "A" {flag}}} {{:id :wall :name "W"}} {{:id :b :name "B"}}]}}]
                 :edges [{{:from :a :to :b :kind :dependency}} {{:from :b :to :a :kind :dependency}}]}}"#
-        )).unwrap())
+        )).unwrap(), RankOrder::Span)
     };
     let omitted = drawn(&compiled(""));
     let dummy = drawn(&compiled(":dummy? true"));

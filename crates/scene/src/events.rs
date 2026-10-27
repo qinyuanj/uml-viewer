@@ -55,7 +55,7 @@ fn rebuild(mut s: ViewState) -> ViewState {
     if let Some(doc) = s.document.clone()
         && edn::record::flag(&doc, "hierarchical")
     {
-        s.scene = document::compile_view(&doc, &s.snapshots, &s.focus.clone(), &s.extra.clone());
+        s.scene = document::compile_view_with(&doc, &s.snapshots, &s.focus, &s.extra, s.rank_order);
         // Recompiling geometry is not navigation: keep camera/zoom and valid
         // selection targets (ADR 0002).
         s = document::drop_missing_detail(s);
@@ -729,7 +729,13 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
             .iter()
             .map(|p| Value::keyword(p))
             .collect();
-        let candidate = document::compile_view(&doc, &s.snapshots, &parent, &Value::Map(vec![]));
+        let candidate = document::compile_view_with(
+            &doc,
+            &s.snapshots,
+            &parent,
+            &Value::Map(vec![]),
+            s.rank_order,
+        );
         let found = hit::class_by_id(&candidate, id)
             .map(|c| edn::record::flag(c, "drill?"))
             .unwrap_or(false);
@@ -743,7 +749,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
         n.extra
             .assoc(Value::keyword("open-layer"), layer.unwrap_or(Value::Nil));
         let doc = n.document.clone().unwrap();
-        n.scene = document::compile_view(&doc, &n.snapshots, &n.focus.clone(), &n.extra.clone());
+        n.scene = document::compile_view_with(&doc, &n.snapshots, &n.focus, &n.extra, n.rank_order);
         hit::class_by_id(&n.scene, id)
             .map(|c| !edn::record::flag(c, "dummy?") && !edn::record::flag(c, "proposal-group?"))
             .unwrap_or(false)

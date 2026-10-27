@@ -1,5 +1,6 @@
 {:version 1
  :doc "#181：组合验收。跨 rank 主干与违规主干同屏、障碍回退、依赖链、钻取/返回、提案及其下一层、移除箭头。"
+ :rank-order :base
  :steps
  [{:op :wait-frames :n 4}
   {:op :view :zoom 1 :center [380 380]}

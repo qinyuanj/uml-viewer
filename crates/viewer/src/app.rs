@@ -387,13 +387,16 @@ impl Viewer {
         // for (LOVE's `mail` exists in both cases); only the helper process is
         // backend-specific and starts after the first scene, as in LOVE.
         let opened = ViewerSession::open_with_companion(setup.launch);
-        let session = match opened {
+        let mut session = match opened {
             Ok(session) => session,
             Err(error) => {
                 wake_stop.store(true, Ordering::SeqCst);
                 return Err(error);
             }
         };
+        if let Some(script) = &setup.script {
+            session.set_rank_order(script.rank_order);
+        }
         let mut app = Viewer {
             session,
             project_root: setup.project_root.clone(),

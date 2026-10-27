@@ -551,6 +551,9 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Script {
     pub steps: Vec<Step>,
+    /// `:rank-order :base` lays the scene out in the base rank order, for
+    /// fixtures that pin bundles planned on the base layout (#183).
+    pub rank_order: scene::RankOrder,
 }
 
 fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
@@ -606,7 +609,23 @@ impl Script {
         for step in steps {
             out.push(parse_step(step)?);
         }
-        Ok(Script { steps: out })
+        let rank_order = match get(&value, "rank-order") {
+            None => scene::RankOrder::default(),
+            Some(v) => match text(Some(v)).as_deref() {
+                Some("base") => scene::RankOrder::Base,
+                Some("span") => scene::RankOrder::Span,
+                _ => {
+                    return Err(format!(
+                        "driver :rank-order must be :base or :span, got {}",
+                        edn::encode(v).unwrap_or_default()
+                    ));
+                }
+            },
+        };
+        Ok(Script {
+            steps: out,
+            rank_order,
+        })
     }
 
     pub fn load(path: &Path) -> Result<Script, String> {

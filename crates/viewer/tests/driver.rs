@@ -142,6 +142,21 @@ fn parses_every_op_the_ticket_lists() {
 }
 
 #[test]
+fn a_script_may_pin_the_base_rank_order() {
+    let order = |src: &str| Script::parse(src).map(|s| s.rank_order);
+    assert_eq!(Ok(scene::RankOrder::Span), order("{:steps []}"));
+    assert_eq!(
+        Ok(scene::RankOrder::Base),
+        order("{:rank-order :base :steps []}")
+    );
+    assert_eq!(
+        Ok(scene::RankOrder::Span),
+        order("{:rank-order :span :steps []}")
+    );
+    assert!(order("{:rank-order :fanin :steps []}").is_err());
+}
+
+#[test]
 fn replays_inputs_in_order_and_quits_with_the_requested_code() {
     let (evidence, project) = temp("inputs");
     let mut host = FakeHost::default();

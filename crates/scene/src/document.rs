@@ -9,6 +9,7 @@ use crate::compose;
 use crate::geom;
 use crate::hierarchy as H;
 use crate::ir;
+use crate::layout::RankOrder;
 use crate::overlay::{self, Snapshot};
 use edn::Value;
 use edn::record::{get, local_name};
@@ -52,6 +53,18 @@ pub(crate) fn active_proposal_id(proposals: &[Value], extra: &Value) -> Option<V
 /// * `focus` — namespace path keywords (`[]` is the root).
 /// * `extra` — `:proposal-id`, `:proposal`, `:open-layer`, `:declutter`.
 pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra: &Value) -> Value {
+    compile_view_with(doc, snapshots, focus, extra, RankOrder::default())
+}
+
+/// [`compile_view`] with an explicit rank order; [`RankOrder::Base`] is the
+/// migration geometry the historical goldens compare against.
+pub fn compile_view_with(
+    doc: &Value,
+    snapshots: &[Snapshot],
+    focus: &[Value],
+    extra: &Value,
+    order: RankOrder,
+) -> Value {
     let doc = if snapshots.is_empty() {
         doc.clone()
     } else {
@@ -81,9 +94,9 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
             mode = Some(Value::keyword("elements"));
         }
         // Authored ids survive: the viewer selects, clicks and menus by them.
-        return compose::compile_diagram(&H::apply_declutter(&view, mode.as_ref()));
+        return compose::compile_diagram(&H::apply_declutter(&view, mode.as_ref()), order);
     }
-    compose::compile_document(&doc)
+    compose::compile_document(&doc, order)
 }
 
 /// A fresh companion launch shows a blank canvas until the agent sends
@@ -142,6 +155,10 @@ pub struct ViewState {
     pub discussion_context: Option<Value>,
     pub quit_for_restart: bool,
     pub drag: Option<Drag>,
+    /// How every compile of this state orders ranks. Never persisted: only
+    /// tests and driver scripts pin [`RankOrder::Base`] (see
+    /// [`with_rank_order`]).
+    pub rank_order: RankOrder,
 }
 
 /// An in-flight canvas drag (press position, camera at press, moved flag).
@@ -181,6 +198,7 @@ impl Default for ViewState {
             discussion_context: None,
             quit_for_restart: false,
             drag: None,
+            rank_order: RankOrder::default(),
         }
     }
 }
@@ -209,6 +227,18 @@ pub fn new_state(
         scene,
         ..ViewState::default()
     }
+}
+
+/// The state compiled again in `order`, which its later compiles keep.
+pub fn with_rank_order(mut s: ViewState, order: RankOrder) -> ViewState {
+    if s.rank_order == order {
+        return s;
+    }
+    s.rank_order = order;
+    if let Some(doc) = &s.document {
+        s.scene = compile_view_with(doc, &s.snapshots, &s.focus, &s.extra, order);
+    }
+    s
 }
 
 fn scene_classes(scene: &Value) -> &[Value] {
@@ -392,7 +422,7 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
     };
     s.focus = focus;
     s.extra = extra;
-    s.scene = compile_view(&doc, &s.snapshots, &s.focus.clone(), &s.extra.clone());
+    s.scene = compile_view_with(&doc, &s.snapshots, &s.focus, &s.extra, s.rank_order);
     s.cam_x = snap.cam_x;
     s.cam_y = snap.cam_y;
     s.zoom = if snap.zoom == 0.0 { 1.0 } else { snap.zoom };
@@ -440,6 +470,7 @@ pub fn apply_mail(state: &ViewState, cmd: &Value, boundary: &dyn MailBoundary) -
         let Some(loaded) = boundary.load(&path) else {
             return s;
         };
+        let loaded = with_rank_order(loaded, state.rank_order);
         let same = match &state.path {
             Some(old) if !state.waiting => boundary.canonical(old) == boundary.canonical(&path),
             _ => false,
@@ -463,11 +494,12 @@ pub fn apply_mail(state: &ViewState, cmd: &Value, boundary: &dyn MailBoundary) -
                 s.extra.assoc(Value::keyword("proposal-id"), pid);
                 s.extra.assoc(Value::keyword("proposal"), Value::Bool(true));
             }
-            s.scene = compile_view(
+            s.scene = compile_view_with(
                 s.document.as_ref().unwrap(),
                 &s.snapshots,
-                &s.focus.clone(),
-                &s.extra.clone(),
+                &s.focus,
+                &s.extra,
+                s.rank_order,
             );
         }
         s.path = Some(path);

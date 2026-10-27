@@ -1,5 +1,6 @@
 {:version 1
  :doc "#180：含依赖的真实层级视图生命周期。"
+ :rank-order :base
  :steps
  [{:op :wait-frames :n 4}
   {:op :view :zoom 1 :center [360 240]}

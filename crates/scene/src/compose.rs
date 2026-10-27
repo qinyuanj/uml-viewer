@@ -7,6 +7,7 @@
 
 use crate::curve;
 use crate::geom::{self, Rect};
+use crate::layout::RankOrder;
 use edn::Value;
 use edn::record::{flag, get, put, seq};
 use std::collections::HashMap;
@@ -230,8 +231,8 @@ pub fn prepare_scene(scene: &mut Value) {
 
 /// One diagram: layout, route, fit, prepare; `:hide-edges` swaps strokes for
 /// dependency indicators.
-pub fn compile_diagram(diagram: &Value) -> Value {
-    let mut scene = crate::layout::layout(diagram);
+pub fn compile_diagram(diagram: &Value, order: RankOrder) -> Value {
+    let mut scene = crate::layout::layout(diagram, order);
     crate::route::route(&mut scene);
     fit(&mut scene);
     prepare_scene(&mut scene);
@@ -278,7 +279,7 @@ fn prefix_ids(scene: &mut Value, prefix: &str) {
 
 /// A document compiled as one or more sections, stacked vertically with
 /// `d<i>-` id prefixes so the sections cannot collide.
-pub fn compile_document(doc: &Value) -> Value {
+pub fn compile_document(doc: &Value, order: RankOrder) -> Value {
     let (mut sections, mut classes, mut packages, mut edges) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut y = 24.0;
@@ -287,7 +288,7 @@ pub fn compile_document(doc: &Value) -> Value {
         _ => vec![doc.clone()],
     };
     for (i, d) in diagrams.iter().enumerate() {
-        let mut scene = crate::layout::layout(d);
+        let mut scene = crate::layout::layout(d, order);
         crate::route::route(&mut scene);
         fit(&mut scene);
         let h = get(&scene, "size")

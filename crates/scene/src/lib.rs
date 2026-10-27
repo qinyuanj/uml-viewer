@@ -13,7 +13,8 @@
 //!   document);
 //! - `cli`: the headless scene export of the `scene` subcommand (`run`) and
 //!   the goldens (`cli::project`, `cli::edge_curve`), with
-//!   `document::compile_view` as the compile of one view.
+//!   `document::compile_view` as the compile of one view. The `_with`
+//!   variants take a `RankOrder`; the historical goldens use its `Base`.
 //!
 //! The root re-exports the value types (view state, write-back and mail
 //! boundaries, dims, rect, highlight, quality snapshot, search match, zoom
@@ -39,7 +40,7 @@ pub use document::{Boundary, MailBoundary, ViewState, proposals};
 pub use events::{Dims, ZOOM_STEP};
 pub use geom::{Rect, vec2};
 pub use highlight::Highlight;
-pub use layout::{CHAR_W, text_w};
+pub use layout::{CHAR_W, RankOrder, text_w};
 pub use overlay::Snapshot;
 pub use search::Match;
 
