@@ -37,6 +37,23 @@ fn compile(doc: &Value) -> (Duration, Value) {
     (elapsed, scene)
 }
 
+/// The timed compile planned real dependency bundles (#181): a pass cannot
+/// come from every candidate falling back or from an empty trunk list.
+fn assert_real_bundles(scene: &Value) {
+    let edges = edn::record::seq(edn::record::get(scene, "edges"));
+    let bundles = edn::record::seq(edn::record::get(scene, "bundles"));
+    assert!(!bundles.is_empty(), "the bench scene forms trunks");
+    for bundle in bundles {
+        let members = edn::record::seq(edn::record::get(bundle, "members"));
+        assert!(members.len() >= 2, "a trunk is shared");
+        assert!(!edn::record::seq(edn::record::get(bundle, "strokes")).is_empty());
+        for m in members {
+            let e = &edges[edn::record::num(m).unwrap() as usize];
+            assert!(edn::record::get(e, "branches").is_some(), "member branches");
+        }
+    }
+}
+
 #[test]
 fn the_bench_scenes_load_with_the_expected_size() {
     let (_, classes, edges) = scene_of("synthetic-2000.edn");
@@ -61,6 +78,7 @@ fn the_2000_class_scene_compiles_in_seconds() {
     );
     assert_eq!(2000, classes);
     assert!(edges >= 6000);
+    assert_real_bundles(&scene);
     // The Lua baseline was 532 s; allow a wide margin for slow CI machines.
     assert!(
         elapsed < Duration::from_secs(30),
@@ -73,8 +91,8 @@ fn prepare_scene_scales_near_linearly_from_500_to_2000_classes() {
     let (small, _, _) = scene_of("synthetic-500.edn");
     let (large, _, _) = scene_of("synthetic-2000.edn");
     // Warm up both once so allocator/page-cache effects do not dominate.
-    let _ = compile(&small);
-    let _ = compile(&large);
+    assert_real_bundles(&compile(&small).1);
+    assert_real_bundles(&compile(&large).1);
     let mut small_times = Vec::new();
     let mut large_times = Vec::new();
     for _ in 0..3 {
@@ -133,4 +151,49 @@ impl FirstVector for Value {
             _ => None,
         }
     }
+}
+
+/// `groups` sources each fanning out to four targets two ranks below: every
+/// edge runs parallel to its neighbours, the bundle planner's worst case.
+fn parallel_fan_outs(groups: usize, kind: &str) -> Value {
+    let mut classes = String::new();
+    let mut edges = String::new();
+    for g in 0..groups {
+        classes += &format!("{{:id :app{g} :level 1}} ");
+        for t in 0..4 {
+            classes += &format!("{{:id :t{g}x{t} :level 3}} ");
+            edges += &format!("{{:from :app{g} :to :t{g}x{t} :kind :{kind}}} ");
+        }
+    }
+    let text = format!("{{:hierarchical true :classes [{classes}] :edges [{edges}]}}");
+    scene::ir::read_document(&text).unwrap()
+}
+
+/// Layout and base routing are shared with an association twin that never
+/// bundles, so the time difference is the planner's own cost.
+#[test]
+fn many_parallel_dependencies_form_real_trunks_at_a_bounded_planning_cost() {
+    let bundled = parallel_fan_outs(60, "dependency");
+    let twin = parallel_fan_outs(60, "association");
+    let (_, scene) = compile(&bundled);
+    let (_, plain) = compile(&twin);
+    assert_real_bundles(&scene);
+    assert!(edn::record::get(&plain, "bundles").is_none());
+    assert_eq!(
+        edn::record::get(&scene, "classes"),
+        edn::record::get(&plain, "classes"),
+        "the twin keeps the same layout"
+    );
+    let best = |doc: &Value| {
+        (0..5)
+            .map(|_| compile(doc).0.as_secs_f64())
+            .fold(f64::INFINITY, f64::min)
+    };
+    let (with, without) = (best(&bundled), best(&twin));
+    let overhead = with / without.max(1e-6);
+    eprintln!("scene: 240 parallel edges {with:.3}s bundled, {without:.3}s twin, {overhead:.2}x");
+    assert!(
+        overhead < 2.0,
+        "bundle planning cost {overhead:.2}x the compile"
+    );
 }

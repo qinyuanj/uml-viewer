@@ -67,6 +67,10 @@ def prepare_bundle_lifecycle(project):
     shutil.copy2(REPO / 'fixtures/bundle_lifecycle.ir.edn', project / 'diagram.edn')
 
 
+def prepare_bundle_acceptance(project):
+    shutil.copy2(REPO / 'fixtures/bundle_acceptance.ir.edn', project / 'diagram.edn')
+
+
 def prepare_navigation(project):
     children = ' '.join(f'{{:id :source.child{n}}}' for n in range(1, 21))
     ops = ' '.join(f'"operation{n}"' for n in range(1, 71))
@@ -204,6 +208,7 @@ FIXTURES = {
     'dependency_bundles': prepare_dependency_bundles,
     'bundle_safety': prepare_bundle_safety,
     'bundle_lifecycle': prepare_bundle_lifecycle,
+    'bundle_acceptance': prepare_bundle_acceptance,
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
     'search': prepare_search,
@@ -393,6 +398,12 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
+    'bundle_acceptance': {'seconds': 60, 'evidence': ['bundle-acceptance-pass.txt',
+        'acceptance-root.edn', 'acceptance-chain.edn', 'acceptance-ui.edn',
+        'acceptance-back.edn', 'acceptance-proposal.edn', 'acceptance-shell.edn',
+        'acceptance-triangles.edn', 'acceptance-root-violating.png',
+        'acceptance-chain.png', 'acceptance-ui.png', 'acceptance-proposal.png',
+        'acceptance-triangles.png']},
     'bundle_safety': {'seconds': 30, 'evidence': ['bundle-safety-pass.txt',
         'bundle-safety.edn', 'bundle-safety.png', 'bundle-safety-branch.png',
         'bundle-safety-branch.edn']},

@@ -1,0 +1,101 @@
+{:version 1
+ :doc "#181：组合验收。跨 rank 主干与违规主干同屏、障碍回退、依赖链、钻取/返回、提案及其下一层、移除箭头。"
+ :steps
+ [{:op :wait-frames :n 4}
+  {:op :view :zoom 1 :center [380 380]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "acceptance-root.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 2}
+  {:op :assert-canvas :path [:scene :edges] :count 9}
+  {:op :assert-canvas :path [:presentation :trunks] :count 2}
+  {:op :assert-canvas :path [:presentation :heads] :count 9}
+  {:op :assert-canvas :path [:presentation :trunks 1 :color] :equals [196 42 36]}
+
+  {:op :canvas-point :world [120.15603948231383 436]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["w -> v" "y -> v"]}
+  {:op :assert-canvas :path [:presentation :trunks 1 :hot] :equals true}
+  {:op :assert-canvas :path [:presentation :trunks 1 :color] :equals [255 64 48]}
+  {:op :screenshot :evidence "acceptance-root-violating.png"}
+
+  {:op :canvas-point :world [67.51603948231383 670.192]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["app -> c" "app -> d"]}
+
+  {:op :canvas-point :world [700 600]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup] :present false}
+  {:op :click-class :id :app}
+  {:op :assert-view :selected "app"}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:presentation :trunks 0 :dimmed] :equals false}
+  {:op :assert-canvas :path [:presentation :trunks 1 :dimmed] :equals true}
+  {:op :assert-canvas :path [:presentation :trunks 1 :color] :equals [196 42 36]}
+  {:op :dump-canvas :evidence "acceptance-chain.edn"}
+  {:op :screenshot :evidence "acceptance-chain.png"}
+
+  {:op :double-click-class :id :ui}
+  {:op :wait-frames :n 3}
+  {:op :assert-view :focus [:ui]}
+  {:op :view :zoom 1 :center [380 220]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:scene :bundles 0 :members] :count 3}
+  {:op :canvas-point :world [137.12 254]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup :rows] :equals ["ui.app -> ui.b" "ui.app -> ui.c" "ui.app -> ui.d"]}
+  {:op :dump-canvas :evidence "acceptance-ui.edn"}
+  {:op :screenshot :evidence "acceptance-ui.png"}
+  {:op :key :key "escape"}
+  {:op :wait-frames :n 3}
+  {:op :assert-view :focus []}
+  {:op :canvas-point :world [700 600]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "acceptance-back.edn"}
+  {:op :assert :evidence "acceptance-back.edn" :same-as "acceptance-root.edn" :except ["hit" "hover" "popup" "presentation"]}
+
+  {:op :gui-point :at "proposal:plan"}
+  {:op :wait-frames :n 2}
+  {:op :gui-click :at "proposal:plan"}
+  {:op :wait-gui :path [:proposal] :equals true :seconds 5}
+  {:op :wait-frames :n 3}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :canvas-point :world [299.4 542]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["ui.app -> ui.b" "ui.app -> ui.c" "ui.app -> ui.d"]}
+  {:op :dump-canvas :evidence "acceptance-proposal.edn"}
+  {:op :screenshot :evidence "acceptance-proposal.png"}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :double-click :at [215 490]}
+  {:op :wait-frames :n 3}
+  {:op :assert-canvas :path [:scene :diagram :title] :equals "Shell"}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :canvas-point :world [528 192]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["ui.app -> ui.c" "ui.app -> ui.d"]}
+  {:op :dump-canvas :evidence "acceptance-shell.edn"}
+  {:op :key :key "escape"}
+  {:op :key :key "p"}
+  {:op :wait-frames :n 3}
+  {:op :assert-canvas :path [:scene :diagram :proposal] :present false}
+
+  {:op :click-declutter}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "triangles"}
+  {:op :assert-canvas :path [:presentation :trunks] :count 0}
+  {:op :assert-canvas :path [:presentation :branches] :count 0}
+  {:op :assert-canvas :path [:presentation :heads] :count 0}
+  {:op :dump-canvas :evidence "acceptance-triangles.edn"}
+  {:op :screenshot :evidence "acceptance-triangles.png"}
+  {:op :click-declutter}
+  {:op :click-declutter}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "full"}
+  {:op :assert-canvas :path [:scene :bundles] :count 2}
+  {:op :write :evidence "bundle-acceptance-pass.txt" :text "PASS bundle acceptance: rank-hop and violating trunks, fallback, chain, drill/back, proposal layer, remove arrows\n"}
+  {:op :quit :code 0}]}
