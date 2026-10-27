@@ -132,25 +132,8 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
         (Value::keyword("classes"), Value::Vector(classes)),
         (Value::keyword("edges"), Value::Vector(edges)),
     ]);
-    if let Some(Value::Vector(bundles)) = get(scene, "bundles") {
-        let projected: Vec<Value> = bundles
-            .iter()
-            .map(|bundle| {
-                Value::Map(vec![
-                    (
-                        Value::keyword("members"),
-                        Value::Vector(crate::hit::bundle_members(scene, bundle)),
-                    ),
-                    (
-                        Value::keyword("strokes"),
-                        get(bundle, "strokes")
-                            .cloned()
-                            .unwrap_or(Value::Vector(vec![])),
-                    ),
-                ])
-            })
-            .collect();
-        edn::record::put(&mut view, "bundles", Value::Vector(projected));
+    if let Some(bundles) = bundles_projection(scene) {
+        edn::record::put(&mut view, "bundles", bundles);
     }
     for k in ["foreign", "title", "proposal", "dep-indicators"] {
         if let Some(v) = get(scene, k) {
@@ -158,6 +141,32 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
         }
     }
     view
+}
+
+/// Final trunks with their members spelled out as visible logical edges, the
+/// same shape for golden views and multi-diagram exports.
+fn bundles_projection(scene: &Value) -> Option<Value> {
+    let Some(Value::Vector(bundles)) = get(scene, "bundles") else {
+        return None;
+    };
+    let projected = bundles
+        .iter()
+        .map(|bundle| {
+            Value::Map(vec![
+                (
+                    Value::keyword("members"),
+                    Value::Vector(crate::hit::bundle_members(scene, bundle)),
+                ),
+                (
+                    Value::keyword("strokes"),
+                    get(bundle, "strokes")
+                        .cloned()
+                        .unwrap_or(Value::Vector(vec![])),
+                ),
+            ])
+        })
+        .collect();
+    Some(Value::Vector(projected))
 }
 
 /// Multi-diagram documents have no golden views. Each section is exported
@@ -210,8 +219,8 @@ fn section_projection(scene: &Value, focus: &Value) -> Value {
         ),
         (Value::keyword("sections"), Value::Vector(sections)),
     ]);
-    if let Some(bundles) = get(scene, "bundles") {
-        edn::record::put(&mut view, "bundles", bundles.clone());
+    if let Some(bundles) = bundles_projection(scene) {
+        edn::record::put(&mut view, "bundles", bundles);
         edn::record::put(
             &mut view,
             "edges",

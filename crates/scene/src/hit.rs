@@ -139,6 +139,14 @@ pub(crate) fn indicator_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Va
     None
 }
 
+/// Whether a visible edge or any leaf dependency it carries violates policy.
+pub fn edge_violating(e: &Value) -> bool {
+    edn::record::flag(e, "violating")
+        || seq(edn::record::get(e, "deps"))
+            .iter()
+            .any(|d| edn::record::flag(d, "violating"))
+}
+
 /// Visible logical edges carried by a trunk, in stable scene order.
 pub fn bundle_members(scene: &Value, bundle: &Value) -> Vec<Value> {
     let edges = seq(edn::record::get(scene, "edges"));
@@ -158,15 +166,7 @@ pub fn bundle_members(scene: &Value, bundle: &Value) -> Vec<Value> {
                     edn::record::get(e, "to").cloned().unwrap_or(Value::Nil),
                 ),
                 ("deps", deps_of(e).unwrap_or(Value::Vector(vec![]))),
-                (
-                    "violating",
-                    Value::Bool(
-                        edn::record::flag(e, "violating")
-                            || seq(edn::record::get(e, "deps"))
-                                .iter()
-                                .any(|d| edn::record::flag(d, "violating")),
-                    ),
-                ),
+                ("violating", Value::Bool(edge_violating(e))),
             ]))
         })
         .collect()

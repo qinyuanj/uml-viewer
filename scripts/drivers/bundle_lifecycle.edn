@@ -7,16 +7,21 @@
   {:op :dump-canvas :evidence "lifecycle-root.edn"}
   {:op :assert-canvas :path [:scene :bundles] :count 1}
   {:op :assert-canvas :path [:presentation :heads] :count 2}
-  {:op :canvas-point :world [288 210]}
+  {:op :canvas-point :world [272 200]}
   {:op :wait-frames :n 2}
-  {:op :assert-canvas :path [:popup :rows] :equals ["c -> a" "d -> e"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["s -> a" "s -> b"]}
   {:op :screenshot :evidence "lifecycle-root.png"}
   {:op :canvas-point :world [650 400]}
   {:op :wait-frames :n 2}
-  {:op :click-class :id :d}
-  {:op :assert-view :selected "d"}
+  {:op :click-class :id :s}
+  {:op :assert-view :selected "s"}
   {:op :wait-frames :n 2}
   {:op :assert-canvas :path [:presentation :trunks 0 :dimmed] :equals false}
+  {:op :assert-canvas :path [:presentation :branches 2 :dimmed] :equals false}
+  {:op :click-class :id :m}
+  {:op :assert-view :selected "m"}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:presentation :trunks 0 :dimmed] :equals true}
   {:op :assert-canvas :path [:presentation :branches 2 :dimmed] :equals true}
   {:op :double-click-class :id :f}
   {:op :wait-frames :n 3}
@@ -25,14 +30,14 @@
   {:op :wait-frames :n 2}
   {:op :assert-canvas :path [:scene :bundles] :count 1}
   {:op :assert-canvas :path [:presentation :heads] :count 2}
-  {:op :canvas-point :world [288 210]}
+  {:op :canvas-point :world [272 200]}
   {:op :wait-frames :n 2}
-  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.s -> f.a" "f.s -> f.b"]}
   {:op :dump-canvas :evidence "lifecycle-child.edn"}
   {:op :screenshot :evidence "lifecycle-child.png"}
-  {:op :canvas-point :world [448 160]}
+  {:op :canvas-point :world [292.7 238.6]}
   {:op :wait-frames :n 2}
-  {:op :assert-canvas :path [:popup :rows] :equals ["f.d -> f.e"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.s -> f.b"]}
   {:op :key :key "escape"}
   {:op :wait-frames :n 3}
   {:op :assert-view :focus []}
@@ -62,22 +67,22 @@
   {:op :wait-gui :path [:proposal] :equals true :seconds 5}
   {:op :wait-frames :n 3}
   {:op :view :zoom 1 :center [600 400]}
-  {:op :canvas-point :world [608 184]}
+  {:op :canvas-point :world [600 171]}
   {:op :wait-frames :n 2}
   {:op :assert-canvas :path [:hit :kind] :equals :bundle}
-  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.s -> f.a" "f.s -> f.b"]}
   {:op :dump-canvas :evidence "lifecycle-proposal.edn"}
   {:op :assert-canvas :path [:scene :bundles] :count 1}
   {:op :screenshot :evidence "lifecycle-proposal.png"}
   {:op :view :zoom 1 :center [600 400]}
   {:op :double-click :at [60 65]}
   {:op :wait-frames :n 3}
-  {:op :assert-canvas :path [:scene :diagram :title] :equals "Unassigned"}
+  {:op :assert-canvas :path [:scene :diagram :title] :equals "Shell"}
   {:op :view :zoom 1 :center [600 400]}
-  {:op :canvas-point :world [608 184]}
+  {:op :canvas-point :world [600 171]}
   {:op :wait-frames :n 2}
   {:op :assert-canvas :path [:hit :kind] :equals :bundle}
-  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.s -> f.a" "f.s -> f.b"]}
   {:op :dump-canvas :evidence "lifecycle-open.edn"}
   {:op :assert-canvas :path [:scene :bundles] :count 1}
   {:op :key :key "escape"}
@@ -97,12 +102,12 @@
   {:op :assert-canvas :path [:presentation :trunks] :count 0}
   {:op :assert-canvas :path [:presentation :branches] :count 0}
   {:op :assert-canvas :path [:presentation :heads] :count 0}
-  {:op :assert-canvas :path [:presentation :indicators] :count 4}
+  {:op :assert-canvas :path [:presentation :indicators] :count 3}
   {:op :view :zoom 1 :center [600 400]}
-  {:op :canvas-point :world [288 146]}
+  {:op :canvas-point :world [128 640]}
   {:op :wait-frames :n 2}
   {:op :assert-canvas :path [:hit :kind] :equals :dep}
-  {:op :assert-canvas :path [:popup :rows] :equals ["c -> a"]}
+  {:op :assert-canvas :path [:popup :rows] :equals ["s -> a"]}
   {:op :dump-canvas :evidence "lifecycle-triangles.edn"}
   {:op :screenshot :evidence "lifecycle-triangles.png"}
   {:op :click-declutter}

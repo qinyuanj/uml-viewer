@@ -49,7 +49,7 @@ fn compatible_dependencies_share_a_trunk_and_keep_their_branches_heads_and_leave
 #[test]
 fn visible_trunk_and_branch_geometry_return_their_own_hit_details() {
     let scene = scene();
-    let trunk = scene::hit::at(&scene, 288.0, 210.0).unwrap();
+    let trunk = scene::hit::at(&scene, 273.8, 1120.0).unwrap();
     assert_eq!(
         Some(&Value::keyword("bundle")),
         get(&trunk, "kind"),
@@ -57,14 +57,14 @@ fn visible_trunk_and_branch_geometry_return_their_own_hit_details() {
     );
     assert_eq!(2, common::items(get(&trunk, "members")).len());
 
-    let branch = scene::hit::at(&scene, 448.0, 160.0).unwrap();
+    let branch = scene::hit::at(&scene, 384.8, 600.0).unwrap();
     assert_eq!(
         Some(&parse("{:kind :edge :from :d :to :e :deps [{:from :d :to :e :kind :dependency :violating false}]}").unwrap()),
         Some(&branch),
         "source branch keeps its own leaf detail",
     );
     assert!(
-        scene::hit::at(&scene, 288.0, 270.0).is_some(),
+        scene::hit::at(&scene, 273.2, 1170.0).is_some(),
         "target branch remains hittable"
     );
 }
@@ -91,7 +91,7 @@ fn incompatible_candidates_keep_base_geometry_and_repeated_compilation_is_determ
                 changed.pop();
             }
             "reverse" => {
-                edn::record::put(&mut changed[1], "from", Value::keyword("a"));
+                edn::record::put(&mut changed[1], "from", Value::keyword("e"));
                 edn::record::put(&mut changed[1], "to", Value::keyword("c"));
             }
             "violating" => edn::record::put(&mut changed[1], "violating", Value::Bool(true)),
@@ -99,12 +99,9 @@ fn incompatible_candidates_keep_base_geometry_and_repeated_compilation_is_determ
                 edn::record::put(
                     &mut doc,
                     "classes",
-                    parse(
-                        "[{:id :a :level 2} {:id :c :level 3} {:id :d :level 3} {:id :e :level 2}]",
-                    )
-                    .unwrap(),
+                    parse("[{:id :c :level 3} {:id :d :level 3} {:id :e :level 2}]").unwrap(),
                 );
-                edn::record::put(&mut doc, "order", parse("[a d e c]").unwrap());
+                edn::record::put(&mut doc, "order", parse("[d e c]").unwrap());
             }
             kind => edn::record::put(&mut changed[1], "kind", Value::keyword(kind)),
         }
@@ -131,10 +128,12 @@ fn incompatible_candidates_keep_base_geometry_and_repeated_compilation_is_determ
 fn flat_document_projection_keeps_base_sections_and_exports_final_bundle_geometry() {
     let doc = parse(
         r#"{:title "Shared channel" :packages [{:id :p :label "P"
-      :classes [{:id :f :name "F" :level 3} {:id :c :name "C" :level 3}
-                {:id :d :name "D" :level 3} {:id :a :name "A" :level 2}
-                {:id :e :name "E" :level 2}]}]
-      :edges [{:from :d :to :e :kind :dependency} {:from :c :to :a :kind :dependency}]}"#,
+      :classes [{:id :f :name "F" :level 6} {:id :c :name "C" :level 6}
+                {:id :d :name "D" :level 6} {:id :k5 :name "K5" :level 5}
+                {:id :k4 :name "K4" :level 4} {:id :k3 :name "K3" :level 3}
+                {:id :k2 :name "K2" :level 2} {:id :k1 :name "K1" :level 1}
+                {:id :z :name "Z" :level 0} {:id :e :name "E" :level 0}]}]
+      :edges [{:from :d :to :e :kind :dependency} {:from :c :to :e :kind :dependency}]}"#,
     )
     .unwrap();
     let scene = scene::document::compile_view(&doc, &[], &[], &Value::Map(vec![]));
@@ -150,6 +149,13 @@ fn flat_document_projection_keeps_base_sections_and_exports_final_bundle_geometr
         common::items(get(&projection, "bundles")).len(),
         "final trunks are observable"
     );
+    let trunk = &common::items(get(&projection, "bundles"))[0];
+    for member in common::items(get(trunk, "members")) {
+        assert!(
+            get(&member, "from").is_some() && get(&member, "to").is_some(),
+            "members keep the hierarchical projection's shape: {member:?}"
+        );
+    }
     assert_eq!(
         get(&scene, "edges"),
         get(&projection, "edges"),

@@ -187,8 +187,10 @@ fn fit(scene: &mut Value) {
 pub fn prepare_scene(scene: &mut Value) {
     let index = ClassIndex::new(scene);
     let mut edges: Vec<Value> = Vec::new();
+    let mut flats = Vec::new();
     for raw in seq(get(scene, "edges")) {
         let mut e = raw.clone();
+        flats.push(None);
         if let Some(p) = path(&e, &index) {
             let bb = curve::path_bounds(&p).unwrap();
             let probe = bb.inflate(13.0);
@@ -209,11 +211,12 @@ pub fn prepare_scene(scene: &mut Value) {
                         .collect(),
                 ),
             );
+            *flats.last_mut().unwrap() = Some(flat);
         }
         edges.push(e);
     }
     put(scene, "edges", Value::Vector(edges));
-    crate::bundle::plan(scene, &index);
+    crate::bundle::plan(scene, &index, flats);
     for (list, key) in [("classes", "class-by-id"), ("packages", "package-by-id")] {
         let mut idx = Value::Map(vec![]);
         for c in seq(get(scene, list)) {

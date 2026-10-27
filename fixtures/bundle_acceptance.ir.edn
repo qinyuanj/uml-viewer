@@ -1,15 +1,17 @@
 {:hierarchical true
  :title "Bundle acceptance"
  :prefix "probe"
- :order {"" [ui a v y b w x d c app] "ui" [ui.app ui.a ui.b ui.c ui.d]}
+ :order {"" [ui a v y b w x d c app p q r] "ui" [ui.app ui.a ui.b ui.c ui.d]}
  :classes
- [{:id :app :level 1}
+ [{:id :app :level 1} {:id :p :level 4} {:id :q :level 1} {:id :r :level 1}
   {:id :a :level 4} {:id :b :level 4} {:id :c :level 4} {:id :d :level 4}
   {:id :x :level 3} {:id :y :level 3} {:id :v :level 2} {:id :w :level 3}
   {:id :ui.app :level 1}
   {:id :ui.a :level 3} {:id :ui.b :level 3} {:id :ui.c :level 3} {:id :ui.d :level 3}]
  :edges
  [{:from :app :to :a :kind :dependency}
+  {:from :p :to :q :kind :dependency}
+  {:from :p :to :r :kind :dependency}
   {:from :app :to :b :kind :dependency}
   {:from :app :to :c :kind :dependency}
   {:from :app :to :d :kind :dependency}

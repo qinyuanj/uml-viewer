@@ -53,22 +53,17 @@ def prepare_metrics(project):
         ' :coverage 100 :crap 1}]}')
 
 
-def prepare_dependency_bundles(project):
-    shutil.copy2(REPO / 'fixtures/bundle-goldens/shared-channel.ir.edn',
-                 project / 'diagram.edn')
+# Dependency-bundle drivers each open one fixed IR as the project diagram.
+BUNDLE_FIXTURES = {
+    'dependency_bundles': 'fixtures/bundle-goldens/shared-channel.ir.edn',
+    'bundle_safety': 'fixtures/bundle-goldens/safe-channel.ir.edn',
+    'bundle_lifecycle': 'fixtures/bundle_lifecycle.ir.edn',
+    'bundle_acceptance': 'fixtures/bundle_acceptance.ir.edn',
+}
 
 
-def prepare_bundle_safety(project):
-    shutil.copy2(REPO / 'fixtures/bundle-goldens/safe-channel.ir.edn',
-                 project / 'diagram.edn')
-
-
-def prepare_bundle_lifecycle(project):
-    shutil.copy2(REPO / 'fixtures/bundle_lifecycle.ir.edn', project / 'diagram.edn')
-
-
-def prepare_bundle_acceptance(project):
-    shutil.copy2(REPO / 'fixtures/bundle_acceptance.ir.edn', project / 'diagram.edn')
+def prepare_bundle_fixture(name):
+    return lambda project: shutil.copy2(REPO / BUNDLE_FIXTURES[name], project / 'diagram.edn')
 
 
 def prepare_navigation(project):
@@ -205,10 +200,7 @@ def prepare_mail(project):
 
 
 FIXTURES = {
-    'dependency_bundles': prepare_dependency_bundles,
-    'bundle_safety': prepare_bundle_safety,
-    'bundle_lifecycle': prepare_bundle_lifecycle,
-    'bundle_acceptance': prepare_bundle_acceptance,
+    **{name: prepare_bundle_fixture(name) for name in BUNDLE_FIXTURES},
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
     'search': prepare_search,

@@ -1,17 +1,17 @@
 {:hierarchical true
  :title "Bundle lifecycle"
  :prefix "probe"
- :order {"" [f a d e c] "f" [f.f f.a f.d f.e f.c]}
+ :order {"" [f s m n a b] "f" [f.g f.s f.m f.n f.a f.b]}
  :classes
- [{:id :a :level 2} {:id :c :level 3} {:id :d :level 3}
-  {:id :e :level 2}
-  {:id :f.f :level 3} {:id :f.a :level 2} {:id :f.d :level 3}
-  {:id :f.e :level 2} {:id :f.c :level 3}]
+ [{:id :s :level 3} {:id :m :level 2} {:id :n :level 1}
+  {:id :a :level 0} {:id :b :level 0}
+  {:id :f.g :level 3} {:id :f.s :level 3} {:id :f.m :level 2} {:id :f.n :level 1}
+  {:id :f.a :level 0} {:id :f.b :level 0}]
  :edges
- [{:from :d :to :e :kind :dependency}
-  {:from :c :to :a :kind :dependency}
-  {:from :f.d :to :f.e :kind :dependency}
-  {:from :f.c :to :f.a :kind :dependency}]
+ [{:from :s :to :a :kind :dependency}
+  {:from :s :to :b :kind :dependency}
+  {:from :f.s :to :f.a :kind :dependency}
+  {:from :f.s :to :f.b :kind :dependency}]
  :proposals
- [{:id :plan :name "Lifecycle proposal" :omit [:a :c :d :e]
-   :layers []}]}
+ [{:id :plan :name "Lifecycle proposal" :omit [:s :m :n :a :b]
+   :layers [{:id :shell :label "Shell" :nses [:f]}]}]}
