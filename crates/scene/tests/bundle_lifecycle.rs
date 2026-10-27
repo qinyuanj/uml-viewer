@@ -78,7 +78,7 @@ fn source_and_proposal_navigation_rebuild_nonempty_bundles_and_restore_root() {
     assert_eq!(root.scene, events::back(&child).scene);
     let proposal = events::show_proposal(&root, Some(&kw("plan")));
     assert_current(&proposal);
-    let opened = events::drill(&proposal, &kw("proposal.unassigned"));
+    let opened = events::drill(&proposal, &kw("proposal.shell"));
     assert_current(&opened);
     assert!(
         !seq(get(&opened.scene, "bundles")).is_empty(),

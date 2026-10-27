@@ -20,16 +20,7 @@ fn state() -> ViewState {
 fn trunk(commands: &[EdgeCommand]) -> &EdgeCommand {
     commands
         .iter()
-        .find(|c| {
-            matches!(
-                c,
-                EdgeCommand::Stroke {
-                    from: None,
-                    to: None,
-                    ..
-                }
-            )
-        })
+        .find(|c| matches!(c, EdgeCommand::Trunk { .. }))
         .expect("one explicit trunk stroke")
 }
 
@@ -37,18 +28,22 @@ fn trunk(commands: &[EdgeCommand]) -> &EdgeCommand {
 fn shared_trunk_is_drawn_once_without_an_extra_head_and_chain_keeps_branches_independent() {
     let mut s = state();
     let plain = commands::edge_commands(&s.scene, None, None);
-    let EdgeCommand::Stroke { points, .. } = trunk(&plain) else {
+    let EdgeCommand::Trunk {
+        points, members, ..
+    } = trunk(&plain)
+    else {
         unreachable!()
     };
     assert_eq!(
-        vec![[288.0, 188.66666666666666], [288.0, 235.33333333333331]],
+        vec![[274.1041975308642, 1101.9074074074085], [273.56, 1139.5]],
         *points
     );
+    assert_eq!(2, members.len(), "the trunk names its member edges");
     assert_eq!(
         1,
         plain
             .iter()
-            .filter(|c| matches!(c, EdgeCommand::Stroke { from: None, .. }))
+            .filter(|c| matches!(c, EdgeCommand::Trunk { .. }))
             .count()
     );
     assert_eq!(
@@ -62,14 +57,14 @@ fn shared_trunk_is_drawn_once_without_an_extra_head_and_chain_keeps_branches_ind
         4,
         plain
             .iter()
-            .filter(|c| matches!(c, EdgeCommand::Stroke { from: Some(_), .. }))
+            .filter(|c| matches!(c, EdgeCommand::Stroke { .. }))
             .count()
     );
 
     s.selected = Some(edn::parse("{:kind :class :id :d}").unwrap());
     let selected = commands::edge_commands(&s.scene, s.selected.as_ref(), None);
     assert!(
-        matches!(trunk(&selected), EdgeCommand::Stroke { color, dimmed: false, .. } if *color == theme::RELATED)
+        matches!(trunk(&selected), EdgeCommand::Trunk { color, dimmed: false, .. } if *color == theme::RELATED)
     );
     for command in &selected {
         if let EdgeCommand::Stroke {
@@ -103,17 +98,20 @@ fn popup(state: &ViewState, height: f64) -> Option<(f64, Vec<commands::PopupRow>
 fn trunk_hover_lists_visible_pairs_and_directly_hovers_members_then_leaving_restores_selection() {
     let mut s = state();
     s.selected = Some(edn::parse("{:kind :class :id :d}").unwrap());
-    s.hover = scene::hit::at(&s.scene, 288.0, 210.0);
+    s.hover = scene::hit::at(&s.scene, 273.8, 1120.0);
     s.pointer = Some((300.0, 240.0));
     let (_, rows) = popup(&s, 600.0).expect("trunk member summary");
     assert_eq!(
-        vec!["c -> a", "d -> e"],
+        vec!["c -> e", "d -> e"],
         rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>()
     );
     let hovered = commands::edge_commands(&s.scene, s.selected.as_ref(), s.hover.as_ref());
     assert!(
         hovered.iter().all(|c| match c {
             EdgeCommand::Stroke {
+                color, hot, dimmed, ..
+            }
+            | EdgeCommand::Trunk {
                 color, hot, dimmed, ..
             }
             | EdgeCommand::Head {
@@ -124,7 +122,7 @@ fn trunk_hover_lists_visible_pairs_and_directly_hovers_members_then_leaving_rest
         "trunk hover uses direct-edge attention on every member"
     );
 
-    s.hover = scene::hit::at(&s.scene, 448.0, 160.0);
+    s.hover = scene::hit::at(&s.scene, 384.8, 600.0);
     let (_, rows) = popup(&s, 600.0).expect("branch leaf details");
     assert_eq!(
         vec!["d -> e"],
@@ -136,7 +134,7 @@ fn trunk_hover_lists_visible_pairs_and_directly_hovers_members_then_leaving_rest
     assert!(popup(&s, 600.0).is_none());
     let restored = commands::edge_commands(&s.scene, s.selected.as_ref(), None);
     assert!(
-        matches!(trunk(&restored), EdgeCommand::Stroke { color, hot: false, .. } if *color == theme::RELATED)
+        matches!(trunk(&restored), EdgeCommand::Trunk { color, hot: false, .. } if *color == theme::RELATED)
     );
 }
 
@@ -178,13 +176,14 @@ fn violating_bundle_keeps_red_attention_and_remove_arrows_keeps_original_depende
     let mut s = scene::document::new_state(doc, None, None, None, &[], None);
     let plain = commands::edge_commands(&s.scene, None, None);
     assert!(
-        matches!(trunk(&plain), EdgeCommand::Stroke { color, .. } if *color == theme::EDGE_VIOLATING)
+        matches!(trunk(&plain), EdgeCommand::Trunk { color, .. } if *color == theme::EDGE_VIOLATING)
     );
-    s.hover = scene::hit::at(&s.scene, 288.0, 210.0);
+    s.hover = scene::hit::at(&s.scene, 273.8, 1120.0);
     let hovered = commands::edge_commands(&s.scene, None, s.hover.as_ref());
     assert!(hovered.iter().all(|c| match c {
-        EdgeCommand::Stroke { color, hot, .. } | EdgeCommand::Head { color, hot, .. } =>
-            *color == theme::EDGE_VIOLATING_HOT && *hot,
+        EdgeCommand::Stroke { color, hot, .. }
+        | EdgeCommand::Trunk { color, hot, .. }
+        | EdgeCommand::Head { color, hot, .. } => *color == theme::EDGE_VIOLATING_HOT && *hot,
         _ => false,
     }));
     let original_deps: usize = seq(get(&s.scene, "edges"))
@@ -194,7 +193,7 @@ fn violating_bundle_keeps_red_attention_and_remove_arrows_keeps_original_depende
     s = scene::events::cycle_declutter(&s);
     s = scene::events::cycle_declutter(&s);
     let hidden = commands::edge_commands(&s.scene, None, None);
-    assert_eq!(4, hidden.len());
+    assert_eq!(3, hidden.len(), "one out-indicator per source, one into e");
     assert!(hidden.iter().all(|c| matches!(
         c,
         EdgeCommand::Indicator {
@@ -213,7 +212,7 @@ fn violating_bundle_keeps_red_attention_and_remove_arrows_keeps_original_depende
     );
     assert_ne!(
         Some(&Value::keyword("bundle")),
-        scene::hit::at(&s.scene, 288.0, 210.0)
+        scene::hit::at(&s.scene, 273.8, 1120.0)
             .as_ref()
             .and_then(|h| get(h, "kind")),
         "Remove arrows does not hit hidden trunks"

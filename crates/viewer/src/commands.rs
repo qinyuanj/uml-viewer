@@ -274,6 +274,16 @@ pub enum EdgeCommand {
         warm: bool,
         dimmed: bool,
     },
+    /// A shared trunk, drawn once for its member edges (scene edge indices).
+    Trunk {
+        members: Vec<usize>,
+        points: Vec<[f64; 2]>,
+        color: Rgb,
+        width: f32,
+        hot: bool,
+        warm: bool,
+        dimmed: bool,
+    },
     Head {
         from: Option<Value>,
         to: Option<Value>,
@@ -773,9 +783,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
     out
 }
 
-fn edge_violating(e: &Value) -> bool {
-    flag(e, "violating") || seq(get(e, "deps")).iter().any(|dep| flag(dep, "violating"))
-}
+use scene::hit::edge_violating;
 
 #[derive(Clone, Copy)]
 enum Attention {
@@ -830,10 +838,12 @@ pub fn edge_commands(
     }
     let edges = seq(get(scene, "edges"));
     for bundle in seq(get(scene, "bundles")) {
-        let members: Vec<&Value> = seq(get(bundle, "members"))
+        let indices: Vec<usize> = seq(get(bundle, "members"))
             .iter()
-            .filter_map(|v| edn::record::num(v).and_then(|i| edges.get(i as usize)))
+            .filter_map(|v| edn::record::num(v).map(|i| i as usize))
+            .filter(|i| *i < edges.len())
             .collect();
+        let members: Vec<&Value> = indices.iter().map(|i| &edges[*i]).collect();
         let chain = members.iter().any(|e| h.on_chain(e));
         let hot = members.iter().any(|e| h.hot(e, hover));
         let warm = !hot && members.iter().any(|e| h.warm(e));
@@ -847,9 +857,8 @@ pub fn edge_commands(
         let dimmed = h.focus.is_some() && matches!(attention, Attention::Outside);
         let (color, width) = edge_style(members.iter().any(|e| edge_violating(e)), attention);
         for ps in seq(get(bundle, "strokes")) {
-            out.push(EdgeCommand::Stroke {
-                from: None,
-                to: None,
+            out.push(EdgeCommand::Trunk {
+                members: indices.clone(),
                 points: points_of(Some(ps)),
                 color,
                 width,

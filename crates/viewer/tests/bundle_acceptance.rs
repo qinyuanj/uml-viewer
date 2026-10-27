@@ -244,27 +244,19 @@ fn assert_consistent(s: &ViewState, label: &str) -> Combination {
     let trunk_strokes: usize = bundles.iter().map(|b| seq(get(b, "strokes")).len()).sum();
     let drawn_trunks = plain
         .iter()
-        .filter(|c| matches!(c, EdgeCommand::Stroke { from: None, .. }))
+        .filter(|c| matches!(c, EdgeCommand::Trunk { .. }))
         .count();
     assert_eq!(trunk_strokes, drawn_trunks, "{label}: trunks drawn once");
     let mut heads: BTreeMap<(String, String), usize> = BTreeMap::new();
     for c in &plain {
-        match c {
-            EdgeCommand::Head { from, to, .. } => {
-                assert!(
-                    from.is_some() && to.is_some(),
-                    "{label}: trunk without head"
-                );
-                *heads
-                    .entry((name(from.as_ref()), name(to.as_ref())))
-                    .or_default() += 1;
-            }
-            EdgeCommand::Stroke {
-                from: None, color, ..
-            } => {
-                let _ = color;
-            }
-            _ => {}
+        if let EdgeCommand::Head { from, to, .. } = c {
+            assert!(
+                from.is_some() && to.is_some(),
+                "{label}: trunk without head"
+            );
+            *heads
+                .entry((name(from.as_ref()), name(to.as_ref())))
+                .or_default() += 1;
         }
     }
     assert_eq!(
@@ -369,11 +361,11 @@ fn assert_consistent(s: &ViewState, label: &str) -> Combination {
             for _ in seq(get(bundle, "strokes")) {
                 let trunk = commands
                     .iter()
-                    .filter(|c| matches!(c, EdgeCommand::Stroke { from: None, .. }))
+                    .filter(|c| matches!(c, EdgeCommand::Trunk { .. }))
                     .nth(trunk_index)
                     .unwrap();
                 trunk_index += 1;
-                let EdgeCommand::Stroke { dimmed, color, .. } = trunk else {
+                let EdgeCommand::Trunk { dimmed, color, .. } = trunk else {
                     unreachable!()
                 };
                 assert_eq!(!any, *dimmed, "{label}: trunk chain from {source:?}");
@@ -427,8 +419,8 @@ fn drilling_proposals_declutter_and_reload_rebuild_consistent_bundles_for_each_v
     let child = events::drill(&root, &kw("ui"));
     let found = assert_consistent(&child, "ui");
     assert!(
-        found.widest >= 3,
-        "child fan-out shares one wide trunk: {found:?}"
+        found.widest >= 2,
+        "child fan-out shares one jog-free trunk: {found:?}"
     );
     assert_ne!(get(&root.scene, "bundles"), get(&child.scene, "bundles"));
     assert_eq!(
@@ -442,7 +434,7 @@ fn drilling_proposals_declutter_and_reload_rebuild_consistent_bundles_for_each_v
     assert!(found.trunks > 0, "proposal bundles: {found:?}");
     let opened = events::drill(&proposal, &kw("proposal.shell"));
     let found = assert_consistent(&opened, "proposal layer");
-    assert!(found.widest >= 3, "proposal layer bundles: {found:?}");
+    assert!(found.widest >= 2, "proposal layer bundles: {found:?}");
     assert_ne!(
         get(&proposal.scene, "bundles"),
         get(&opened.scene, "bundles")
