@@ -76,6 +76,13 @@ pub fn mode_for(x11_available: bool, force_undecorated: bool) -> WindowMode {
 const CONTROL_W: f32 = 28.0;
 const CONTROL_H: f32 = DRAG_STRIP - RESIZE_GRIP - 2.0;
 
+#[derive(Debug, Clone, Copy)]
+enum ChromeHit {
+    Drag,
+    Resize(egui::viewport::ResizeDirection),
+    Control,
+}
+
 /// The undecorated window's own `[minimise, close]` buttons: at the right
 /// of the drag strip, below the north grip and left of the east grip.
 pub fn window_controls(screen: egui::Rect) -> [egui::Rect; 2] {
@@ -931,63 +938,60 @@ impl Viewer {
         }
     }
 
-    /// Geometry remains host-owned; Some(None) is the window drag strip.
+    /// Geometry remains host-owned; the same hit is reused by action execution.
     fn window_chrome_hit(
         &self,
-        ctx: &egui::Context,
-    ) -> Option<Option<egui::viewport::ResizeDirection>> {
+        screen: egui::Rect,
+        pointer: Option<egui::Pos2>,
+    ) -> Option<ChromeHit> {
         if self.decorated || self.driver.is_some() {
             return None;
         }
-        let pointer = ctx.input(|i| i.pointer.hover_pos())?;
-        let screen = ctx.content_rect();
+        let pointer = pointer?;
         let direction = if pointer.y <= screen.min.y + RESIZE_GRIP {
             if pointer.x <= screen.min.x + RESIZE_GRIP * 3.0 {
-                Some(egui::viewport::ResizeDirection::NorthWest)
+                egui::viewport::ResizeDirection::NorthWest
             } else if pointer.x >= screen.max.x - RESIZE_GRIP * 3.0 {
-                Some(egui::viewport::ResizeDirection::NorthEast)
+                egui::viewport::ResizeDirection::NorthEast
             } else {
-                Some(egui::viewport::ResizeDirection::North)
+                egui::viewport::ResizeDirection::North
             }
         } else if pointer.y >= screen.max.y - RESIZE_GRIP {
             if pointer.x <= screen.min.x + RESIZE_GRIP * 3.0 {
-                Some(egui::viewport::ResizeDirection::SouthWest)
+                egui::viewport::ResizeDirection::SouthWest
             } else if pointer.x >= screen.max.x - RESIZE_GRIP * 3.0 {
-                Some(egui::viewport::ResizeDirection::SouthEast)
+                egui::viewport::ResizeDirection::SouthEast
             } else {
-                Some(egui::viewport::ResizeDirection::South)
+                egui::viewport::ResizeDirection::South
             }
         } else if pointer.x <= screen.min.x + RESIZE_GRIP {
-            Some(egui::viewport::ResizeDirection::West)
+            egui::viewport::ResizeDirection::West
         } else if pointer.x >= screen.max.x - RESIZE_GRIP {
-            Some(egui::viewport::ResizeDirection::East)
-        } else if window_controls(screen).iter().any(|r| r.contains(pointer)) {
-            // The minimise/close buttons take the press (egui sees it); the
-            // canvas and the drag must not.
-            return Some(None);
-        } else if pointer.y <= screen.min.y + DRAG_STRIP {
-            None
+            egui::viewport::ResizeDirection::East
         } else {
+            if window_controls(screen).iter().any(|r| r.contains(pointer)) {
+                // The minimise/close buttons take the press (egui sees it); the
+                // canvas and the drag must not.
+                return Some(ChromeHit::Control);
+            }
+            if pointer.y <= screen.min.y + DRAG_STRIP {
+                return Some(ChromeHit::Drag);
+            }
             return None;
         };
-        Some(direction)
+        Some(ChromeHit::Resize(direction))
     }
 
-    fn window_chrome_input(&mut self, ctx: &egui::Context) -> bool {
-        let Some(direction) = self.window_chrome_hit(ctx) else {
-            return false;
-        };
-        let pointer = ctx.input(|i| i.pointer.hover_pos()).unwrap();
-        let controls = window_controls(ctx.content_rect())
-            .iter()
-            .any(|r| r.contains(pointer));
-        if !controls && ctx.input(|i| i.pointer.primary_pressed()) {
-            match direction {
-                Some(direction) => ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction)),
-                None => ctx.send_viewport_cmd(ViewportCommand::StartDrag),
+    fn window_chrome_input(ctx: &egui::Context, hit: ChromeHit, pressed: bool) {
+        if !matches!(hit, ChromeHit::Control) && pressed {
+            match hit {
+                ChromeHit::Resize(direction) => {
+                    ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction));
+                }
+                ChromeHit::Drag => ctx.send_viewport_cmd(ViewportCommand::StartDrag),
+                ChromeHit::Control => unreachable!(),
             }
         }
-        true
     }
 
     fn collect_real_input(&mut self, ctx: &egui::Context) {
@@ -1004,12 +1008,14 @@ impl Viewer {
         });
         let position = pos.map(|p| [p.x as f64, p.y as f64]);
         let origin = [screen.min.x as f64, screen.min.y as f64];
+        let view_position = position.map(|[x, y]| [x - origin[0], y - origin[1]]);
+        let over_search = view_position.is_some_and(|[x, y]| self.search.captures(x, y));
+        let over_gui =
+            view_position.is_some_and(|[x, y]| self.gui.captures(x, y, screen.width() as f64));
         // Geometry stays with the existing interface owners. Drag capture is
         // independent: an active canvas drag bypasses ordinary UI capture.
-        let ordinary = pos.is_some_and(|p| {
-            let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
-            self.search.captures(x, y) || self.gui.captures(x, y, screen.width() as f64)
-        });
+        let ordinary = over_search || over_gui;
+        let chrome_hit = self.window_chrome_hit(screen, pos);
         let owner = if self.driver.is_some() {
             StreamOwner::Driver
         } else if self.bench.is_some() {
@@ -1036,17 +1042,8 @@ impl Viewer {
                     i.smooth_scroll_delta.x as f64,
                     i.smooth_scroll_delta.y as f64,
                 ],
-                over_search: pos.is_some_and(|p| {
-                    self.search
-                        .captures((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64)
-                }),
-                over_gui: pos.is_some_and(|p| {
-                    self.gui.captures(
-                        (p.x - screen.min.x) as f64,
-                        (p.y - screen.min.y) as f64,
-                        screen.width() as f64,
-                    )
-                }),
+                over_search,
+                over_gui,
                 over_card: self.gui.card_hovered(),
             }),
             keys: ctx.input(|i| {
@@ -1058,7 +1055,10 @@ impl Viewer {
                         } => Some(if *key == egui::Key::F3 {
                             real_input::Key::PerformanceToggle
                         } else {
-                            real_input::Key::Named(key_name(*key))
+                            match key_name(*key) {
+                                "" => real_input::Key::Unknown,
+                                name => real_input::Key::Named(name),
+                            }
                         }),
                         _ => None,
                     })
@@ -1069,7 +1069,7 @@ impl Viewer {
             capture: Capture {
                 ordinary,
                 dragging: self.session.state().drag.is_some(),
-                window_chrome: self.window_chrome_hit(ctx).is_some(),
+                window_chrome: chrome_hit.is_some(),
             },
         };
         let converted = real_input::convert(&frame);
@@ -1078,12 +1078,18 @@ impl Viewer {
         dims.control = converted.modifiers.ctrl;
         dims.shift = converted.modifiers.shift;
         for action in converted.actions {
-            self.execute_real_action(action, &dims);
+            self.execute_real_action(action, &dims, chrome_hit, pressed);
         }
     }
 
     /// Execute in order; release observes state after the preceding actions.
-    fn execute_real_action(&mut self, action: RealAction, dims: &Dims) {
+    fn execute_real_action(
+        &mut self,
+        action: RealAction,
+        dims: &Dims,
+        chrome_hit: Option<ChromeHit>,
+        pointer_pressed: bool,
+    ) {
         let input = match action {
             RealAction::Key { key, ctrl, shift } => {
                 self.pending.push(Input::Key {
@@ -1116,7 +1122,9 @@ impl Viewer {
             RealAction::Drag(x, y) => Canvas::Drag(x, y),
             RealAction::ChromePress(x, y) => {
                 let ctx = self.ctx.clone();
-                if !self.window_chrome_input(&ctx) {
+                if let Some(hit) = chrome_hit {
+                    Self::window_chrome_input(&ctx, hit, pointer_pressed);
+                } else {
                     self.chrome_press(x, y);
                 }
                 return;
@@ -1295,14 +1303,9 @@ impl eframe::App for Viewer {
 
         // Real input (unless a driver owns the stream).
         self.collect_real_input(ctx);
-        let chrome_consumed = self.window_chrome_hit(ctx).is_some();
-        if !chrome_consumed {
-            let pending = std::mem::take(&mut self.pending);
-            for input in pending {
-                self.apply_input(input, ctx);
-            }
-        } else {
-            self.pending.clear();
+        let pending = std::mem::take(&mut self.pending);
+        for input in pending {
+            self.apply_input(input, ctx);
         }
 
         // Hot reload: IR or metrics stamp change, or R.
@@ -1651,5 +1654,100 @@ impl driver::Host for Viewer {
     fn resize_window(&mut self, w: f64, h: f64) {
         self.ctx
             .send_viewport_cmd(ViewportCommand::InnerSize(egui::vec2(w as f32, h as f32)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU64;
+
+    fn viewer() -> Viewer {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("uml viewer app input {} {n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".uml-viewer")).unwrap();
+        let session = ViewerSession::open(
+            Launch {
+                project_root: root.clone(),
+                diagram: root.join("diagram.edn"),
+                restart: false,
+                backend: false,
+                snapshot: None,
+            },
+            || Box::new(crate::mail::Companion::mail_only()),
+        )
+        .unwrap();
+        let ctx = egui::Context::default();
+        Viewer {
+            session,
+            project_root: root,
+            evidence: None,
+            test_seconds: None,
+            driver: None,
+            frames: 0,
+            started: Instant::now(),
+            last_frame: Instant::now(),
+            frame_ms: 0.0,
+            pending: Vec::new(),
+            show_performance: false,
+            exit: Arc::new(AtomicU8::new(0)),
+            published: 0,
+            render_shot: false,
+            shots_requested: Vec::new(),
+            decorated: false,
+            driver_failed: false,
+            quit: false,
+            ctx: ctx.clone(),
+            window_w: 800.0,
+            window_h: 600.0,
+            shots_sent: Vec::new(),
+            font: None,
+            search: SearchBox::default(),
+            text_events: Vec::new(),
+            driver_pointer: None,
+            bench: None,
+            bench_geo: None,
+            adapter: Default::default(),
+            render_cache: RenderCache::default(),
+            text_cache: paint::TextCache::default(),
+            wake_stop: Arc::new(AtomicBool::new(false)),
+            gui: Gui::default(),
+            gui_batches: Default::default(),
+            gui_pointer: egui::Pos2::ZERO,
+            gui_inflight: false,
+            waker: None,
+        }
+    }
+
+    #[test]
+    fn committed_text_and_paste_follow_the_current_text_focus() {
+        for search_active in [false, true] {
+            let mut app = viewer();
+            app.search.active = search_active;
+            let ctx = app.ctx.clone();
+            app.apply_input(Input::Text("中文".into()), &ctx);
+            app.apply_input(Input::Paste(" pasted ".into()), &ctx);
+            let expected = [
+                egui::Event::Text("中文".into()),
+                egui::Event::Paste(" pasted ".into()),
+            ];
+            if search_active {
+                assert_eq!(app.text_events, expected);
+                assert!(app.gui_batches.is_empty());
+            } else {
+                assert!(app.text_events.is_empty());
+                assert_eq!(
+                    app.gui_batches
+                        .iter()
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
     }
 }

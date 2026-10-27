@@ -59,6 +59,7 @@ impl Default for Wheel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     Named(&'static str),
+    Unknown,
     PerformanceToggle,
 }
 
@@ -136,16 +137,15 @@ pub fn convert(frame: &Frame) -> Converted {
             } else if !frame.pointer.down {
                 actions.push(Action::Move(x, y));
             }
-            let consumed_press = (frame.pointer.pressed || frame.pointer.double)
-                && (frame.capture.window_chrome || frame.capture.ordinary);
-            if frame.pointer.released && !consumed_press {
+            if frame.pointer.released {
                 actions.push(Action::ReleaseCandidate(x, y));
             }
         } else if !frame.pointer.down {
             actions.push(Action::Leave);
         }
-        let wheel_captured =
-            frame.wheel.over_search || (frame.wheel.over_gui && !frame.wheel.over_card);
+        let wheel_captured = frame.capture.window_chrome
+            || frame.wheel.over_search
+            || (frame.wheel.over_gui && !frame.wheel.over_card);
         let zoom = frame.wheel.zoom;
         if !wheel_captured && zoom.is_finite() && zoom != 1.0 && zoom > 0.0 {
             actions.push(Action::Wheel {
@@ -173,12 +173,16 @@ pub fn convert(frame: &Frame) -> Converted {
         {
             match key {
                 Key::PerformanceToggle => actions.push(Action::TogglePerformance),
-                Key::Named("") => {}
-                Key::Named(key) => actions.push(Action::Key {
-                    key,
-                    ctrl: frame.modifiers.ctrl,
-                    shift: frame.modifiers.shift,
-                }),
+                Key::Unknown => {}
+                Key::Named(key) => {
+                    if !frame.capture.window_chrome {
+                        actions.push(Action::Key {
+                            key,
+                            ctrl: frame.modifiers.ctrl,
+                            shift: frame.modifiers.shift,
+                        });
+                    }
+                }
             }
         }
     }

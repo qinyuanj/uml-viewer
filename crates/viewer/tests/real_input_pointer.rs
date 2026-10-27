@@ -1,4 +1,4 @@
-use viewer::real_input::{Action, Frame, Pointer, convert};
+use viewer::real_input::{Action, Capture, Frame, Pointer, convert};
 
 fn frame(pointer: Pointer) -> Frame {
     Frame {
@@ -62,7 +62,7 @@ fn dragging_bypasses_ordinary_capture_but_a_new_chrome_press_is_consumed() {
 }
 
 #[test]
-fn release_remains_ordered_after_press_and_is_not_delivered_for_consumed_chrome() {
+fn release_remains_ordered_after_press_even_when_the_press_is_captured() {
     let mut frame = frame(Pointer {
         pressed: true,
         released: true,
@@ -76,12 +76,21 @@ fn release_remains_ordered_after_press_and_is_not_delivered_for_consumed_chrome(
             Action::ReleaseCandidate(25.0, 30.0),
         ]
     );
-    frame.capture.window_chrome = true;
-    frame.capture.dragging = true;
-    assert_eq!(
-        convert(&frame).actions,
-        vec![Action::ChromePress(25.0, 30.0)]
-    );
+    for (ordinary, window_chrome) in [(true, false), (false, true)] {
+        frame.capture = Capture {
+            ordinary,
+            window_chrome,
+            dragging: true,
+        };
+        assert_eq!(
+            convert(&frame).actions,
+            vec![
+                Action::ChromePress(25.0, 30.0),
+                Action::ReleaseCandidate(25.0, 30.0),
+            ],
+            "ordinary={ordinary}, window_chrome={window_chrome}"
+        );
+    }
 }
 
 #[test]

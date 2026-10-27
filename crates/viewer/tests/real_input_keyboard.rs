@@ -1,4 +1,4 @@
-use viewer::real_input::{Action, Frame, Key, Modifiers, Pointer, StreamOwner, convert};
+use viewer::real_input::{Action, Capture, Frame, Key, Modifiers, Pointer, StreamOwner, convert};
 
 #[test]
 fn rename_focus_filters_all_keys_before_f3_but_search_retains_its_key_path() {
@@ -82,7 +82,7 @@ fn performance_toggle_is_local_and_unknown_names_are_ignored() {
             ..Pointer::default()
         },
         keys: vec![
-            Key::Named(""),
+            Key::Unknown,
             Key::PerformanceToggle,
             Key::Named("p"),
             Key::PerformanceToggle,
@@ -142,4 +142,21 @@ fn known_keys_keep_names_modifiers_and_order_after_pointer_actions() {
             },
         ]
     );
+}
+
+#[test]
+fn window_chrome_suppresses_canvas_keys_but_not_the_local_performance_toggle() {
+    let result = convert(&Frame {
+        pointer: Pointer {
+            down: true,
+            ..Pointer::default()
+        },
+        capture: Capture {
+            window_chrome: true,
+            ..Capture::default()
+        },
+        keys: vec![Key::Named("f"), Key::PerformanceToggle],
+        ..Frame::default()
+    });
+    assert_eq!(result.actions, vec![Action::TogglePerformance]);
 }

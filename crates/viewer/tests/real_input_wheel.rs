@@ -1,4 +1,6 @@
-use viewer::real_input::{Action, Frame, Key, Modifiers, Pointer, StreamOwner, Wheel, convert};
+use viewer::real_input::{
+    Action, Capture, Frame, Key, Modifiers, Pointer, StreamOwner, Wheel, convert,
+};
 
 #[test]
 fn automatic_streams_suppress_zoom_and_scroll_but_keep_frame_metadata() {
@@ -194,4 +196,25 @@ fn ordinary_scroll_keeps_points_and_precedes_keys_after_pointer_actions() {
             },
         ]
     );
+}
+
+#[test]
+fn window_chrome_suppresses_both_wheel_sources() {
+    let result = convert(&Frame {
+        pointer: Pointer {
+            down: true,
+            ..Pointer::default()
+        },
+        capture: Capture {
+            window_chrome: true,
+            ..Capture::default()
+        },
+        wheel: Wheel {
+            zoom: 1.1,
+            scroll: [12.0, -200.0],
+            ..Wheel::default()
+        },
+        ..Frame::default()
+    });
+    assert!(result.actions.is_empty());
 }
