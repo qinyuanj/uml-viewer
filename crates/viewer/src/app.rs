@@ -20,6 +20,9 @@ use crate::bench;
 use crate::driver::{self, Input, Runner, ViewRecord};
 use crate::evidence::Evidence;
 use crate::gui::{Action, Gui};
+use crate::real_input::{
+    self, Action as RealAction, Capture, Frame, Modifiers, Pointer, StreamOwner,
+};
 use crate::render_cache::RenderCache;
 use crate::search_box::SearchBox;
 use crate::viewer_session::{
@@ -979,12 +982,6 @@ impl Viewer {
 
     fn collect_real_input(&mut self, ctx: &egui::Context) {
         let screen = ctx.content_rect();
-        self.window_w = screen.width() as f64;
-        self.window_h = screen.height() as f64;
-        if self.driver.is_some() || self.bench.is_some() {
-            // A driver or the bench owns the event stream; real input would race it.
-            return;
-        }
         let (pos, pressed, released, double, down) = ctx.input(|i| {
             (
                 i.pointer.hover_pos(),
@@ -995,33 +992,117 @@ impl Viewer {
                 i.pointer.primary_down(),
             )
         });
-        let inside = pos.is_some_and(|p| screen.contains(p));
-        if let Some(p) = pos.filter(|_| inside) {
-            // View units: points from the canvas origin.
+        let position = pos.map(|p| [p.x as f64, p.y as f64]);
+        let origin = [screen.min.x as f64, screen.min.y as f64];
+        // Geometry stays with the existing interface owners. Drag capture is
+        // independent: an active canvas drag bypasses ordinary UI capture.
+        let ordinary = pos.is_some_and(|p| {
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
-            let dragging = self.session.state().drag.is_some();
-            let dims = self.dims(ctx);
-            if !dragging && (self.search.captures(x, y) || self.gui.captures(x, y, self.window_w)) {
-                // egui owns the search box; the canvas sees nothing.
-                self.canvas(Canvas::Leave, dims.clone());
-            } else if (pressed || double) && self.chrome_press(x, y) {
-                // Consumed by the Declutter control.
-            } else if double {
-                self.canvas(Canvas::DoublePress(x, y), dims.clone());
-            } else if pressed {
-                self.canvas(Canvas::Press(x, y), dims.clone());
-            } else if down && dragging {
-                self.canvas(Canvas::Drag(x, y), dims.clone());
-            } else if !down {
-                self.canvas(Canvas::Move(x, y), dims.clone());
-            }
-            if released && self.session.state().drag.is_some() {
-                self.canvas(Canvas::Release(x, y), dims);
-            }
-        } else if !down {
-            let dims = self.dims(ctx);
-            self.canvas(Canvas::Leave, dims);
+            self.search.captures(x, y) || self.gui.captures(x, y, screen.width() as f64)
+        });
+        let owner = if self.driver.is_some() {
+            StreamOwner::Driver
+        } else if self.bench.is_some() {
+            StreamOwner::Bench
+        } else {
+            StreamOwner::Real
+        };
+        let (ctrl, shift) = ctx.input(|i| (i.modifiers.ctrl, i.modifiers.shift));
+        let frame = Frame {
+            owner,
+            origin,
+            size: [screen.width() as f64, screen.height() as f64],
+            pointer: Pointer {
+                position,
+                pressed,
+                double,
+                released,
+                down,
+            },
+            modifiers: Modifiers { ctrl, shift },
+            capture: Capture {
+                ordinary,
+                dragging: self.session.state().drag.is_some(),
+            },
+        };
+        let converted = real_input::convert(&frame);
+        [self.window_w, self.window_h] = converted.size;
+        let mut dims = self.dims(ctx);
+        dims.control = converted.modifiers.ctrl;
+        dims.shift = converted.modifiers.shift;
+        for action in converted.actions {
+            self.execute_real_action(action, &dims);
         }
+        if owner != StreamOwner::Real {
+            return;
+        }
+        self.collect_real_wheel(ctx, pos, screen);
+        self.collect_real_keys(ctx);
+    }
+
+    /// Ordered execution only; #175 replaces the remaining pointer handoff.
+    fn execute_real_action(&mut self, action: RealAction, dims: &Dims) {
+        let input = match action {
+            RealAction::Press(x, y) => {
+                if self.chrome_press(x, y) {
+                    return;
+                }
+                Canvas::Press(x, y)
+            }
+            RealAction::Move(x, y) => Canvas::Move(x, y),
+            RealAction::Leave => Canvas::Leave,
+            RealAction::LegacyPointer {
+                x,
+                y,
+                double,
+                pressed,
+                down,
+            } => {
+                self.legacy_real_pointer(x, y, double, pressed, down, dims);
+                return;
+            }
+            RealAction::ReleaseCandidate(x, y) => {
+                if self.session.state().drag.is_none() {
+                    return;
+                }
+                Canvas::Release(x, y)
+            }
+        };
+        self.canvas(input, dims.clone());
+    }
+
+    /// Unmigrated double/drag/chrome behavior, kept for the #175 slice.
+    fn legacy_real_pointer(
+        &mut self,
+        x: f64,
+        y: f64,
+        double: bool,
+        pressed: bool,
+        down: bool,
+        dims: &Dims,
+    ) {
+        if (pressed || double) && self.chrome_press(x, y) {
+            return;
+        }
+        let input = if double {
+            Canvas::DoublePress(x, y)
+        } else if pressed {
+            Canvas::Press(x, y)
+        } else if down && self.session.state().drag.is_some() {
+            Canvas::Drag(x, y)
+        } else {
+            return;
+        };
+        self.canvas(input, dims.clone());
+    }
+
+    /// Existing wheel collection; #176 owns this independent migration.
+    fn collect_real_wheel(
+        &mut self,
+        ctx: &egui::Context,
+        pos: Option<egui::Pos2>,
+        screen: egui::Rect,
+    ) {
         let over_search = pos.is_some_and(|p| {
             let (x, y) = ((p.x - screen.min.x) as f64, (p.y - screen.min.y) as f64);
             self.search.captures(x, y)
@@ -1048,6 +1129,10 @@ impl Viewer {
                 shift: false,
             });
         }
+    }
+
+    /// Existing keyboard collection; #177 owns this independent migration.
+    fn collect_real_keys(&mut self, ctx: &egui::Context) {
         let keys: Vec<egui::Key> = ctx.input(|i| {
             i.events
                 .iter()
