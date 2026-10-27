@@ -227,11 +227,17 @@ pub fn cycle_declutter(s: &ViewState) -> ViewState {
 pub fn drill(s: &ViewState, id: &Value) -> ViewState {
     let mut n = s.clone();
     n.focus = vec![];
-    let pid = get(&s.extra, "proposal-id").cloned();
-    if H::proposal_package_id(Some(id))
-        || s.document
-            .as_ref()
-            .is_some_and(|d| H::find_nested_group(d, pid.as_ref(), id).is_some())
+    let proposals = s
+        .document
+        .as_ref()
+        .map(H::named_proposals)
+        .unwrap_or_default();
+    let pid = document::active_proposal_id(&proposals, &s.extra);
+    if pid.is_some()
+        && (H::proposal_package_id(Some(id))
+            || s.document
+                .as_ref()
+                .is_some_and(|d| H::find_nested_group(d, pid.as_ref(), id).is_some()))
     {
         n.extra.assoc(Value::keyword("open-layer"), id.clone());
     } else {

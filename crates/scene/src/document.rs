@@ -30,6 +30,22 @@ fn vmap(entries: Vec<(&str, Value)>) -> Value {
     )
 }
 
+/// Resolve the explicit proposal, or the first one for a legacy proposal view.
+pub(crate) fn active_proposal_id(proposals: &[Value], extra: &Value) -> Option<Value> {
+    get(extra, "proposal-id")
+        .filter(|p| !matches!(p, Value::Nil))
+        .cloned()
+        .or_else(|| {
+            let proposed =
+                edn::record::flag(extra, "proposal") || matches!(extra, Value::Bool(true));
+            if proposed {
+                proposals.first().and_then(|p| get(p, "id").cloned())
+            } else {
+                None
+            }
+        })
+}
+
 /// Quality snapshots, focus and view options in; a scene out.
 ///
 /// * `snapshots` — quality records; `None`/empty leaves the document alone.
@@ -43,18 +59,7 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
     };
     if edn::record::flag(&doc, "hierarchical") {
         let ps = H::named_proposals(&doc);
-        let pid = get(extra, "proposal-id")
-            .filter(|p| !matches!(p, Value::Nil))
-            .cloned()
-            .or_else(|| {
-                let proposed =
-                    edn::record::flag(extra, "proposal") || matches!(extra, Value::Bool(true));
-                if proposed {
-                    ps.first().and_then(|p| get(p, "id").cloned())
-                } else {
-                    None
-                }
-            });
+        let pid = active_proposal_id(&ps, extra);
         let layer = get(extra, "open-layer")
             .filter(|l| !matches!(l, Value::Nil))
             .cloned();

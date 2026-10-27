@@ -78,6 +78,71 @@ fn enters_nested_namespaces_and_returns_with_back_escape_and_hotspot() {
 }
 
 #[test]
+fn source_tree_drill_ignores_same_named_nested_proposal_groups() {
+    let doc = scene::ir::read_document(
+        r#"{:hierarchical true :classes [{:id :client} {:id :client.packages} {:id :client.packages.inner} {:id :client.packages.inner.leaf}] :edges [] :proposals [{:id :split :name "Split" :layers [{:id :core :label "Core" :nses [{:id :client.packages :label "Packages" :nses [{:id :client.packages.inner :label "Inner" :nses [:client.packages.inner.leaf]}]}]}]}]}"#,
+    )
+    .unwrap();
+    let s = document::new_state(
+        doc,
+        Some(Value::String("one".into())),
+        None,
+        None,
+        &[],
+        None,
+    );
+    let client = events::drill(&s, &kw("client"));
+    let packages = events::drill(&client, &kw("client.packages"));
+    assert_eq!(vec![kw("client"), kw("packages")], packages.focus);
+    assert!(get(&packages.extra, "open-layer").is_none());
+
+    let inner = events::drill(&packages, &kw("client.packages.inner"));
+    assert_eq!(vec![kw("client"), kw("packages"), kw("inner")], inner.focus);
+    assert!(get(&inner.extra, "open-layer").is_none());
+    assert_eq!(packages.focus, events::back(&inner).focus);
+    assert_eq!(client.focus, events::back(&packages).focus);
+}
+
+#[test]
+fn source_tree_drill_ignores_all_same_named_proposal_groups() {
+    let doc = scene::ir::read_document(
+        r#"{:hierarchical true :classes [{:id :client} {:id :client.ScreenHandlers} {:id :client.packages} {:id :server} {:id :server.Mgr} {:id :server.Data} {:id :server.packages} {:id :common} {:id :common.cfg} {:id :common.packages}] :edges [] :proposals [{:id :split :name "Split" :layers [{:id :core :label "Core" :nses [{:id :client.ScreenHandlers :nses []} {:id :server.Mgr :nses []} {:id :server.Data :nses []} {:id :common.cfg :nses []} {:id :client.packages :nses []} {:id :common.packages :nses []} {:id :server.packages :nses []}]}]}]}"#,
+    )
+    .unwrap();
+    let source = document::new_state(
+        doc,
+        Some(Value::String("one".into())),
+        None,
+        None,
+        &[],
+        None,
+    );
+    for id in [
+        "client.ScreenHandlers",
+        "server.Mgr",
+        "server.Data",
+        "common.cfg",
+        "client.packages",
+        "common.packages",
+        "server.packages",
+    ] {
+        let mut state = source.clone();
+        let mut path = Vec::new();
+        let mut full = String::new();
+        for segment in id.split('.') {
+            if !full.is_empty() {
+                full.push('.');
+            }
+            full.push_str(segment);
+            path.push(kw(segment));
+            state = events::drill(&state, &kw(&full));
+        }
+        assert_eq!(path, state.focus, "{id}");
+        assert!(get(&state.extra, "open-layer").is_none(), "{id}");
+    }
+}
+
+#[test]
 fn pans_within_scene_bounds_including_negative_origins() {
     let mut s = tree();
     s.scene.assoc(
@@ -251,6 +316,30 @@ fn opens_existing_proposal_packages_and_nested_groups_then_returns() {
             .unwrap_or_default()
             .to_owned()
     );
+}
+
+#[test]
+fn legacy_default_proposal_opens_nested_groups_without_a_proposal_id() {
+    let doc = scene::ir::read_document(
+        r#"{:hierarchical true :classes [{:id :source.lua}] :edges [] :proposals [{:id :split :name "Split" :layers [{:id :core :label "Core" :nses [{:id :parser :label "Parser" :nses [:source.lua]}]}]}]}"#,
+    )
+    .unwrap();
+    let mut s = document::new_state(
+        doc,
+        Some(Value::String("one".into())),
+        None,
+        None,
+        &[],
+        None,
+    );
+    s.extra.assoc(Value::keyword("proposal"), Value::Bool(true));
+    assert!(get(&s.extra, "proposal-id").is_none());
+
+    let group = events::drill(&s, &kw("parser"));
+    assert_eq!(Some(&kw("parser")), get(&group.extra, "open-layer"));
+    assert!(group.focus.is_empty());
+    assert_eq!(vec!["source.lua"], ids(&group));
+    assert!(get(&events::back(&group).extra, "open-layer").is_none());
 }
 
 #[test]
