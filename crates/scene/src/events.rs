@@ -59,6 +59,9 @@ fn rebuild(mut s: ViewState) -> ViewState {
         // Recompiling geometry is not navigation: keep camera/zoom and valid
         // selection targets (ADR 0002).
         s = document::drop_missing_detail(s);
+        // 悬停携带当前几何与成员，重编译后由下一次指针输入重新命中。
+        s.hover = None;
+        s.pointer = None;
     }
     s
 }
