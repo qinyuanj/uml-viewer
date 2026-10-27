@@ -58,6 +58,11 @@ def prepare_dependency_bundles(project):
                  project / 'diagram.edn')
 
 
+def prepare_bundle_safety(project):
+    shutil.copy2(REPO / 'fixtures/bundle-goldens/safe-channel.ir.edn',
+                 project / 'diagram.edn')
+
+
 def prepare_bundle_lifecycle(project):
     shutil.copy2(REPO / 'fixtures/bundle_lifecycle.ir.edn', project / 'diagram.edn')
 
@@ -197,6 +202,7 @@ def prepare_mail(project):
 
 FIXTURES = {
     'dependency_bundles': prepare_dependency_bundles,
+    'bundle_safety': prepare_bundle_safety,
     'bundle_lifecycle': prepare_bundle_lifecycle,
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
@@ -387,6 +393,9 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
+    'bundle_safety': {'seconds': 30, 'evidence': ['bundle-safety-pass.txt',
+        'bundle-safety.edn', 'bundle-safety.png', 'bundle-safety-branch.png',
+        'bundle-safety-branch.edn']},
     'bundle_lifecycle': {'seconds': 60, 'evidence': ['bundle-lifecycle-pass.txt',
         'lifecycle-root.edn', 'lifecycle-child.edn', 'lifecycle-proposal.edn',
         'lifecycle-open.edn', 'lifecycle-root.png', 'lifecycle-child.png',
