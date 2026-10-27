@@ -432,6 +432,15 @@ ADR 0008 的 `1e-6` parity 约束固定迁移时的**基础路由**，不是永�
 热重载违规依赖后主干和成员分支均保持红色。上述结果由已提交 driver 的断言与真实截图
 共同核验，可通过同一命令重放；临时证据目录不是唯一交接依据。
 
+#180 的生命周期验收使用独立的 `fixtures/bundle_lifecycle.ir.edn`，根视图和 `f` 子层都实际
+产生非空主干。运行 `python3 -I scripts/run_viewer_driver.py bundle_lifecycle` 可在真实窗口重放
+根层钻取/返回、提案及打开下一层、五档 declutter、三角 leaf 悬停、热重载，以及缩放、平移与
+视口变化。该 driver 已注册到 `scripts/check.py --native`；提交的真实 WSLg 证据位于
+`acceptance-evidence/180-bundle-lifecycle/`，含四张截图和当前画布、命中、弹窗、绘制缓存记录。
+场景重编译会清除旧 hover/pointer，下一次指针输入从当前几何重新命中，避免旧主干成员残留。
+`crates/scene/tests/bundle_lifecycle.rs` 另验证当前视图重建、成员顺序、leaf 明细及世界坐标稳定性；
+不改历史基础路由 golden，也不改 IR、policy、mail 或质量快照契约。
+
 同轮 `cargo test --workspace --locked` 为 588 passed、0 failed、0 ignored，默认
 `scripts/check.py` 三项检查及全目标 clippy 通过；既有 release 场景性能测试四项通过，
 2000 类编译约 2.35 秒。未运行完整 native driver 套件、真实窗口性能协议或 fs-monopoly

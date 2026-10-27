@@ -58,6 +58,10 @@ def prepare_dependency_bundles(project):
                  project / 'diagram.edn')
 
 
+def prepare_bundle_lifecycle(project):
+    shutil.copy2(REPO / 'fixtures/bundle_lifecycle.ir.edn', project / 'diagram.edn')
+
+
 def prepare_navigation(project):
     children = ' '.join(f'{{:id :source.child{n}}}' for n in range(1, 21))
     ops = ' '.join(f'"operation{n}"' for n in range(1, 71))
@@ -193,6 +197,7 @@ def prepare_mail(project):
 
 FIXTURES = {
     'dependency_bundles': prepare_dependency_bundles,
+    'bundle_lifecycle': prepare_bundle_lifecycle,
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
     'search': prepare_search,
@@ -382,6 +387,10 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
+    'bundle_lifecycle': {'seconds': 60, 'evidence': ['bundle-lifecycle-pass.txt',
+        'lifecycle-root.edn', 'lifecycle-child.edn', 'lifecycle-proposal.edn',
+        'lifecycle-open.edn', 'lifecycle-root.png', 'lifecycle-child.png',
+        'lifecycle-proposal.png', 'lifecycle-triangles.png']},
     'dependency_bundles': {'seconds': 30, 'evidence': ['dependency-bundles-pass.txt',
         'bundle-initial.edn', 'bundle-hover.edn', 'bundle-chain.edn',
         'bundle-triangles.edn', 'bundle-hover.png', 'bundle-branch.png',

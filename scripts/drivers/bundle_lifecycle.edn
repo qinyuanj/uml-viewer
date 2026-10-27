@@ -1,0 +1,119 @@
+{:version 1
+ :doc "#180：含依赖的真实层级视图生命周期。"
+ :steps
+ [{:op :wait-frames :n 4}
+  {:op :view :zoom 1 :center [360 240]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "lifecycle-root.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :assert-canvas :path [:presentation :heads] :count 2}
+  {:op :canvas-point :world [288 210]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup :rows] :equals ["c -> a" "d -> e"]}
+  {:op :screenshot :evidence "lifecycle-root.png"}
+  {:op :canvas-point :world [650 400]}
+  {:op :wait-frames :n 2}
+  {:op :click-class :id :d}
+  {:op :assert-view :selected "d"}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:presentation :trunks 0 :dimmed] :equals false}
+  {:op :assert-canvas :path [:presentation :branches 2 :dimmed] :equals true}
+  {:op :double-click-class :id :f}
+  {:op :wait-frames :n 3}
+  {:op :assert-view :focus [:f]}
+  {:op :view :zoom 1 :center [360 240]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :assert-canvas :path [:presentation :heads] :count 2}
+  {:op :canvas-point :world [288 210]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :dump-canvas :evidence "lifecycle-child.edn"}
+  {:op :screenshot :evidence "lifecycle-child.png"}
+  {:op :canvas-point :world [448 160]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.d -> f.e"]}
+  {:op :key :key "escape"}
+  {:op :wait-frames :n 3}
+  {:op :assert-view :focus []}
+  {:op :view :zoom 1 :center [360 240]}
+  {:op :canvas-point :world [650 400]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "lifecycle-back.edn"}
+  {:op :assert :evidence "lifecycle-back.edn" :same-as "lifecycle-root.edn" :except ["hit" "hover" "popup" "presentation"]}
+  {:op :mouse-move :at [300 260]}
+  {:op :record-view :as :before :anchor [300 260]}
+  {:op :wheel :dy 1 :ctrl true}
+  {:op :assert-view :zoom-times [:before 1.1]}
+  {:op :wheel :dy -2}
+  {:op :resize-window :size [1200 800]}
+  {:op :wait-frames :n 4}
+  {:op :dump-canvas :evidence "lifecycle-camera.edn"}
+  {:op :assert :evidence "lifecycle-camera.edn" :same-as "lifecycle-root.edn" :except ["hit" "hover" "popup" "presentation"]}
+  {:op :edit :project "diagram.edn" :from "Bundle lifecycle" :to "Bundle lifecycle"}
+  {:op :wait-frames :n 5}
+  {:op :key :key "r"}
+  {:op :wait-frames :n 3}
+  {:op :dump-canvas :evidence "lifecycle-reloaded.edn"}
+  {:op :assert :evidence "lifecycle-reloaded.edn" :same-as "lifecycle-root.edn" :except ["hit" "hover" "popup" "presentation"]}
+  {:op :gui-point :at "proposal:plan"}
+  {:op :wait-frames :n 2}
+  {:op :gui-click :at "proposal:plan"}
+  {:op :wait-gui :path [:proposal] :equals true :seconds 5}
+  {:op :wait-frames :n 3}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :canvas-point :world [608 184]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :dump-canvas :evidence "lifecycle-proposal.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :screenshot :evidence "lifecycle-proposal.png"}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :double-click :at [60 65]}
+  {:op :wait-frames :n 3}
+  {:op :assert-canvas :path [:scene :diagram :title] :equals "Unassigned"}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :canvas-point :world [608 184]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:popup :rows] :equals ["f.c -> f.a" "f.d -> f.e"]}
+  {:op :dump-canvas :evidence "lifecycle-open.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :key :key "escape"}
+  {:op :key :key "p"}
+  {:op :wait-frames :n 3}
+  {:op :assert-canvas :path [:scene :diagram :proposal] :present false}
+  {:op :canvas-point :world [650 400]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "lifecycle-source-again.edn"}
+  {:op :assert :evidence "lifecycle-source-again.edn" :same-as "lifecycle-root.edn" :except ["hit" "hover" "popup" "presentation"]}
+  {:op :click-declutter}
+  {:op :assert-view :declutter "arrows"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "triangles"}
+  {:op :assert-canvas :path [:presentation :trunks] :count 0}
+  {:op :assert-canvas :path [:presentation :branches] :count 0}
+  {:op :assert-canvas :path [:presentation :heads] :count 0}
+  {:op :assert-canvas :path [:presentation :indicators] :count 4}
+  {:op :view :zoom 1 :center [600 400]}
+  {:op :canvas-point :world [288 146]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :dep}
+  {:op :assert-canvas :path [:popup :rows] :equals ["c -> a"]}
+  {:op :dump-canvas :evidence "lifecycle-triangles.edn"}
+  {:op :screenshot :evidence "lifecycle-triangles.png"}
+  {:op :click-declutter}
+  {:op :assert-view :declutter "elements"}
+  {:op :assert-canvas :path [:scene :edges] :count 2}
+  {:op :click-declutter}
+  {:op :assert-view :declutter "classes"}
+  {:op :assert-canvas :path [:scene :edges] :count 2}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "full"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :write :evidence "bundle-lifecycle-pass.txt" :text "PASS bundle lifecycle: source drill/back, proposal/open, all declutter, reload, camera, pointer and screenshots\n"}
+  {:op :quit :code 0}]}
