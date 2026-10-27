@@ -394,7 +394,8 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 DRIVERS = {
     'bundle_safety': {'seconds': 30, 'evidence': ['bundle-safety-pass.txt',
-        'bundle-safety.edn', 'bundle-safety.png']},
+        'bundle-safety.edn', 'bundle-safety.png', 'bundle-safety-branch.png',
+        'bundle-safety-branch.edn']},
     'bundle_lifecycle': {'seconds': 60, 'evidence': ['bundle-lifecycle-pass.txt',
         'lifecycle-root.edn', 'lifecycle-child.edn', 'lifecycle-proposal.edn',
         'lifecycle-open.edn', 'lifecycle-root.png', 'lifecycle-child.png',
