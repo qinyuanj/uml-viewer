@@ -1,0 +1,12 @@
+{:version 1
+ :doc "安全依赖线束：扇出产生非空主干，端点与样式保持独立。"
+ :steps
+ [{:op :wait-frames :n 4}
+  {:op :view :zoom 1 :center [360 240]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "bundle-safety.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 4}
+  {:op :assert-canvas :path [:scene :edges] :count 3}
+  {:op :screenshot :evidence "bundle-safety.png"}
+  {:op :write :evidence "bundle-safety-pass.txt" :text "PASS safe dependency bundles\n"}
+  {:op :quit :code 0}]}

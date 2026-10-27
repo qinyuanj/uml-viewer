@@ -1,0 +1,4 @@
+{:hierarchical true :order [app a b c]
+ :classes [{:id :app :level 1} {:id :a :level 3} {:id :b :level 3} {:id :c :level 3}]
+ :edges [{:from :app :to :a :kind :dependency} {:from :app :to :b :kind :dependency}
+         {:from :app :to :c :kind :dependency}]}

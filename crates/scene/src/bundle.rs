@@ -6,7 +6,7 @@ use crate::compose::ClassIndex;
 use crate::geom;
 use edn::Value;
 use edn::record::{flag, get, local_name, put, seq};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Clone)]
 struct Segment {
@@ -14,6 +14,7 @@ struct Segment {
     part: usize,
     start: f64,
     end: f64,
+    offset: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -164,7 +165,9 @@ fn add_piece(current: &mut Vec<[f64; 2]>, a: [f64; 2], b: [f64; 2]) {
     current.push(b);
 }
 
-fn branches(e: &Value, cuts: &BTreeMap<usize, Vec<(f64, f64)>>) -> Vec<Vec<[f64; 2]>> {
+type Cut = (f64, f64, [f64; 2], [f64; 2]);
+
+fn branches(e: &Value, cuts: &BTreeMap<usize, Vec<Cut>>) -> Vec<Vec<[f64; 2]>> {
     let points: Vec<[f64; 2]> = seq(get(e, "points"))
         .iter()
         .filter_map(geom::vec2)
@@ -180,7 +183,7 @@ fn branches(e: &Value, cuts: &BTreeMap<usize, Vec<(f64, f64)>>) -> Vec<Vec<[f64;
         let unit = [(q[0] - p[0]) / length, (q[1] - p[1]) / length];
         let at = |t: f64| [p[0] + unit[0] * t, p[1] + unit[1] * t];
         let mut cursor = 0.0;
-        for &(start, end) in cuts.get(&part).into_iter().flatten() {
+        for &(start, end, entry, exit) in cuts.get(&part).into_iter().flatten() {
             let (start, end) = (start.max(0.0).min(length), end.max(0.0).min(length));
             if end <= cursor || end <= start {
                 continue;
@@ -188,11 +191,13 @@ fn branches(e: &Value, cuts: &BTreeMap<usize, Vec<(f64, f64)>>) -> Vec<Vec<[f64;
             if start > cursor {
                 add_piece(&mut current, at(cursor), at(start));
             }
+            add_piece(&mut current, at(start), entry);
             if current.len() > 1 {
                 out.push(std::mem::take(&mut current));
             } else {
                 current.clear();
             }
+            add_piece(&mut current, exit, at(end));
             cursor = end;
         }
         if cursor < length {
@@ -203,6 +208,112 @@ fn branches(e: &Value, cuts: &BTreeMap<usize, Vec<(f64, f64)>>) -> Vec<Vec<[f64;
         out.push(current);
     }
     out
+}
+
+// Spatially bound safety queries to the same local channels as planning.
+struct RouteSegment {
+    edge: usize,
+    a: [f64; 2],
+    b: [f64; 2],
+}
+
+struct Safety {
+    obstacles: HashMap<(i64, i64), Vec<geom::Rect>>,
+    routes: HashMap<(i64, i64), Vec<RouteSegment>>,
+}
+
+fn cells(rect: geom::Rect) -> impl Iterator<Item = (i64, i64)> {
+    let x0 = (rect.x / 256.0).floor() as i64;
+    let x1 = (rect.right() / 256.0).floor() as i64;
+    let y0 = (rect.y / 256.0).floor() as i64;
+    let y1 = (rect.bottom() / 256.0).floor() as i64;
+    (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+}
+
+impl Safety {
+    fn new(scene: &Value) -> Self {
+        let mut out = Self {
+            obstacles: HashMap::new(),
+            routes: HashMap::new(),
+        };
+        let mut rects = Vec::new();
+        for c in seq(get(scene, "classes")) {
+            if !flag(c, "dummy?") {
+                rects.extend(get(c, "rect").and_then(geom::Rect::from_value));
+            }
+            for ports in ["in-ports", "out-ports"] {
+                rects.extend(
+                    seq(get(c, ports))
+                        .iter()
+                        .filter_map(|p| get(p, "rect").and_then(geom::Rect::from_value)),
+                );
+            }
+        }
+        for p in seq(get(scene, "packages")) {
+            if let Some(r) = get(p, "rect").and_then(geom::Rect::from_value) {
+                rects.push(geom::Rect::new(r.x, r.y, r.w, 18.0));
+            }
+        }
+        for r in rects {
+            for cell in cells(r.inflate(5.0)) {
+                out.obstacles.entry(cell).or_default().push(r);
+            }
+        }
+        for (i, e) in seq(get(scene, "edges")).iter().enumerate() {
+            let points: Vec<_> = seq(get(e, "points"))
+                .iter()
+                .filter_map(geom::vec2)
+                .collect();
+            for ps in points.windows(2) {
+                for cell in cells(bounds(ps).inflate(1.0)) {
+                    out.routes.entry(cell).or_default().push(RouteSegment {
+                        edge: i,
+                        a: ps[0],
+                        b: ps[1],
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn clear(&self, paths: &[Vec<[f64; 2]>], members: &[usize], shifted: bool) -> bool {
+        for path in paths {
+            for ps in path.windows(2) {
+                if ps[0] == ps[1] {
+                    continue;
+                }
+                for cell in cells(bounds(ps).inflate(5.0)) {
+                    if let Some(rects) = self.obstacles.get(&cell) {
+                        let visible = geom::gap_segment(ps[0], ps[1], rects, 5.0);
+                        if shifted && visible.is_empty() {
+                            continue;
+                        }
+                        if !shifted && (visible.len() != 1 || visible[0] != [ps[0], ps[1]]) {
+                            return false;
+                        }
+                    }
+                    if shifted && let Some(routes) = self.routes.get(&cell) {
+                        for route in routes {
+                            if !members.contains(&route.edge)
+                                && crosses(ps[0], ps[1], route.a, route.b)
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+fn crosses(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let side = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    };
+    side(a, b, c) * side(a, b, d) < -1e-8 && side(c, d, a) * side(c, d, b) < -1e-8
 }
 
 /// Replace compatible collinear runs with one trunk and explicit per-edge
@@ -220,24 +331,120 @@ pub(crate) fn plan(scene: &mut Value, index: &ClassIndex) {
             .collect();
         for (part, pair) in points.windows(2).enumerate() {
             if let Some((key, start, end)) = line_key(pair[0], pair[1], violating) {
+                let offset = f64::from_bits(key.offset);
                 lines.entry(key).or_default().push(Segment {
                     edge: edge_index,
                     part,
                     start,
                     end,
+                    offset,
                 });
             }
         }
     }
 
     let mut bundles = Vec::new();
-    let mut cuts: BTreeMap<usize, BTreeMap<usize, Vec<(f64, f64)>>> = BTreeMap::new();
-    for (key, segments) in lines {
-        for run in runs(&segments) {
+    let mut cuts: BTreeMap<usize, BTreeMap<usize, Vec<Cut>>> = BTreeMap::new();
+    let mut channels = Vec::new();
+    let keys: Vec<_> = lines.keys().cloned().collect();
+    for (i, left) in keys.iter().enumerate() {
+        let (ux, uy) = (f64::from_bits(left.ux), f64::from_bits(left.uy));
+        if ux.abs() < 0.995 && uy.abs() < 0.995 {
+            continue;
+        }
+        let pitch = if uy.abs() >= 0.995 { 160.0 } else { 180.0 };
+        let mut group = Vec::new();
+        for right in &keys[i + 1..] {
+            if left.violating != right.violating || left.ux != right.ux || left.uy != right.uy {
+                continue;
+            }
+            if (f64::from_bits(left.offset) - f64::from_bits(right.offset)).abs() > pitch {
+                continue;
+            }
+            let overlap = lines[left].iter().any(|a| {
+                lines[right]
+                    .iter()
+                    .any(|b| a.start < b.end && b.start < a.end)
+            });
+            if overlap && (f64::from_bits(left.offset) - f64::from_bits(right.offset)).abs() > 1e-6
+            {
+                if group.is_empty() {
+                    group.extend(lines[left].iter().cloned());
+                }
+                group.extend(lines[right].iter().cloned());
+            }
+        }
+        if group.len() > lines[left].len() {
+            channels.push((left.clone(), group));
+        }
+    }
+    let safety = Safety::new(scene);
+    let exact_groups: Vec<(LineKey, Vec<Segment>, bool)> = lines
+        .iter()
+        .map(|(k, v)| {
+            let exact: Vec<_> = v
+                .iter()
+                .filter(|s| (s.offset - f64::from_bits(k.offset)).abs() < 1e-6)
+                .cloned()
+                .collect();
+            (k.clone(), exact, false)
+        })
+        .collect();
+    let pending = channels;
+    for (key, segments, shifted_group) in exact_groups {
+        for mut run in runs(&segments) {
+            let mut key = key.clone();
+            let mut offsets: Vec<f64> = run.segments.iter().map(|i| segments[*i].offset).collect();
+            offsets.sort_by(f64::total_cmp);
+            key.offset = offsets[offsets.len() / 2].to_bits();
+            let shifted = shifted_group && offsets.first() != offsets.last();
+            if shifted {
+                run.start += 1.0;
+                run.end -= 1.0;
+            }
+            if shifted && offsets.iter().all(|o| (o - offsets[0]).abs() < 1e-6) {
+                continue;
+            }
+            if shifted && run.end - run.start < 4.0 {
+                continue;
+            }
+            if run.segments.iter().any(|i| {
+                let s = &segments[*i];
+                {
+                    let local_start = run.start - s.start;
+                    let local_end = run.end - s.start;
+                    cuts.get(&s.edge)
+                        .and_then(|ps| ps.get(&s.part))
+                        .is_some_and(|cs| cs.iter().any(|c| c.0 <= local_end && c.1 >= local_start))
+                }
+            }) {
+                continue;
+            }
             let path = vec![point(&key, run.start), point(&key, run.end)];
             let all_obstacles = index.obstacles_in(bounds(&path).inflate(13.0), None, None);
             let visible = geom::gap_polyline(&path, &all_obstacles, 5.0);
-            if visible.len() != 1 || visible[0] != path {
+            if !shifted && (visible.len() != 1 || visible[0] != path) {
+                continue;
+            }
+            if shifted && visible.is_empty() {
+                continue;
+            }
+            let attachments: Vec<Vec<[f64; 2]>> = run
+                .segments
+                .iter()
+                .map(|i| {
+                    let s = &segments[*i];
+                    let mut original = key.clone();
+                    original.offset = s.offset.to_bits();
+                    vec![
+                        point(&original, run.start),
+                        path[0],
+                        path[1],
+                        point(&original, run.end),
+                    ]
+                })
+                .collect();
+            if !safety.clear(&attachments, &run.members, shifted) {
                 continue;
             }
             let member_values = run
@@ -255,7 +462,139 @@ pub(crate) fn plan(scene: &mut Value, index: &ClassIndex) {
                     .or_default()
                     .entry(segment.part)
                     .or_default()
-                    .push((run.start - segment.start, run.end - segment.start));
+                    .push((
+                        run.start - segment.start,
+                        run.end - segment.start,
+                        point(&key, run.start),
+                        point(&key, run.end),
+                    ));
+                let cs = cuts
+                    .get_mut(&segment.edge)
+                    .unwrap()
+                    .get_mut(&segment.part)
+                    .unwrap();
+                cs.sort_by(|a, b| a.0.total_cmp(&b.0));
+                let mut merged: Vec<Cut> = Vec::new();
+                for c in cs.drain(..) {
+                    if let Some(last) = merged.last_mut()
+                        && c.0 <= last.1
+                    {
+                        last.1 = last.1.max(c.1);
+                        last.3 = c.3;
+                    } else {
+                        merged.push(c);
+                    }
+                }
+                *cs = merged;
+            }
+        }
+    }
+    let near_groups: Vec<_> = pending
+        .into_iter()
+        .map(|(k, v)| {
+            let v: Vec<_> = v
+                .into_iter()
+                .filter(|s| cuts.get(&s.edge).and_then(|ps| ps.get(&s.part)).is_none())
+                .collect();
+            (k, v, true)
+        })
+        .filter(|(_, v, _)| v.len() >= 2)
+        .collect();
+    for (key, segments, _) in near_groups {
+        for mut run in runs(&segments) {
+            let mut key = key.clone();
+            let mut offsets: Vec<f64> = run.segments.iter().map(|i| segments[*i].offset).collect();
+            offsets.sort_by(f64::total_cmp);
+            key.offset = offsets[offsets.len() / 2].to_bits();
+            let shifted = true;
+            if shifted {
+                run.start += 1.0;
+                run.end -= 1.0;
+            }
+            if shifted && offsets.iter().all(|o| (o - offsets[0]).abs() < 1e-6) {
+                continue;
+            }
+            if shifted && run.end - run.start < 4.0 {
+                continue;
+            }
+            if run.segments.iter().any(|i| {
+                let s = &segments[*i];
+                {
+                    let local_start = run.start - s.start;
+                    let local_end = run.end - s.start;
+                    cuts.get(&s.edge)
+                        .and_then(|ps| ps.get(&s.part))
+                        .is_some_and(|cs| cs.iter().any(|c| c.0 <= local_end && c.1 >= local_start))
+                }
+            }) {
+                continue;
+            }
+            let path = vec![point(&key, run.start), point(&key, run.end)];
+            let all_obstacles = index.obstacles_in(bounds(&path).inflate(13.0), None, None);
+            let visible = geom::gap_polyline(&path, &all_obstacles, 5.0);
+            if !shifted && (visible.len() != 1 || visible[0] != path) {
+                continue;
+            }
+            if shifted && visible.is_empty() {
+                continue;
+            }
+            let attachments: Vec<Vec<[f64; 2]>> = run
+                .segments
+                .iter()
+                .map(|i| {
+                    let s = &segments[*i];
+                    let mut original = key.clone();
+                    original.offset = s.offset.to_bits();
+                    vec![
+                        point(&original, run.start),
+                        path[0],
+                        path[1],
+                        point(&original, run.end),
+                    ]
+                })
+                .collect();
+            if !safety.clear(&attachments, &run.members, shifted) {
+                continue;
+            }
+            let member_values = run
+                .members
+                .iter()
+                .map(|i| Value::Integer(*i as i64))
+                .collect();
+            bundles.push(Value::Map(vec![
+                (Value::keyword("members"), Value::Vector(member_values)),
+                (Value::keyword("strokes"), paths_value(&[path])),
+            ]));
+            for segment_index in run.segments {
+                let segment = &segments[segment_index];
+                cuts.entry(segment.edge)
+                    .or_default()
+                    .entry(segment.part)
+                    .or_default()
+                    .push((
+                        run.start - segment.start,
+                        run.end - segment.start,
+                        point(&key, run.start),
+                        point(&key, run.end),
+                    ));
+                let cs = cuts
+                    .get_mut(&segment.edge)
+                    .unwrap()
+                    .get_mut(&segment.part)
+                    .unwrap();
+                cs.sort_by(|a, b| a.0.total_cmp(&b.0));
+                let mut merged: Vec<Cut> = Vec::new();
+                for c in cs.drain(..) {
+                    if let Some(last) = merged.last_mut()
+                        && c.0 <= last.1
+                    {
+                        last.1 = last.1.max(c.1);
+                        last.3 = c.3;
+                    } else {
+                        merged.push(c);
+                    }
+                }
+                *cs = merged;
             }
         }
     }
@@ -263,7 +602,10 @@ pub(crate) fn plan(scene: &mut Value, index: &ClassIndex) {
         return;
     }
     let mut final_edges = edges;
-    for (edge_index, edge_cuts) in cuts {
+    for (edge_index, mut edge_cuts) in cuts {
+        for cs in edge_cuts.values_mut() {
+            cs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        }
         let e = &mut final_edges[edge_index];
         let raw = branches(e, &edge_cuts);
         put(e, "branches", paths_value(&clip(raw, e, index)));
