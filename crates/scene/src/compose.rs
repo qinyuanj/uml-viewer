@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
 /// dummy boxes are tracked but never clip strokes.
-struct ClassIndex {
+pub(crate) struct ClassIndex {
     rect_by_id: HashMap<String, Rect>,
     cells: HashMap<(i64, i64), Vec<usize>>,
     obstacles: Vec<(Value, Rect, bool)>, // (id, rect, dummy?)
@@ -60,7 +60,12 @@ impl ClassIndex {
 
     /// Obstacle rects overlapping the probe, excluding dummy boxes and the
     /// edge's own endpoints.
-    fn obstacles_in(&self, probe: Rect, from: Option<&Value>, to: Option<&Value>) -> Vec<Rect> {
+    pub(crate) fn obstacles_in(
+        &self,
+        probe: Rect,
+        from: Option<&Value>,
+        to: Option<&Value>,
+    ) -> Vec<Rect> {
         let (x0, y0) = (
             (probe.x / CELL).floor() as i64,
             (probe.y / CELL).floor() as i64,
@@ -208,6 +213,7 @@ pub fn prepare_scene(scene: &mut Value) {
         edges.push(e);
     }
     put(scene, "edges", Value::Vector(edges));
+    crate::bundle::plan(scene, &index);
     for (list, key) in [("classes", "class-by-id"), ("packages", "package-by-id")] {
         let mut idx = Value::Map(vec![]);
         for c in seq(get(scene, list)) {

@@ -1568,6 +1568,145 @@ impl driver::Host for Viewer {
         self.gui_batches.push_back(batch);
     }
 
+    fn canvas_record(&self) -> Value {
+        use crate::commands::{self, Command, EdgeCommand};
+        use edn::record::record;
+        let state = self.session.state();
+        let number = |n: f64| Value::Float(n);
+        let points = |ps: &[[f64; 2]]| {
+            Value::Vector(
+                ps.iter()
+                    .map(|p| Value::Vector(vec![number(p[0]), number(p[1])]))
+                    .collect(),
+            )
+        };
+        let style = |from: &Option<Value>,
+                     to: &Option<Value>,
+                     color: theme::Rgb,
+                     width: f32,
+                     hot: bool,
+                     dimmed: bool| {
+            record(vec![
+                ("from", from.clone().unwrap_or(Value::Nil)),
+                ("to", to.clone().unwrap_or(Value::Nil)),
+                (
+                    "color",
+                    Value::Vector(vec![
+                        Value::Integer(color.0 as i64),
+                        Value::Integer(color.1 as i64),
+                        Value::Integer(color.2 as i64),
+                    ]),
+                ),
+                ("width", number(width as f64)),
+                ("hot", Value::Bool(hot)),
+                ("dimmed", Value::Bool(dimmed)),
+            ])
+        };
+        let (mut trunks, mut branches, mut heads, mut indicators) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (command, polyline) in self.render_cache.edges() {
+            match command {
+                EdgeCommand::Stroke {
+                    from,
+                    to,
+                    color,
+                    width,
+                    hot,
+                    dimmed,
+                    points: raw,
+                    ..
+                } => {
+                    let mut item = style(from, to, *color, *width, *hot, *dimmed);
+                    item.assoc(
+                        Value::keyword("points"),
+                        points(polyline.map_or(raw.as_slice(), |p| p.points.as_slice())),
+                    );
+                    if from.is_none() && to.is_none() {
+                        trunks.push(item);
+                    } else {
+                        branches.push(item);
+                    }
+                }
+                EdgeCommand::Head {
+                    from,
+                    to,
+                    color,
+                    width,
+                    hot,
+                    dimmed,
+                    tip,
+                    behind,
+                    head,
+                    ..
+                } => {
+                    let mut item = style(from, to, *color, *width, *hot, *dimmed);
+                    item.assoc(Value::keyword("head"), Value::keyword(head));
+                    item.assoc(Value::keyword("tip"), points(&[*tip]));
+                    item.assoc(Value::keyword("behind"), points(&[*behind]));
+                    heads.push(item);
+                }
+                EdgeCommand::Indicator {
+                    id,
+                    points: triangle,
+                    violating,
+                    dimmed,
+                } => indicators.push(record(vec![
+                    ("id", id.clone().unwrap_or(Value::Nil)),
+                    ("points", points(triangle)),
+                    ("violating", Value::Bool(*violating)),
+                    ("dimmed", Value::Bool(*dimmed)),
+                ])),
+            }
+        }
+        let popup = commands::chrome(state, self.gui.canvas_width(self.window_w), self.window_h)
+            .into_iter()
+            .find_map(|c| match c {
+                Command::DependencyPopup { x, y, w, h, rows } => Some(record(vec![
+                    ("x", number(x)),
+                    ("y", number(y)),
+                    ("w", number(w)),
+                    ("h", number(h)),
+                    (
+                        "rows",
+                        Value::Vector(rows.iter().map(|r| Value::String(r.text.clone())).collect()),
+                    ),
+                ])),
+                _ => None,
+            })
+            .unwrap_or(Value::Nil);
+        let hit = state
+            .pointer
+            .and_then(|(x, y)| {
+                let (wx, wy) = scene::events::world_xy(state, x, y);
+                scene::hit::at(&state.scene, wx, wy)
+            })
+            .unwrap_or(Value::Nil);
+        record(vec![
+            ("scene", state.scene.clone()),
+            ("hit", hit),
+            ("hover", state.hover.clone().unwrap_or(Value::Nil)),
+            ("popup", popup),
+            (
+                "presentation",
+                record(vec![
+                    ("trunks", Value::Vector(trunks)),
+                    ("branches", Value::Vector(branches)),
+                    ("heads", Value::Vector(heads)),
+                    ("indicators", Value::Vector(indicators)),
+                ]),
+            ),
+        ])
+    }
+
+    fn canvas_point(&mut self, world: [f64; 2]) -> Result<(), String> {
+        let state = self.session.state();
+        self.pending.push(Input::MouseMove {
+            x: (world[0] - state.cam_x) * state.zoom,
+            y: (world[1] - state.cam_y) * state.zoom,
+        });
+        Ok(())
+    }
+
     fn gui_record(&self) -> Value {
         let mut record = self.gui.record(self.session.state());
         record.assoc(

@@ -53,6 +53,11 @@ def prepare_metrics(project):
         ' :coverage 100 :crap 1}]}')
 
 
+def prepare_dependency_bundles(project):
+    shutil.copy2(REPO / 'fixtures/bundle-goldens/shared-channel.ir.edn',
+                 project / 'diagram.edn')
+
+
 def prepare_navigation(project):
     children = ' '.join(f'{{:id :source.child{n}}}' for n in range(1, 21))
     ops = ' '.join(f'"operation{n}"' for n in range(1, 71))
@@ -187,6 +192,7 @@ def prepare_mail(project):
 
 
 FIXTURES = {
+    'dependency_bundles': prepare_dependency_bundles,
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
     'search': prepare_search,
@@ -376,6 +382,11 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
+    'dependency_bundles': {'seconds': 30, 'evidence': ['dependency-bundles-pass.txt',
+        'bundle-initial.edn', 'bundle-hover.edn', 'bundle-chain.edn',
+        'bundle-triangles.edn', 'bundle-hover.png', 'bundle-branch.png',
+        'bundle-chain.png', 'bundle-triangles.png', 'bundle-violating.png',
+        'bundle-violating.edn']},
     'class_boxes': {'seconds': 20, 'evidence': ['class-boxes-pass.txt', 'render.png']},
     'detail_scroll': {'seconds': 30, 'evidence': ['inspector-pass.txt', 'inspector.png', 'inspector-empty.png']},
     'inspector': {'seconds': 30, 'evidence': ['inspector-pass.txt', 'inspector.png']},

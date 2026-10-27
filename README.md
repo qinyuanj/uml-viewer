@@ -408,6 +408,24 @@ The `fixtures/jvm-goldens/` files are the frozen parity oracle captured from
 the removed JVM viewer. The Rust cargo golden tests read them unchanged; only
 the JVM regeneration tooling was deleted.
 
+依赖线束在基础路由之后生成显式主干、分支和成员；逻辑边、leaf 明细与各自目标头部仍保留。
+当前仅处理同向、同违规样式的普通依赖已有的共线共享通道，无收益时保留基础路径。
+主干悬停显示可见模块对摘要（最多 12 行，按窗口高度收缩，超出时给出剩余数量），
+分支悬停显示该边的 leaf 明细；移除箭头仍使用原逻辑边生成依赖三角。
+
+ADR 0008 的 `1e-6` parity 约束固定迁移时的**基础路由**，不是永久禁止后续路由呈现特性。
+`scene` projection 的原有 `:points`、`:curve`、`:tip`、`:behind` 与 `:draw-bounds`
+继续对应基础路由，场景边的原 `:strokes` 也保持不变；新增 `:branches` 与 `:bundles`
+表示最终绘制和命中几何。旧 JVM/Lua fixtures 不改写，新增对照位于
+`fixtures/bundle-goldens/`，仍使用同一 scene projection 接缝。
+
+运行 `python3 -I scripts/run_viewer_driver.py dependency_bundles` 可在真实窗口重放
+主干/分支指针、选中依赖链及移除箭头。既有声明式 driver 的 `:dump-canvas` 和
+`:assert-canvas` 读取当前场景、画布命中、悬停、弹窗及绘制缓存；`:canvas-point`
+把世界坐标目标转换成正常画布指针输入。证据不依赖 `scene-<revision>.edn` 的发布频率，
+因此 declutter 原地重编译后也能获取当前场景。截图是实际呈现证据，不是像素 golden。
+
+
 ### Linux / WSL2
 
 Linux is the primary delivery path, exercised through WSL2 + Ubuntu 24.04 +

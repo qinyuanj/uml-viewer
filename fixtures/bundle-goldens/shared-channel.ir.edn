@@ -1,0 +1,13 @@
+{:hierarchical true
+ :prefix "probe"
+ :levels [[a e] [c d f]]
+ :order [f a d e c]
+ :classes
+ [{:id :a :level 2}
+  {:id :c :level 3}
+  {:id :d :level 3}
+  {:id :e :level 2}
+  {:id :f :level 3}]
+ :edges
+ [{:from :d :to :e :kind :dependency}
+  {:from :c :to :a :kind :dependency}]}

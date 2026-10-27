@@ -1,0 +1,20 @@
+{:absolute-tolerance 1e-6
+ :edges
+ [{:from :d :to :e :kind :dependency :head :open
+   :deps [{:from :d :to :e :kind :dependency :violating false}]
+   :tip [288 282]
+   :branches
+   [[[448 142] [448 188.66666666666666] [288 188.66666666666666]]
+    [[288 235.33333333333331] [288 282]]]}
+  {:from :c :to :a :kind :dependency :head :open
+   :deps [{:from :c :to :a :kind :dependency :violating false}]
+   :tip [128 282]
+   :branches
+   [[[288 142] [288 188.66666666666666]]
+    [[288 235.33333333333331] [128 235.33333333333331] [128 282]]]}]
+ :bundles
+ [{:members [{:edge 0 :from :d :to :e :violating false
+              :deps [{:from :d :to :e :kind :dependency :violating false}]}
+             {:edge 1 :from :c :to :a :violating false
+              :deps [{:from :c :to :a :kind :dependency :violating false}]}]
+   :strokes [[[288 188.66666666666666] [288 235.33333333333331]]]}]}
