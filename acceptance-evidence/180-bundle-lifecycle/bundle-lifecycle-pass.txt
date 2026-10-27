@@ -1,0 +1,1 @@
+PASS bundle lifecycle: source drill/back, proposal/open, all declutter, reload, camera, pointer and screenshots
