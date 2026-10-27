@@ -315,6 +315,23 @@ fn port(ports: &mut HashMap<String, Vec<Value>>, cid: &Value, dep: &Value) {
     ]));
 }
 
+fn remap_edge(e: &Value, from: Value, to: Value) -> Value {
+    let mut out = e.clone();
+    edn::record::put(
+        &mut out,
+        "orig-from",
+        get(e, "from").cloned().unwrap_or(Value::Nil),
+    );
+    edn::record::put(
+        &mut out,
+        "orig-to",
+        get(e, "to").cloned().unwrap_or(Value::Nil),
+    );
+    edn::record::put(&mut out, "from", from);
+    edn::record::put(&mut out, "to", to);
+    out
+}
+
 /// The source-tree view at a namespace focus.
 pub fn view_at(doc: &Value, path: &[Value]) -> Value {
     let classes: Vec<Value> = seq(get(doc, "classes"))
@@ -383,16 +400,11 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
             external(get(e, "from").unwrap(), path, &idx)
         };
         if fh && th && f != t {
-            let mut out = e.clone();
-            edn::record::put(&mut out, "from", f.unwrap());
-            edn::record::put(&mut out, "to", t.unwrap());
-            internal.push(out);
+            internal.push(remap_edge(e, f.unwrap(), t.unwrap()));
         } else if fh && te.as_ref().is_some_and(|te| flag(te, "foreign")) {
             let te = te.unwrap();
             let fid = get(&te, "id").cloned().unwrap();
-            let mut out = e.clone();
-            edn::record::put(&mut out, "from", f.clone().unwrap());
-            edn::record::put(&mut out, "to", fid.clone());
+            let out = remap_edge(e, f.clone().unwrap(), fid.clone());
             foreign_edges.push(out);
             if !foreign.iter().any(|c| get(c, "id") == Some(&fid)) {
                 foreign.push(Value::Map(vec![
@@ -410,9 +422,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
         } else if th && fe.as_ref().is_some_and(|fe| flag(fe, "foreign")) {
             let fe = fe.unwrap();
             let fid = get(&fe, "id").cloned().unwrap();
-            let mut out = e.clone();
-            edn::record::put(&mut out, "from", fid.clone());
-            edn::record::put(&mut out, "to", t.clone().unwrap());
+            let out = remap_edge(e, fid.clone(), t.clone().unwrap());
             foreign_edges.push(out);
             if !foreign.iter().any(|c| get(c, "id") == Some(&fid)) {
                 foreign.push(Value::Map(vec![
@@ -556,10 +566,7 @@ fn remap_edges(
         if let (Some(f), Some(t)) = (f, t)
             && f != t
         {
-            let mut out = e.clone();
-            edn::record::put(&mut out, "from", f);
-            edn::record::put(&mut out, "to", t);
-            edges.push(out);
+            edges.push(remap_edge(e, f, t));
         }
     }
     let merged = policy::merge_edges(&edges);
@@ -945,11 +952,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
                 });
                 groups.len() - 1
             });
-        let mut out = e.clone();
-        edn::record::put(&mut out, "from", f);
-        edn::record::put(&mut out, "to", t);
-        edn::record::put(&mut out, "orig-from", of);
-        edn::record::put(&mut out, "orig-to", ot);
+        let out = remap_edge(e, f, t);
         groups[gi].edges.push(out);
     }
     let mut edges = Vec::new();
@@ -959,7 +962,9 @@ pub fn collapse_arrows(view: &Value) -> Value {
         let mut via: Vec<Value> = Vec::new();
         let mut deps: Vec<Value> = Vec::new();
         for e in &g.edges {
-            if flag(e, "violating") && !viol {
+            let violating = flag(e, "violating")
+                || seq(get(e, "deps")).iter().any(|dep| flag(dep, "violating"));
+            if violating && !viol {
                 best = Some(e);
                 viol = true;
             } else if !viol
@@ -976,23 +981,13 @@ pub fn collapse_arrows(view: &Value) -> Value {
                     via.push(x.clone());
                 }
             }
-            deps.push(Value::Map(vec![
-                (
-                    Value::keyword("from"),
-                    get(e, "orig-from")
-                        .or_else(|| get(e, "from"))
-                        .cloned()
-                        .unwrap(),
-                ),
-                (
-                    Value::keyword("to"),
-                    get(e, "orig-to").or_else(|| get(e, "to")).cloned().unwrap(),
-                ),
-                (
-                    Value::keyword("violating"),
-                    Value::Bool(edn::record::is_true(e, "violating")),
-                ),
-            ]));
+            if let Some(Value::Vector(leaves)) = get(e, "deps")
+                && !leaves.is_empty()
+            {
+                deps.extend(leaves.clone());
+            } else {
+                deps.push(policy::leaf_dependency(e));
+            }
         }
         let mut out = geom::drop_keys(best.unwrap(), &["violating", "orig-from", "orig-to"]);
         edn::record::put(&mut out, "via-ids", Value::Vector(via));

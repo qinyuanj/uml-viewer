@@ -579,8 +579,11 @@ pub fn paint(
                 text: label,
                 fill,
                 stroke,
+                stroke_width,
                 missing,
                 selected,
+                related,
+                dimmed,
                 max_w,
                 ..
             } => {
@@ -589,15 +592,17 @@ pub fn paint(
                     continue;
                 }
                 let corner = corner(theme::radius::PACKAGE, transform.scale);
-                painter.rect_filled(r, corner, fill.with_alpha(theme::ALPHA_PACKAGE_FILL));
-                let line = if *selected {
-                    stroke_of(theme::GOLD.color32(), theme::widths::SELECTED)
+                painter.rect_filled(
+                    r,
+                    corner,
+                    ink(fill.with_alpha(theme::ALPHA_PACKAGE_FILL), *dimmed),
+                );
+                let line_color = if *selected || *related {
+                    stroke.color32()
                 } else {
-                    stroke_of(
-                        stroke.with_alpha(theme::ALPHA_PACKAGE_STROKE),
-                        theme::widths::PACKAGE,
-                    )
+                    stroke.with_alpha(theme::ALPHA_PACKAGE_STROKE)
                 };
+                let line = stroke_of(ink(line_color, *dimmed), *stroke_width);
                 if *missing {
                     dashed_rect(&clipped, r, line);
                 } else {
@@ -612,7 +617,7 @@ pub fn paint(
                     r.min.y + 8.0 * transform.scale,
                     label,
                     lod::font_px(theme::fonts::CANVAS as f64 * transform.scale as f64, 1.0),
-                    theme::GOLD.color32(),
+                    ink(theme::GOLD.color32(), *dimmed),
                     true,
                     false,
                     false,
@@ -624,10 +629,8 @@ pub fn paint(
                 shape,
                 fill,
                 stroke,
+                stroke_width,
                 missing,
-                selected,
-                hovered,
-                related,
                 dimmed,
                 ..
             } => {
@@ -636,20 +639,8 @@ pub fn paint(
                     continue;
                 }
                 let corner = corner(theme::radius::CLASS, transform.scale);
-                let line_color = if *selected {
-                    ink(theme::GOLD.color32(), *dimmed)
-                } else if *hovered {
-                    ink(Color32::WHITE, *dimmed)
-                } else if *related {
-                    ink(theme::RELATED.color32(), *dimmed)
-                } else {
-                    ink(stroke.color32(), *dimmed)
-                };
-                let width = if *selected {
-                    theme::widths::SELECTED
-                } else {
-                    theme::widths::CLASS
-                };
+                let line_color = ink(stroke.color32(), *dimmed);
+                let width = *stroke_width;
                 if overview && shape != "oval" && !*missing {
                     add_boxed(
                         &mut boxes,
@@ -924,7 +915,7 @@ pub fn paint(
             }
             Command::ChildWash {
                 rect,
-                color,
+                marker,
                 dimmed,
                 ..
             } => {
@@ -932,7 +923,15 @@ pub fn paint(
                     continue;
                 }
                 let r = transform.rect(*rect);
-                painter.rect_filled(r, corner(2.0, transform.scale), ink(*color, *dimmed));
+                painter.rect_filled(r, corner(2.0, transform.scale), ink(marker.wash, *dimmed));
+                painter.rect_filled(
+                    ERect::from_min_size(
+                        r.min,
+                        egui::Vec2::new(marker.bar_width * transform.scale, r.height()),
+                    ),
+                    0.0,
+                    ink(marker.bar, *dimmed),
+                );
             }
             Command::PortLink {
                 behind,
@@ -965,6 +964,8 @@ pub fn paint(
                 rect,
                 text: label,
                 marked,
+                stroke,
+                stroke_width,
                 dimmed,
                 ..
             } => {
@@ -988,21 +989,7 @@ pub fn paint(
                 painter.rect_stroke(
                     r,
                     corner,
-                    stroke_of(
-                        ink(
-                            if *marked {
-                                theme::GOLD.color32()
-                            } else {
-                                theme::MUTED.color32()
-                            },
-                            *dimmed,
-                        ),
-                        if *marked {
-                            theme::widths::PORT_ON
-                        } else {
-                            theme::widths::PORT
-                        },
-                    ),
+                    stroke_of(ink(stroke.color32(), *dimmed), *stroke_width),
                     StrokeKind::Inside,
                 );
                 draw_text(

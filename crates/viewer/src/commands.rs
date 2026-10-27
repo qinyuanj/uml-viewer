@@ -12,7 +12,7 @@ use scene::highlight::Highlight;
 use scene::{Rect, vec2};
 
 use crate::strings;
-use crate::theme::{self, Rgb, fonts};
+use crate::theme::{self, Rgb, RowMarker, fonts};
 
 // Text keeps the layout's 12px side padding; package titles also clear the
 // C/M dots. A class stacks its C/M dots in the right padding and puts its
@@ -48,7 +48,10 @@ pub enum Command {
         grade: Option<f64>,
         fill: Rgb,
         stroke: Rgb,
+        stroke_width: f32,
         selected: bool,
+        related: bool,
+        dimmed: bool,
     },
     Class {
         rect: Rect,
@@ -60,6 +63,7 @@ pub enum Command {
         grade: Option<f64>,
         fill: Rgb,
         stroke: Rgb,
+        stroke_width: f32,
         selected: bool,
         hovered: bool,
         related: bool,
@@ -145,7 +149,7 @@ pub enum Command {
     },
     ChildWash {
         rect: Rect,
-        color: Color32,
+        marker: RowMarker,
         owner_id: Option<Value>,
         dimmed: bool,
     },
@@ -160,6 +164,8 @@ pub enum Command {
         rect: Rect,
         text: String,
         marked: bool,
+        stroke: Rgb,
+        stroke_width: f32,
         owner_id: Option<Value>,
         dimmed: bool,
     },
@@ -438,7 +444,6 @@ fn marked(view_hit: Option<&Value>, kind: &str, id: Option<&Value>) -> bool {
 
 /// The class boxes, packages, badges and ports of one scene.
 pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) -> Vec<Command> {
-    let sel_id = selected.and_then(|s| get(s, "id"));
     let h = Highlight::new(scene, selected, hover);
     let hover_id = h.hover.clone();
     let mut out = Vec::new();
@@ -457,8 +462,12 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             }
         }
         let g = rating.grade();
+        let id = get(p, "id");
+        let is_selected = marked(selected, "package", id);
+        let is_related = id.is_some_and(|id| h.related(id));
+        let dimmed = id.is_some_and(|id| h.dimmed(id));
         out.push(Command::Package {
-            id: get(p, "id").cloned(),
+            id: id.cloned(),
             rect: pr,
             text: match get(p, "title").or_else(|| get(p, "label")) {
                 Some(Value::String(s)) => s.clone(),
@@ -474,8 +483,21 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             missing_count: count,
             grade: g,
             fill: theme::fill(g),
-            stroke: theme::stroke(g),
-            selected: sel_id.is_some() && get(p, "id") == sel_id,
+            stroke: if is_selected {
+                theme::WHITE
+            } else if is_related {
+                theme::RELATED
+            } else {
+                theme::stroke(g)
+            },
+            selected: is_selected,
+            related: is_related,
+            dimmed,
+            stroke_width: if is_selected {
+                theme::widths::SELECTED
+            } else {
+                theme::widths::PACKAGE
+            },
         });
         quality(&mut out, p, "package");
     }
@@ -489,6 +511,8 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
         let unmeasured = rating.missing;
         let g = rating.class_grade();
         let dimmed = id.as_ref().is_some_and(|id| h.dimmed(id));
+        let is_selected = h.focus.is_some() && h.focus == id;
+        let is_related = id.as_ref().is_some_and(|id| h.related(id));
         let tag = |command: &mut Command| match command {
             Command::Class {
                 owner_id,
@@ -519,13 +543,20 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 owner_id,
                 dimmed: d,
                 ..
+            } => {
+                *owner_id = id.clone();
+                *d = dimmed;
             }
-            | Command::Text {
+            Command::Text {
+                role,
                 owner_id,
                 dimmed: d,
                 ..
+            } => {
+                *owner_id = id.clone();
+                *d = dimmed && role != "name";
             }
-            | Command::NoData {
+            Command::NoData {
                 owner_id,
                 dimmed: d,
                 ..
@@ -562,10 +593,21 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             missing: unmeasured,
             grade: g,
             fill: theme::fill(g),
-            stroke: theme::stroke(g),
-            selected: h.focus.is_some() && h.focus == id,
+            stroke: if is_selected {
+                theme::WHITE
+            } else if is_related {
+                theme::RELATED
+            } else {
+                theme::stroke(g)
+            },
+            selected: is_selected,
             hovered: hover_id.is_some() && hover_id == id,
-            related: id.as_ref().is_some_and(|id| h.related(id)),
+            related: is_related,
+            stroke_width: if is_selected {
+                theme::widths::SELECTED
+            } else {
+                theme::widths::CLASS
+            },
             owner_id: None,
             dimmed: false,
         });
@@ -647,7 +689,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 && role == "child"
             {
                 let source_id = lines.get(i).and_then(|l| get(l, "id"));
-                if marked(selected, "child", source_id) || marked(hover, "child", source_id) {
+                if marked(selected, "child", source_id) {
                     class_commands.push(Command::ChildWash {
                         rect: Rect::new(
                             r.x + 5.0,
@@ -655,7 +697,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                             r.w - 10.0,
                             sh.unwrap_or(18.0),
                         ),
-                        color: theme::CHILD_WASH.with_alpha(theme::ALPHA_CHILD_WASH),
+                        marker: theme::row_marker(),
                         owner_id: None,
                         dimmed: false,
                     });
@@ -685,6 +727,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                     owner_id: None,
                     dimmed: false,
                 });
+                let is_marked = marked(selected, "port", get(p, "id"));
                 class_commands.push(Command::Port {
                     id: get(p, "id").cloned(),
                     rect: pr,
@@ -694,8 +737,17 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                             .unwrap_or_default()
                             .to_owned(),
                     },
-                    marked: marked(selected, "port", get(p, "id"))
-                        || marked(hover, "port", get(p, "id")),
+                    marked: is_marked,
+                    stroke: if is_marked {
+                        theme::WHITE
+                    } else {
+                        theme::MUTED
+                    },
+                    stroke_width: if is_marked {
+                        theme::widths::PORT_ON
+                    } else {
+                        theme::widths::PORT
+                    },
                     owner_id: None,
                     dimmed: false,
                 });
@@ -721,33 +773,30 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
     out
 }
 
-/// Violation semantics win: a violating edge keeps its red family when hot,
-/// and a hover lift never thins it below its violation width.
-fn edge_style(violating: bool, hot: bool, warm: bool) -> (Rgb, f32) {
+fn edge_violating(e: &Value) -> bool {
+    flag(e, "violating") || seq(get(e, "deps")).iter().any(|dep| flag(dep, "violating"))
+}
+
+#[derive(Clone, Copy)]
+enum Attention {
+    Outside,
+    Chain,
+    Hovered,
+}
+
+/// Violation semantics win: attention never turns a violating edge white or
+/// gold. Other edges use white for hover and dark gold for the chain, at the
+/// same width so color alone distinguishes those states.
+fn edge_style(violating: bool, attention: Attention) -> (Rgb, f32) {
     use theme::widths as W;
-    if violating {
-        return (
-            if hot {
-                theme::EDGE_VIOLATING_HOT
-            } else if warm {
-                theme::EDGE_VIOLATING_WARM
-            } else {
-                theme::EDGE_VIOLATING
-            },
-            if hot {
-                W::EDGE_VIOLATING_HOT
-            } else {
-                W::EDGE_VIOLATING
-            },
-        );
+    match (violating, attention) {
+        (true, Attention::Hovered) => (theme::EDGE_VIOLATING_HOT, W::EDGE_VIOLATING_HOT),
+        (true, Attention::Chain) => (theme::EDGE_VIOLATING_HOT, W::EDGE_VIOLATING),
+        (true, Attention::Outside) => (theme::EDGE_VIOLATING, W::EDGE_VIOLATING),
+        (false, Attention::Hovered) => (theme::WHITE, W::EDGE),
+        (false, Attention::Chain) => (theme::RELATED, W::EDGE),
+        (false, Attention::Outside) => (theme::EDGE, W::EDGE),
     }
-    if hot {
-        return (theme::EDGE_HOT, W::EDGE_HOT);
-    }
-    if warm {
-        return (theme::EDGE_WARM, W::EDGE_WARM);
-    }
-    (theme::EDGE, W::EDGE)
 }
 
 fn points_of(v: Option<&Value>) -> Vec<[f64; 2]> {
@@ -780,11 +829,19 @@ pub fn edge_commands(
         return out;
     }
     for e in seq(get(scene, "edges")) {
+        let chain = h.on_chain(e);
         let hot = h.hot(e, hover);
         let warm = !hot && h.warm(e);
-        let dimmed = h.focus.is_some() && !hot;
-        let violating = flag(e, "violating");
-        let (color, width) = edge_style(violating, hot, warm);
+        let attention = if hot || warm {
+            Attention::Hovered
+        } else if chain {
+            Attention::Chain
+        } else {
+            Attention::Outside
+        };
+        let dimmed = h.focus.is_some() && matches!(attention, Attention::Outside);
+        let violating = edge_violating(e);
+        let (color, width) = edge_style(violating, attention);
         let from = get(e, "from").cloned();
         let to = get(e, "to").cloned();
         for ps in seq(get(e, "strokes")) {

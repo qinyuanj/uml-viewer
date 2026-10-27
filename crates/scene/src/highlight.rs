@@ -1,8 +1,9 @@
-//! Relationship highlighting (port of `love/uml/application/highlight.lua`):
-//! hit maps and scene edges in, ids and predicates out.
+//! Relationship highlighting: the selected class's outgoing dependency chain,
+//! plus temporary edge hover. Membership is derived here; draw commands only
+//! consume the resulting focus, chain and dimming predicates.
 
 use edn::Value;
-use edn::record::{get, local_name};
+use edn::record::{get, local_name, seq};
 use std::collections::HashSet;
 
 /// The class a hit stands for: the class itself, or the parent of a child
@@ -38,15 +39,52 @@ fn same_edge(e: &Value, hit: Option<&Value>) -> bool {
         && get(e, "to") == get(hit, "to")
 }
 
+fn key(v: Option<&Value>) -> Option<String> {
+    v.and_then(|v| edn::encode(v).ok())
+}
+
+/// A visible aggregate stands for the leaf classes in its contents. Seed the
+/// traversal with those leaves as well as the visible id, so selecting the
+/// aggregate and selecting one of its members follow the same bundled edges.
+fn collect_descendants(class: &Value, ids: &mut HashSet<String>) {
+    for child in seq(get(class, "contents")) {
+        if let Some(id) = key(get(child, "id")) {
+            ids.insert(id);
+        }
+        collect_descendants(child, ids);
+    }
+    for ns in seq(get(class, "nses")) {
+        if let Some(id) = key(Some(ns)) {
+            ids.insert(id);
+        }
+    }
+}
+
+/// Leaf dependencies bundled into a visible edge. A plain edge is its own
+/// single leaf. Collapsed leaves retain their kind; older records without one
+/// inherit the visible edge's kind.
+fn dependencies(e: &Value) -> Vec<&Value> {
+    match get(e, "deps") {
+        Some(Value::Vector(deps)) if !deps.is_empty() => deps
+            .iter()
+            .filter(|d| {
+                get(d, "kind")
+                    .or_else(|| get(e, "kind"))
+                    .and_then(local_name)
+                    == Some("dependency")
+            })
+            .collect(),
+        _ if get(e, "kind").and_then(local_name) == Some("dependency") => vec![e],
+        _ => vec![],
+    }
+}
+
 /// Focus state derived from selection and hover.
 pub struct Highlight {
     pub focus: Option<Value>,
     pub hover: Option<Value>,
+    reachable: HashSet<String>,
     related: HashSet<String>,
-}
-
-fn key(v: Option<&Value>) -> Option<String> {
-    v.and_then(|v| edn::encode(v).ok())
 }
 
 impl Highlight {
@@ -54,42 +92,78 @@ impl Highlight {
     pub fn new(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) -> Highlight {
         let focus = box_id(selected);
         let hover = box_id(hover);
+        let edges = seq(get(scene, "edges"));
+        let mut reachable = HashSet::new();
+        if let Some(focus_key) = key(focus.as_ref()) {
+            reachable.insert(focus_key);
+            for class in seq(get(scene, "classes")) {
+                if get(class, "id") == focus.as_ref() {
+                    collect_descendants(class, &mut reachable);
+                }
+            }
+            loop {
+                let mut changed = false;
+                for e in edges {
+                    for dep in dependencies(e) {
+                        if key(get(dep, "from")).is_some_and(|id| reachable.contains(&id))
+                            && let Some(to) = key(get(dep, "to"))
+                        {
+                            changed |= reachable.insert(to);
+                        }
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+        }
         let mut related = HashSet::new();
-        if focus.is_some() {
-            for e in edn::record::seq(get(scene, "edges")) {
-                if touches(e, focus.as_ref()) {
-                    if let Some(k) = key(get(e, "from")) {
-                        related.insert(k);
-                    }
-                    if let Some(k) = key(get(e, "to")) {
-                        related.insert(k);
-                    }
+        for e in edges {
+            if dependencies(e)
+                .iter()
+                .any(|dep| key(get(dep, "from")).is_some_and(|id| reachable.contains(&id)))
+            {
+                if let Some(id) = key(get(e, "from")) {
+                    related.insert(id);
+                }
+                if let Some(id) = key(get(e, "to")) {
+                    related.insert(id);
                 }
             }
         }
         Highlight {
             focus,
             hover,
+            reachable,
             related,
         }
     }
 
-    /// A class connected to the focus, but not the focus itself.
+    /// A visible class or package on the focus's dependency chain, but not the
+    /// focus itself. No off-screen classes are added to the scene.
     pub fn related(&self, id: &Value) -> bool {
         self.focus.as_ref().is_some_and(|f| f != id)
             && key(Some(id)).is_some_and(|k| self.related.contains(&k))
     }
 
-    /// A class unrelated to the focus (dimmed).
+    /// A visible class or package outside the focused dependency chain.
     pub fn dimmed(&self, id: &Value) -> bool {
         self.focus.is_some()
             && self.focus.as_ref() != Some(id)
             && !key(Some(id)).is_some_and(|k| self.related.contains(&k))
     }
 
-    /// An edge on the selection or the hovered edge.
+    /// A visible edge carrying a dependency reachable from the focus.
+    pub fn on_chain(&self, e: &Value) -> bool {
+        self.focus.is_some()
+            && dependencies(e)
+                .iter()
+                .any(|dep| key(get(dep, "from")).is_some_and(|id| self.reachable.contains(&id)))
+    }
+
+    /// The edge directly under the pointer.
     pub fn hot(&self, e: &Value, hovered: Option<&Value>) -> bool {
-        touches(e, self.focus.as_ref()) || same_edge(e, hovered)
+        same_edge(e, hovered)
     }
 
     /// An edge touching the hovered class.

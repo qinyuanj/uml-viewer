@@ -6,6 +6,8 @@
 //!
 //! Positions are 0-based byte offsets (the Lua ones were 1-based).
 
+use crate::theme::{self, RowMarker};
+
 /// What a class card asks to open: a module (no name) or one member.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ident {
@@ -444,7 +446,7 @@ pub fn member_source(ident: &Ident, files: &Files) -> Option<Opened> {
 pub struct Row {
     pub number: usize,
     pub text: String,
-    pub highlight: bool,
+    pub marker: Option<RowMarker>,
 }
 
 /// Split a body into rows (CR trimmed); a trailing newline leaves an empty
@@ -455,7 +457,7 @@ pub fn rows(body: &str, line: Option<usize>) -> Vec<Row> {
         .map(|(i, text)| Row {
             number: i + 1,
             text: text.strip_suffix('\r').unwrap_or(text).to_string(),
-            highlight: Some(i + 1) == line,
+            marker: (Some(i + 1) == line).then(theme::row_marker),
         })
         .collect()
 }

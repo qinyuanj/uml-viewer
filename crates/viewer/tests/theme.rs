@@ -1,6 +1,9 @@
 //! Theme parity with `love/uml/domain/theme.lua`: palette, ramps and the
 //! missing-means-grade-1 rule that paints unmeasured classes red.
 
+mod common;
+
+use common::{composite, contrast};
 use viewer::theme::{self, Rgb};
 
 #[test]
@@ -29,28 +32,25 @@ fn band_colors_are_the_traffic_light() {
 }
 
 #[test]
-fn fade_scales_alpha_but_keeps_the_hue() {
-    let dim = egui::Color32::from_rgb(200, 214, 204);
-    let faded = theme::fade(dim);
-    assert_eq!((200, 214, 204), (faded.r(), faded.g(), faded.b()));
-    assert_eq!(theme::ALPHA_DIMMED, faded.a());
-}
+fn translucent_colors_composite_at_their_nominal_alpha() {
+    let background = theme::SOURCE_BG;
+    let original = Rgb(200, 214, 204);
+    let dimmed = composite(background, theme::fade(original.color32()));
+    let washed = composite(background, theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH));
 
-/// WCAG 2 contrast ratio between two opaque colors.
-fn contrast(a: Rgb, b: Rgb) -> f64 {
-    let lum = |c: Rgb| {
-        let ch = |v: u8| {
-            let s = v as f64 / 255.0;
-            if s <= 0.03928 {
-                s / 12.92
-            } else {
-                ((s + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * ch(c.0) + 0.7152 * ch(c.1) + 0.0722 * ch(c.2)
-    };
-    let (x, y) = (lum(a), lum(b));
-    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    assert!(
+        dimmed.0 < original.0 && dimmed.1 < original.1 && dimmed.2 < original.2,
+        "dimming must darken, got {dimmed:?}"
+    );
+    assert!(
+        washed.0 < theme::GOLD.0 && washed.1 < theme::GOLD.1 && washed.2 < theme::GOLD.2,
+        "a wash must not become solid gold, got {washed:?}"
+    );
+    assert_eq!(
+        composite(background, theme::fade(original.color32())),
+        composite(background, original.with_alpha(theme::ALPHA_DIMMED)),
+        "fade and an equally alpha'd opaque color must composite alike"
+    );
 }
 
 #[test]

@@ -127,6 +127,15 @@ fn rgb(c: Rgb) -> Color32 {
     c.color32()
 }
 
+fn paint_row_marker(painter: &egui::Painter, row: ERect, marker: theme::RowMarker) {
+    painter.rect_filled(row, 0.0, marker.wash);
+    painter.rect_filled(
+        ERect::from_min_size(row.min, Vec2::new(marker.bar_width, row.height())),
+        0.0,
+        marker.bar,
+    );
+}
+
 fn view_rect(r: ERect, origin: Pos2) -> Rect {
     Rect::new(
         (r.min.x - origin.x) as f64,
@@ -743,16 +752,19 @@ impl Gui {
                                 Sense::click(),
                             );
                             if response.hovered() {
-                                painter.rect_filled(
-                                    row,
-                                    0.0,
-                                    theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH),
-                                );
-                                hover = if it.module {
+                                let current = if it.module {
                                     Some(Hover::Module)
+                                } else if let Some(op) = &it.op_name {
+                                    Some(Hover::Op(op.clone()))
                                 } else {
-                                    it.op_name.clone().map(Hover::Op)
+                                    it.rel.clone().map(Hover::Rel)
                                 };
+                                if let Some(marker) =
+                                    detail::highlight_marker(&rows, current.as_ref())
+                                {
+                                    paint_row_marker(&painter, row, marker);
+                                }
+                                hover = current;
                             }
                             if response.clicked() {
                                 actions.push(match &it.rel {
@@ -997,12 +1009,7 @@ impl Gui {
                                 Pos2::new(rect.min.x, top),
                                 Vec2::new(rect.width(), line_h),
                             );
-                            if row.highlight {
-                                painter.rect_filled(
-                                    line,
-                                    0.0,
-                                    theme::GOLD.with_alpha(theme::ALPHA_ROW_WASH),
-                                );
+                            if row.marker.is_some() {
                                 target_rect = Some(line);
                             }
                             painter.rect_filled(
@@ -1010,6 +1017,16 @@ impl Gui {
                                 0.0,
                                 rgb(theme::SOURCE_GUTTER_BG),
                             );
+                            if let Some(marker) = row.marker {
+                                paint_row_marker(
+                                    &painter,
+                                    ERect::from_min_max(
+                                        Pos2::new(text_x, top),
+                                        Pos2::new(rect.max.x, top + line_h),
+                                    ),
+                                    marker,
+                                );
+                            }
                             painter.text(
                                 Pos2::new(rect.min.x + GUTTER - INSET, top),
                                 Align2::RIGHT_TOP,
@@ -1135,6 +1152,7 @@ impl Gui {
         let hover = match &self.card.hover {
             Some(Hover::Module) => kw("module"),
             Some(Hover::Op(op)) => Value::String(op.clone()),
+            Some(Hover::Rel(id)) => id.clone(),
             None => Value::Nil,
         };
         let card = Value::Map(vec![
@@ -1181,7 +1199,7 @@ impl Gui {
                             Value::Vector(
                                 w.rows
                                     .iter()
-                                    .filter(|r| r.highlight)
+                                    .filter(|r| r.marker.is_some())
                                     .map(|r| Value::Integer(r.number as i64))
                                     .collect(),
                             ),

@@ -2,7 +2,11 @@
 //! are those of `love/spec/source_spec.lua` and `source_view_spec.lua`; byte
 //! positions here are 0-based where the Lua ones were 1-based.
 
+mod common;
+
+use common::{composite, contrast};
 use viewer::source::{self, Files, Ident, Pos};
+use viewer::theme;
 
 fn ident(lang: Option<&str>, file: Option<&str>, name: Option<&str>) -> Ident {
     Ident {
@@ -242,6 +246,24 @@ fn splits_a_body_into_numbered_rows_with_the_target_highlighted() {
     );
     assert_eq!(
         vec![false, true, false, false],
-        rows.iter().map(|r| r.highlight).collect::<Vec<_>>()
+        rows.iter().map(|r| r.marker.is_some()).collect::<Vec<_>>()
     );
+    let marker = rows[1].marker.unwrap();
+    assert_eq!(255, marker.bar.a());
+    assert!(marker.wash.a() < 128, "the row wash stays translucent");
+    assert!(
+        contrast(
+            theme::Rgb(marker.bar.r(), marker.bar.g(), marker.bar.b()),
+            theme::SOURCE_GUTTER_BG
+        ) >= 3.0
+    );
+    let background = composite(theme::SOURCE_BG, marker.wash);
+    for ink in [
+        theme::SOURCE_INK,
+        theme::SOURCE_KEYWORD,
+        theme::SOURCE_STRING,
+    ] {
+        assert!(contrast(ink, background) >= 4.5, "{ink:?} on target row");
+    }
+    assert!(contrast(theme::SOURCE_COMMENT, background) >= 3.0);
 }

@@ -10,7 +10,7 @@ use scene::document::ViewState;
 
 use crate::source::Ident;
 use crate::strings;
-use crate::theme::{self, Rgb};
+use crate::theme::{self, Rgb, RowMarker};
 
 /// Default card window, in points.
 pub const WIDTH: f64 = 640.0;
@@ -403,11 +403,12 @@ pub fn scroll(rows: &[Row], view_h: f64, offset: f64, delta: f64) -> f64 {
     (offset + delta * SCROLL_STEP).clamp(0.0, max_scroll(rows, view_h))
 }
 
-/// The hovered card row: an operation, or the module row.
+/// The hovered card row: an operation, relationship, or the module row.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Hover {
     Module,
     Op(String),
+    Rel(Value),
 }
 
 pub fn highlight<'a>(rows: &'a [Row], hover: Option<&Hover>) -> Option<&'a Row> {
@@ -415,7 +416,14 @@ pub fn highlight<'a>(rows: &'a [Row], hover: Option<&Hover>) -> Option<&'a Row> 
     rows.iter().find(|r| match hover {
         Hover::Module => r.module,
         Hover::Op(n) => r.op_name.as_deref() == Some(n.as_str()),
+        Hover::Rel(id) => r.kind == "rel" && r.id.as_ref() == Some(id),
     })
+}
+
+/// The shared row marker for the currently hovered card row. Leaving the row
+/// removes the description instead of retaining the last hover.
+pub fn highlight_marker(rows: &[Row], hover: Option<&Hover>) -> Option<RowMarker> {
+    highlight(rows, hover).map(|_| theme::row_marker())
 }
 
 fn at(rows: &[Row], y: f64) -> impl Iterator<Item = &Row> {

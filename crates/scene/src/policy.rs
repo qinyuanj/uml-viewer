@@ -43,6 +43,36 @@ pub fn kind_rank(k: Option<&Value>) -> i64 {
     }
 }
 
+/// The original leaf relationship carried by a visible edge. Keeping kind
+/// with the endpoints lets dependency highlighting ignore stronger parallel
+/// association/inheritance arrows without losing a bundled dependency.
+pub(crate) fn leaf_dependency(e: &Value) -> Value {
+    Value::Map(vec![
+        (
+            Value::keyword("from"),
+            get(e, "orig-from")
+                .or_else(|| get(e, "from"))
+                .cloned()
+                .unwrap_or(Value::Nil),
+        ),
+        (
+            Value::keyword("to"),
+            get(e, "orig-to")
+                .or_else(|| get(e, "to"))
+                .cloned()
+                .unwrap_or(Value::Nil),
+        ),
+        (
+            Value::keyword("kind"),
+            get(e, "kind").cloned().unwrap_or(Value::Nil),
+        ),
+        (
+            Value::keyword("violating"),
+            Value::Bool(edn::record::is_true(e, "violating")),
+        ),
+    ])
+}
+
 /// Merge parallel edges per directed endpoint pair; the strongest kind wins,
 /// violations are preserved, and output order follows Clojure's group-by.
 pub fn merge_edges(edges: &[Value]) -> Value {
@@ -50,6 +80,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         pair: (Value, Value),
         violating: bool,
         best: Value,
+        deps: Vec<Value>,
     }
     let mut groups: Vec<Group> = Vec::new();
     for e in edges {
@@ -65,10 +96,12 @@ pub fn merge_edges(edges: &[Value]) -> Value {
                     pair,
                     violating: false,
                     best: e.clone(),
+                    deps: Vec::new(),
                 });
                 groups.len() - 1
             });
         let group = &mut groups[gi];
+        group.deps.push(leaf_dependency(e));
         // The first edge of a new pair seeded `best` above; still apply the
         // kind comparison so an equal-rank later edge wins, as in Lua.
         group.violating = group.violating || edn::record::is_true(e, "violating");
@@ -80,6 +113,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
         .iter()
         .map(|group| {
             let mut b = geom::drop_keys(&group.best, &["violating"]);
+            edn::record::put(&mut b, "deps", Value::Vector(group.deps.clone()));
             if get(&b, "kind") == Some(&Value::keyword("dependency")) && group.violating {
                 edn::record::put(&mut b, "violating", Value::Bool(true));
             }

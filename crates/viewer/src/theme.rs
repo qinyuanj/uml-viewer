@@ -14,7 +14,24 @@ impl Rgb {
     }
 
     pub fn with_alpha(self, a: u8) -> Color32 {
-        Color32::from_rgba_premultiplied(self.0, self.1, self.2, a)
+        Color32::from_rgba_unmultiplied(self.0, self.1, self.2, a)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RowMarker {
+    pub wash: Color32,
+    pub bar: Color32,
+    pub bar_width: f32,
+}
+
+/// Shared target/member/hover row marker: a translucent gold wash and an
+/// opaque gold rule at the row's left edge.
+pub fn row_marker() -> RowMarker {
+    RowMarker {
+        wash: GOLD.with_alpha(ALPHA_ROW_WASH),
+        bar: GOLD.color32(),
+        bar_width: 3.0,
     }
 }
 
@@ -78,7 +95,7 @@ pub const EDGE_VIOLATING_HOT: Rgb = Rgb(255, 64, 48);
 pub const EDGE_WARM: Rgb = Rgb(200, 214, 204);
 pub const EDGE_VIOLATING_WARM: Rgb = Rgb(220, 56, 44);
 pub const INDICATOR: Rgb = Rgb(157, 184, 168);
-pub const RELATED: Rgb = Rgb(200, 170, 80);
+pub const RELATED: Rgb = Rgb(176, 145, 42);
 pub const CHILD_WASH: Rgb = Rgb(232, 196, 72);
 pub const PORT_FILL: Rgb = Rgb(42, 56, 52);
 pub const PORT_FILL_ON: Rgb = Rgb(74, 96, 78);
@@ -103,12 +120,12 @@ pub const ALPHA_DIMMED: u8 = 70;
 pub const ALPHA_CHILD_WASH: u8 = 55;
 pub const ALPHA_POPUP: u8 = 240;
 /// Gold wash over the hovered class-card row.
-pub const ALPHA_ROW_WASH: u8 = 48;
+pub const ALPHA_ROW_WASH: u8 = 32;
 
-/// Scale a color's alpha by the dim alpha; hue is untouched.
+/// Dim all premultiplied channels together; changing alpha alone would
+/// make an opaque color brighter when blended.
 pub fn fade(color: Color32) -> Color32 {
-    let a = (color.a() as u32 * ALPHA_DIMMED as u32 / 255) as u8;
-    Color32::from_rgba_premultiplied(color.r(), color.g(), color.b(), a)
+    color.gamma_multiply_u8(ALPHA_DIMMED)
 }
 
 pub fn band_color(band: &str) -> Rgb {

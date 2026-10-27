@@ -1,6 +1,9 @@
 //! Class card model (#141). Expected values are those of
 //! `love/spec/detail_spec.lua` and `detail_view_spec.lua`.
 
+mod common;
+
+use common::{composite, contrast};
 use edn::Value;
 use viewer::detail::{self, Hover, Model, Row};
 use viewer::theme;
@@ -181,7 +184,7 @@ fn clamps_card_scrolling_to_content_and_viewport() {
 }
 
 #[test]
-fn highlights_only_the_hovered_operation_or_module_row() {
+fn highlights_only_the_hovered_operation_relationship_or_module_row() {
     let (_, rows) = tiny_rows();
     let hl = |h: Hover| detail::highlight(&rows, Some(&h)).map(|r| r.y);
     assert_eq!(hl(Hover::Op("go".into())), Some(op(&rows, "go").y));
@@ -192,6 +195,21 @@ fn highlights_only_the_hovered_operation_or_module_row() {
         hl(Hover::Module),
         Some(rows.iter().find(|r| r.module).unwrap().y)
     );
+    let rel = rows.iter().find(|r| r.kind == "rel").unwrap();
+    assert_eq!(hl(Hover::Rel(rel.id.clone().unwrap())), Some(rel.y));
+
+    let marker = detail::highlight_marker(&rows, Some(&Hover::Op("go".into()))).unwrap();
+    assert_eq!(255, marker.bar.a());
+    assert!(marker.wash.a() < 128);
+    let background = composite(theme::POPUP_BG, marker.wash);
+    assert!(contrast(theme::INK, background) >= 4.5);
+    assert!(
+        contrast(
+            theme::Rgb(marker.bar.r(), marker.bar.g(), marker.bar.b()),
+            theme::POPUP_BG
+        ) >= 3.0
+    );
+    assert_eq!(detail::highlight_marker(&rows, None), None);
 }
 
 #[test]
