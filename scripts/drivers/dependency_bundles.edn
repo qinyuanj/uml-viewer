@@ -1,0 +1,79 @@
+{:version 1
+ :doc "最小依赖线束：实际画布指针、选中、当前场景、弹窗和呈现缓存证据。"
+ :steps
+ [{:op :wait-frames :n 4}
+  {:op :view :zoom 1 :center [360 240]}
+  {:op :wait-frames :n 2}
+  {:op :dump-canvas :evidence "bundle-initial.edn"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :assert-canvas :path [:presentation :trunks] :count 1}
+  {:op :assert-canvas :path [:presentation :heads] :count 2}
+  {:op :assert-canvas :path [:presentation :branches] :count 4}
+
+  {:op :canvas-point :world [288 210]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :bundle}
+  {:op :assert-canvas :path [:hover :members] :count 2}
+  {:op :assert-canvas :path [:popup :rows] :equals ["c -> a" "d -> e"]}
+  {:op :assert-canvas :path [:presentation :trunks 0 :hot] :equals true}
+  {:op :assert-canvas :path [:presentation :branches 0 :hot] :equals true}
+  {:op :screenshot :evidence "bundle-hover.png"}
+  {:op :dump-canvas :evidence "bundle-hover.edn"}
+
+  {:op :canvas-point :world [448 160]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hit :kind] :equals :edge}
+  {:op :assert-canvas :path [:hover :from] :equals :d}
+  {:op :assert-canvas :path [:popup :rows] :equals ["d -> e"]}
+  {:op :screenshot :evidence "bundle-branch.png"}
+
+  {:op :canvas-point :world [650 360]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:hover] :present false}
+  {:op :assert-canvas :path [:popup] :present false}
+  {:op :click-class :id :d}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :selected "d"}
+  {:op :assert-canvas :path [:presentation :trunks 0 :dimmed] :equals false}
+  {:op :assert-canvas :path [:presentation :branches 0 :dimmed] :equals false}
+  {:op :assert-canvas :path [:presentation :branches 2 :dimmed] :equals true}
+  {:op :assert-canvas :path [:presentation :trunks 0 :color] :equals [176 145 42]}
+  {:op :screenshot :evidence "bundle-chain.png"}
+  {:op :dump-canvas :evidence "bundle-chain.edn"}
+
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "arrows"}
+  {:op :assert-canvas :path [:scene :bundles] :count 1}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "triangles"}
+  {:op :assert-canvas :path [:scene :diagram :hide-edges] :equals true}
+  {:op :assert-canvas :path [:presentation :trunks] :count 0}
+  {:op :assert-canvas :path [:presentation :branches] :count 0}
+  {:op :assert-canvas :path [:presentation :heads] :count 0}
+  {:op :assert-canvas :path [:presentation :indicators] :count 4}
+  {:op :canvas-point :world [288 210]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup] :present false}
+  {:op :dump-canvas :evidence "bundle-triangles.edn"}
+  {:op :screenshot :evidence "bundle-triangles.png"}
+
+  {:op :edit :project "diagram.edn" :from ":kind :dependency}"
+   :to ":kind :dependency :violating true}"}
+  {:op :key :key "r"}
+  {:op :wait-frames :n 4}
+  {:op :click-declutter}
+  {:op :click-declutter}
+  {:op :click-declutter}
+  {:op :wait-frames :n 2}
+  {:op :assert-view :declutter "full"}
+  {:op :canvas-point :world [288 210]}
+  {:op :wait-frames :n 2}
+  {:op :assert-canvas :path [:popup :rows] :count 2}
+  {:op :assert-canvas :path [:presentation :trunks 0 :color] :equals [255 64 48]}
+  {:op :assert-canvas :path [:presentation :branches 2 :color] :equals [255 64 48]}
+  {:op :screenshot :evidence "bundle-violating.png"}
+  {:op :dump-canvas :evidence "bundle-violating.edn"}
+  {:op :write :evidence "dependency-bundles-pass.txt" :text "PASS dependency bundles: geometry, hits, hover, chain, Remove arrows\n"}
+  {:op :quit :code 0}]}

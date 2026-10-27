@@ -88,12 +88,20 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
                 index.get(&edn::encode(&from).unwrap()).copied(),
                 index.get(&edn::encode(&to).unwrap()).copied(),
             );
-            Value::Map(vec![
+            let mut projected = Value::Map(vec![
                 (Value::keyword("from"), from),
                 (Value::keyword("to"), to),
                 (
                     Value::keyword("kind"),
                     get(e, "kind").cloned().unwrap_or(Value::Nil),
+                ),
+                (
+                    Value::keyword("head"),
+                    get(e, "head").cloned().unwrap_or(Value::Nil),
+                ),
+                (
+                    Value::keyword("deps"),
+                    get(e, "deps").cloned().unwrap_or(Value::Vector(vec![])),
                 ),
                 (Value::keyword("points"), points),
                 (
@@ -109,7 +117,11 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
                     get(e, "draw-bounds").cloned().unwrap_or(Value::Nil),
                 ),
                 (Value::keyword("curve"), path),
-            ])
+            ]);
+            if let Some(branches) = get(e, "branches") {
+                edn::record::put(&mut projected, "branches", branches.clone());
+            }
+            projected
         })
         .collect();
     let size = get(scene, "size").cloned().unwrap_or(Value::Map(vec![]));
@@ -120,6 +132,26 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
         (Value::keyword("classes"), Value::Vector(classes)),
         (Value::keyword("edges"), Value::Vector(edges)),
     ]);
+    if let Some(Value::Vector(bundles)) = get(scene, "bundles") {
+        let projected: Vec<Value> = bundles
+            .iter()
+            .map(|bundle| {
+                Value::Map(vec![
+                    (
+                        Value::keyword("members"),
+                        Value::Vector(crate::hit::bundle_members(scene, bundle)),
+                    ),
+                    (
+                        Value::keyword("strokes"),
+                        get(bundle, "strokes")
+                            .cloned()
+                            .unwrap_or(Value::Vector(vec![])),
+                    ),
+                ])
+            })
+            .collect();
+        edn::record::put(&mut view, "bundles", Value::Vector(projected));
+    }
     for k in ["foreign", "title", "proposal", "dep-indicators"] {
         if let Some(v) = get(scene, k) {
             edn::record::put(&mut view, k, v.clone());
@@ -170,14 +202,25 @@ fn section_projection(scene: &Value, focus: &Value) -> Value {
             ])
         })
         .collect();
-    Value::Map(vec![
+    let mut view = Value::Map(vec![
         (Value::keyword("focus"), focus.clone()),
         (
             Value::keyword("size"),
             get(scene, "size").cloned().unwrap_or(Value::Map(vec![])),
         ),
         (Value::keyword("sections"), Value::Vector(sections)),
-    ])
+    ]);
+    if let Some(bundles) = get(scene, "bundles") {
+        edn::record::put(&mut view, "bundles", bundles.clone());
+        edn::record::put(
+            &mut view,
+            "edges",
+            get(scene, "edges")
+                .cloned()
+                .unwrap_or(Value::Vector(vec![])),
+        );
+    }
+    view
 }
 
 #[derive(Default)]

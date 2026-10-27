@@ -408,6 +408,36 @@ The `fixtures/jvm-goldens/` files are the frozen parity oracle captured from
 the removed JVM viewer. The Rust cargo golden tests read them unchanged; only
 the JVM regeneration tooling was deleted.
 
+依赖线束在基础路由之后生成显式主干、分支和成员；逻辑边、leaf 明细与各自目标头部仍保留。
+当前仅处理同向、同违规样式的普通依赖已有的共线共享通道，无收益时保留基础路径。
+主干悬停显示可见模块对摘要（最多 12 行，按窗口高度收缩，超出时给出剩余数量），
+分支悬停显示该边的 leaf 明细；移除箭头仍使用原逻辑边生成依赖三角。
+
+ADR 0008 的 `1e-6` parity 约束固定迁移时的**基础路由**，不是永久禁止后续路由呈现特性。
+`scene` projection 的原有 `:points`、`:curve`、`:tip`、`:behind` 与 `:draw-bounds`
+继续对应基础路由，场景边的原 `:strokes` 也保持不变；新增 `:branches` 与 `:bundles`
+表示最终绘制和命中几何。旧 JVM/Lua fixtures 不改写，新增对照位于
+`fixtures/bundle-goldens/`，仍使用同一 scene projection 接缝。
+
+运行 `python3 -I scripts/run_viewer_driver.py dependency_bundles` 可在真实窗口重放
+主干/分支指针、选中依赖链及移除箭头。既有声明式 driver 的 `:dump-canvas` 和
+`:assert-canvas` 读取当前场景、画布命中、悬停、弹窗及绘制缓存；`:canvas-point`
+把世界坐标目标转换成正常画布指针输入。证据不依赖 `scene-<revision>.edn` 的发布频率，
+因此 declutter 原地重编译后也能获取当前场景。截图是实际呈现证据，不是像素 golden。
+
+2026-10-27 的 #178 验收已在真实 WSLg viewer 通过：两条逻辑依赖产生一个主干、四个分支和
+两个独立头部；主干命中列出两对可见端点，分支只显示自身 leaf 明细，移开后清除弹窗。
+选中 D 后主干及 D 的分支进入依赖链，C 的分支保持链外；直接悬停主干时两成员按直接边
+悬停呈现。移除箭头后绘制缓存没有主干、分支或头部，仍有四个包含原依赖的三角；
+热重载违规依赖后主干和成员分支均保持红色。上述结果由已提交 driver 的断言与真实截图
+共同核验，可通过同一命令重放；临时证据目录不是唯一交接依据。
+
+同轮 `cargo test --workspace --locked` 为 588 passed、0 failed、0 ignored，默认
+`scripts/check.py` 三项检查及全目标 clippy 通过；既有 release 场景性能测试四项通过，
+2000 类编译约 2.35 秒。未运行完整 native driver 套件、真实窗口性能协议或 fs-monopoly
+前后人工对照；这些结果不证明大量平行线束性能及全视图生命周期已验收。当前线束只识别
+精确共线的已有基础通道，参与成员使用显式折线分支；未参与的边保持基础曲线。
+
 ### Linux / WSL2
 
 Linux is the primary delivery path, exercised through WSL2 + Ubuntu 24.04 +

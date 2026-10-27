@@ -51,6 +51,7 @@ pub mod hit;
 pub mod ir;
 pub mod search;
 
+mod bundle;
 mod card;
 pub(crate) mod compose;
 pub(crate) mod config;
