@@ -393,6 +393,9 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
         crate::text::shell_word(herdr),
         crate::text::shell_word(session)
     );
+    if cfg!(target_os = "macos") {
+        return open_mac_terminal(attach);
+    }
     let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_default();
     let terminal = if distro.is_empty() {
         None
@@ -433,10 +436,57 @@ pub fn open_window(root: &str, session: &str, herdr: &str) -> Opened {
     }
 }
 
+/// macOS opens a Terminal.app window through AppleScript; the attach line
+/// runs in the person's own login shell, so only the config root is carried.
+fn open_mac_terminal(attach: String) -> Opened {
+    let line = std::env::var("XDG_CONFIG_HOME")
+        .ok()
+        .filter(|root| !root.is_empty())
+        .map(|root| {
+            format!(
+                "XDG_CONFIG_HOME={} {attach}",
+                crate::text::shell_word(&root)
+            )
+        })
+        .unwrap_or_else(|| attach.clone());
+    let argv: Vec<std::ffi::OsString> = [
+        "/usr/bin/osascript".to_owned(),
+        "-e".to_owned(),
+        format!(
+            "tell application \"Terminal\" to do script \"{}\"",
+            apple_script_text(&line)
+        ),
+        "-e".to_owned(),
+        "tell application \"Terminal\" to activate".to_owned(),
+    ]
+    .iter()
+    .map(std::ffi::OsString::from)
+    .collect();
+    let result: RunOut = posix::run(&argv, Some(10000), &[]);
+    let started = result.exit == Some(0) && !result.timeout;
+    Opened {
+        terminal: if started { "terminal-app" } else { "none" }.to_owned(),
+        attach,
+    }
+}
+
+/// Body of an AppleScript string literal: backslash and double quote escaped.
+fn apple_script_text(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    #[test]
+    fn apple_script_text_escapes_quotes_and_backslashes_only() {
+        assert_eq!(
+            r#"'/a b/herdr' attach 'x\"y\\z' $w"#,
+            apple_script_text(r#"'/a b/herdr' attach 'x"y\z' $w"#)
+        );
+    }
 
     #[test]
     fn the_attach_config_hides_the_sidebar_and_keeps_every_other_setting() {

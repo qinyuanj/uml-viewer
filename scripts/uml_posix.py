@@ -1,4 +1,5 @@
 """POSIX 公共入口；安装与子进程始终使用字面 argv。"""
+import ctypes
 import hashlib
 import json
 import os
@@ -31,8 +32,10 @@ def run(argv, **kwargs):
 
 
 def host():
+    if platform.system() == 'Darwin':
+        return
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise ValueError('仅支持 WSL2 x86_64（ADR 0007），请在 Ubuntu 24.04 WSL2 中运行。')
+        raise ValueError('仅支持 WSL2 x86_64 与 macOS（ADR 0007），请在 Ubuntu 24.04 WSL2 或 macOS 中运行。')
     if 'microsoft' not in platform.release().lower():
         raise ValueError('Linux 执行路径仅交付 WSL2，请在 Ubuntu 24.04 WSL2 中运行。')
 
@@ -113,7 +116,10 @@ def x11_library_present():
 
 def x11_warnings(present=None):
     """X11 libs are optional: #139 chose the Wayland-undecorated window on the
-    delivery host, so an absent libxkbcommon-x11 is a hint, never a refusal."""
+    delivery host, so an absent libxkbcommon-x11 is a hint, never a refusal.
+    macOS windows through AppKit and needs neither."""
+    if present is None and platform.system() == 'Darwin':
+        return []
     if present is None:
         present = x11_library_present()
     if present:
@@ -382,8 +388,35 @@ def fetch(directory, tool):
                                                   capture_output=True, text=True).stdout.strip()}
 
 
+class _ProcBsdInfo(ctypes.Structure):
+    """macOS <sys/proc_info.h> struct proc_bsdinfo."""
+    _fields_ = [*((name, ctypes.c_uint32) for name in (
+        'pbi_flags', 'pbi_status', 'pbi_xstatus', 'pbi_pid', 'pbi_ppid', 'pbi_uid', 'pbi_gid',
+        'pbi_ruid', 'pbi_rgid', 'pbi_svuid', 'pbi_svgid', 'rfu_1')),
+        ('pbi_comm', ctypes.c_char * 16), ('pbi_name', ctypes.c_char * 32),
+        *((name, ctypes.c_uint32) for name in (
+            'pbi_nfiles', 'pbi_pgid', 'pbi_pjobc', 'e_tdev', 'e_tpgid')),
+        ('pbi_nice', ctypes.c_int32),
+        ('pbi_start_tvsec', ctypes.c_uint64), ('pbi_start_tvusec', ctypes.c_uint64)]
+
+
+def darwin_start(pid):
+    """macOS 创建身份：内核启动时刻的微秒数（十进制文本），与 Rust 端一致。"""
+    libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+    info = _ProcBsdInfo()
+    size = ctypes.sizeof(info)
+    written = libc.proc_pidinfo(ctypes.c_int(pid), ctypes.c_int(3), ctypes.c_uint64(0),
+                                ctypes.byref(info), ctypes.c_int(size))
+    if written != size:
+        return None
+    return str(info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec)
+
+
 def proc_identity(pid):
     """读取 PID 的创建身份；进程不存在返回 None。"""
+    if platform.system() == 'Darwin':
+        start = darwin_start(pid)
+        return None if start is None else {'pid': pid, 'start': start}
     try:
         text = Path(f'/proc/{pid}/stat').read_text()
     except (FileNotFoundError, ProcessLookupError):

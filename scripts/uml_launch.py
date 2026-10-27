@@ -5,6 +5,7 @@ ownership。restart 只等待记录中那个旧进程真实退出，绝不 SIGKI
 """
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -81,8 +82,9 @@ def preflight(prefix, root, viewer_args):
 
 
 # WSLg GPU path (ADR 0008): without these the Rust viewer falls back to
-# llvmpipe. The launcher sets defaults only; user values win.
-RENDER_DEFAULTS = {'GALLIUM_DRIVER': 'd3d12', 'WGPU_BACKEND': 'gl'}
+# llvmpipe. The launcher sets defaults only; user values win. macOS keeps
+# wgpu's native Metal backend.
+RENDER_DEFAULTS = {} if platform.system() == 'Darwin' else {'GALLIUM_DRIVER': 'd3d12', 'WGPU_BACKEND': 'gl'}
 
 
 def viewer_env(environ):

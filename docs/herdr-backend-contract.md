@@ -1,7 +1,7 @@
 # Herdr SessionBackend 契约 — spec #13 / issue #14 产出
 
 本文档记录 Herdr 的能力证据和生命周期契约。**平台以 ADR 0007 为准：交付目标为
-WSL2 + Ubuntu 24.04 + WSLg；Windows 原生不受支持，macOS 当前不承诺。**
+WSL2 + Ubuntu 24.04 + WSLg 与 macOS；Windows 原生不受支持。**
 文中 Java/JVM 与旧 Windows/macOS 验收记录是历史证据，不代表当前实现。当前实现是
 `crates/companion` 的 Rust runner/controller（#144 删除了 LOVE/Lua 实现），进程创建、
 等待、身份与 OS 单例 lock 由 POSIX adapter 提供（平台能力表见 ADR 0007；Windows 专用实现
@@ -178,7 +178,7 @@ Windows 已记录真实 Claude 异常恢复、namespace JVM 重启与身份连�
 FIFO、退避期间关闭取消、预算耗尽、正常退出不恢复，以及另一项目与无关 Herdr
 会话不受影响；companion 为占位进程，证据见
 `acceptance-evidence/106-wsl/recovery/`。真实 Claude 的 `--resume` 恢复与恢复后 FIFO 已由 #114 实测（`acceptance-evidence/106-wsl/real-companion/`）。
-macOS 历史验收见 §8，当前不承诺支持（ADR 0007）。
+macOS 历史验收见 §8；macOS 已于 2026-10-27 恢复为交付平台（ADR 0007 增补）。
 
 Herdr 0.9.5 在 API socket 监听后即回答 `status`，但首个 `workspace create`
 要等 bootstrap 结束才返回；WSL interop 追加的 `/mnt/c` PATH 项使 bootstrap
@@ -246,8 +246,8 @@ startup workspace，隔离 session 因此多出一个空 shell workspace。所�
 ## 8. 原生验收边界（历史）
 
 本节是 Windows 原生与 JVM 时代 macOS 的历史验收记录，不代表当前支持。当前
-交付平台为 WSL2 + WSLg（ADR 0007），WSL 上的 companion 正是交付路径；下文
-"Linux/WSL companion 不受支持"一句只描述当时的状态。macOS 当前不承诺。
+交付平台为 WSL2 + WSLg 与 macOS（ADR 0007 及其增补），两者的 companion 都是交付路径；下文
+"Linux/WSL companion 不受支持"一句只描述当时的状态。
 
 Windows #21 已部分验收收尾；未验证的七项转由 [#30](https://github.com/qinyuanj/uml-viewer/issues/30) 跟踪：命名 proposal
 恢复、f5ceb0b detail 窗口复验、恢复预算耗尽、正常退出不恢复、待重试关闭取消、
@@ -336,4 +336,4 @@ starttime（第 22 字段），在启动成功后写入
   独立 discussion context、视图（focus/proposal/layer/declutter/camera/
   zoom/selection/detail）与 mailbox cursor（ADR 0002）。
 - 拒绝规则由 `scripts/test_posix_restart_entries.py` 覆盖，WSL 端到端由
-  `scripts/test_posix_restart_e2e.py` 实测；macOS 当前不承诺。
+  `scripts/test_posix_restart_e2e.py` 实测；macOS 上 restart 拒绝规则同样通过，端到端待实测。

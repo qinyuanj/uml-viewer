@@ -34,7 +34,8 @@ The diagram is already on screen.
   `UML_VIEWER_TOOL_ROOT` set to that worktree so it uses the tree under
   change, not the clone in `.uml-viewer/uml-viewer/`. The viewer on
   screen may be another project's; its working directory names it:
-  `for p in $(pgrep -f '[u]ml-viewer viewer'); do readlink /proc/$p/cwd; done`.
+  `for p in $(pgrep -f '[u]ml-viewer viewer'); do readlink /proc/$p/cwd; done`
+  (macOS: `lsof -a -d cwd -Fn -p $p`).
 - Mail files are queues `{:next-id n :queue [cmd …]}`. Pop the head of
   `:queue` as you handle it (rewrite the file). Oldest first.
 - Right-click quality mail uses public `./uml crap` / `./uml mutate` dispatch
@@ -79,7 +80,8 @@ The diagram is already on screen.
   times (1, 2, 4 seconds) through the durable controller; normal or unknown
   exits stop recovery. Other Claude sessions stay up.
 - Herdr is the sole companion backend on every supported platform.
-  The delivery target is **WSL2 + Ubuntu 24.04 + WSLg** (ADR 0007).
+  The delivery targets are **WSL2 + Ubuntu 24.04 + WSLg** and **macOS**
+  (ADR 0007).
   Legacy tmux/psmux or unmarked ownership is retained and refused; before
   migration read `docs/herdr-backend-contract.md` §9.
 - Installer prerequisites are the Rust toolchain pinned by

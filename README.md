@@ -37,8 +37,8 @@ A Rust app (egui/eframe) that lays out and draws UML from an EDN IR. A
 displays it, routes the arrows, colors CRAP, and lets you click. One Rust
 binary runs the viewer, IR generation, the four scanners, and the companion's
 headless roles. The JVM/Clojure implementation was removed in the JVM cutover
-and the Lua/LOVE implementation in the #144 cutover (ADR 0008). The supported platform is **WSL2 + Ubuntu 24.04 + WSLg**;
-native Windows is unsupported and macOS is not committed (ADR 0007).
+and the Lua/LOVE implementation in the #144 cutover (ADR 0008). The supported platforms are **WSL2 + Ubuntu 24.04 + WSLg** and
+**macOS** (Metal, Terminal.app attach); native Windows is unsupported (ADR 0007).
 
 The IR is **topology**: the namespace tree, classes, and edges. **Metrics**
 (CC, coverage, CRAP, killed/survived/uncovered) come from `.metrics/`

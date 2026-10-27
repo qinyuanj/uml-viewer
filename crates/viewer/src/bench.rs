@@ -789,7 +789,9 @@ mod tests {
         assert_eq!(Some(5.96), parse_loadavg("5.96 13.72 9.01 3/1234 5678\n"));
         assert_eq!(None, parse_loadavg(""));
         assert_eq!(None, parse_loadavg("x 1 2"));
-        // The real file parses on this host.
+        // The real file parses on this host (/proc is Linux only; the bench
+        // protocol is measured on WSLg).
+        #[cfg(target_os = "linux")]
         assert!(load_one_minute().unwrap() >= 0.0);
     }
 
@@ -960,7 +962,9 @@ mod tests {
         let text = "1234 (name with ) paren) S 1 2 3 4 5 6 7 8 9 10 200 300 99 88";
         assert_eq!(Some(5.0), parse_proc_stat(text));
         assert_eq!(None, parse_proc_stat("garbage"));
-        // The real file parses on this host.
+        // The real file parses on this host (/proc is Linux only; the bench
+        // protocol is measured on WSLg).
+        #[cfg(target_os = "linux")]
         assert!(self_cpu_seconds().unwrap() >= 0.0);
     }
 

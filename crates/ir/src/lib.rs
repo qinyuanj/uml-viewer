@@ -207,8 +207,8 @@ fn run_result(args: &[OsString]) -> Result<String, String> {
         }
         i += 1;
     }
-    if !cfg!(target_os = "linux") {
-        return Err("IR requires WSL2 (ADR 0007)".to_owned());
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return Err("IR requires WSL2 or macOS (ADR 0007)".to_owned());
     }
     let adapter = Adapter::new(&root)?;
     let path = positional[0]

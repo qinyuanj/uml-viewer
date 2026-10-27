@@ -1,6 +1,6 @@
 """POSIX 公共入口的安全 restart：身份核对、真实退出等待与拒绝规则。
 
-只通过公共 ./uml --restart 观察行为；进程用真实 /proc 身份。
+只通过公共 ./uml --restart 观察行为；进程用真实内核身份（Linux /proc，macOS proc_pidinfo）。
 """
 import json
 import os
@@ -13,14 +13,13 @@ import time
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / 'scripts'))
+from uml_posix import proc_identity  # noqa: E402
 
 
 def start_identity(pid):
-    try:
-        text = Path(f'/proc/{pid}/stat').read_text()
-    except OSError:
-        return None
-    return text.rsplit(')', 1)[-1].split()[19]
+    observed = proc_identity(pid)
+    return None if observed is None else observed['start']
 
 
 class RestartEntries(unittest.TestCase):
