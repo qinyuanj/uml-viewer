@@ -223,3 +223,16 @@ fn an_edge_bent_across_a_taller_row_neighbour_leaves_the_row_first() {
     assert!(pts[1][1] > 558.0, "drops below the row first: {pts:?}");
     assert_clear(&s, &pts, &["t"]);
 }
+
+#[test]
+fn spreading_the_attachments_does_not_bend_an_edge_into_a_box() {
+    // a -> b runs straight just below c; spreading the attachments on b's
+    // right face (a -> b, c -> b) would lift it into c.
+    let mut s = parse(
+        "{:diagram {:edges [{:from :a :to :g} {:from :d :to :b} {:from :a :to :d} {:from :c :to :b} {:from :a :to :b}]} :classes [{:id :d :rank 5 :rect {:x 740 :y 84 :w 160 :h 252}} {:id :b :rank 5 :rect {:x 940 :y 84 :w 128 :h 126}} {:id :c :rank 5 :rect {:x 1108 :y 84 :w 128 :h 90}} {:id :a :rank 5 :rect {:x 1276 :y 124 :w 120 :h 72}} {:id :g :rank 3 :rect {:x 292 :y 1434 :w 136 :h 450}} {:id :s :rank 3 :rect {:x 468 :y 1434 :w 120 :h 72}} {:id :o :rank 2 :rect {:x 52 :y 2082 :w 80 :h 44}}]}",
+    )
+    .unwrap();
+    route(&mut s);
+    let pts = points_of(&s, 4);
+    assert_clear(&s, &pts, &["c"]);
+}

@@ -975,7 +975,8 @@ Layout follows Mermaid's three stages:
    With `:levels`, a level is a constraint: inside it, a class sits one row
    above its highest same-level dependency, and classes on a cycle share a
    row. A level splits into at most three rows; deeper chains share the top
-   one.
+   one. Foreign ovals of a single `:levels` package take a row below the
+   lowest level, so arrows to them pass the ranks between in lanes too.
 3. **Route** like Mermaid/ELK: ports on facing sides, orthogonal tracks in
    the rank gap, short same-rank connections through the stack gap (local U
    only when a sibling sits in the way), then stroke with D3 `curveBasis`

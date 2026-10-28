@@ -141,3 +141,24 @@ fn a_deep_chain_in_one_level_shares_its_top_row() {
     assert_eq!(ys[1], ys[2], "{ys:?}");
     assert!(ys[2] < ys[3] && ys[3] < ys[4], "{ys:?}");
 }
+
+#[test]
+fn a_levels_package_puts_foreign_ovals_in_a_rank_below_its_lowest_level() {
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 1} {:id :b :name \"b\" :level 0}]}] :foreign [{:id :std :name \"std\" :foreign true}] :edges [{:from :a :to :b} {:from :a :to :std}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    let classes = edn::record::seq(get(&s, "classes"));
+    let std = classes
+        .iter()
+        .find(|c| get(c, "id") == Some(&edn::Value::keyword("std")))
+        .unwrap();
+    assert!(get(std, "rank").is_some(), "the oval is ranked");
+    assert!(
+        row_of(&s, "std") > row_of(&s, "b"),
+        "below the lowest level"
+    );
+    let lanes = edn::record::seq(get(&s, "lanes"));
+    assert_eq!(1, lanes.len(), "a -> std passes b's rank in a lane");
+}

@@ -234,20 +234,31 @@ const LANE_GAP: f64 = 12.0;
 const LANE_MARGIN: f64 = 20.0;
 /// A lane runs this far into the gaps on both sides of its rank, so the
 /// rounded bend onto it (24px corners, `curve::basis_path`) stays clear of
-/// the rank's boxes.
-const LANE_REACH: f64 = 30.0;
+/// the rank's boxes, even when the edge comes in nearly level from far off.
+const LANE_REACH: f64 = 50.0;
 
 /// The through-points of one long edge: an entry and an exit per rank it
 /// crosses, ordered from its `:from` end.
 type Lane = (usize, Vec<[f64; 2]>);
 type Pass = (usize, [f64; 2], [f64; 2]);
 
+/// A foreign oval placed in the sink rank: id, rect, rank.
+type Sunk = (String, Rect, f64);
+
 /// Rank classes by dependency depth and place them in rank columns/rows
 /// (Lua `place`). Positions are multiples of 80 with barycentric sweeps.
 /// An edge spanning more than one rank gets a zero-width lane in every rank
 /// between its ends; the lanes are ordered with the boxes, so the edge
-/// passes each rank in a reserved gap instead of across a box.
-fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Vec<Lane>) {
+/// passes each rank in a reserved gap instead of across a box. `sinks`
+/// (id, w, h) are foreign ovals of a `:levels` package: they take a rank
+/// below the lowest level, so edges to them pass the ranks between in lanes
+/// too.
+fn place(
+    classes: &[Value],
+    edges: &[Value],
+    direction: &str,
+    sinks: &[(String, f64, f64)],
+) -> (Vec<Value>, Vec<Lane>, Vec<Sunk>) {
     use std::collections::HashMap;
     let mut cs: Vec<Value> = Vec::with_capacity(classes.len());
     let mut ids: Vec<String> = Vec::with_capacity(classes.len());
@@ -264,10 +275,18 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
         nbr.insert(id.clone(), Vec::new());
         cs.push(packed);
     }
+    let sink: HashMap<String, (f64, f64)> = sinks
+        .iter()
+        .map(|(id, w, h)| (id.clone(), (*w, *h)))
+        .collect();
+    for id in sink.keys() {
+        nbr.insert(id.clone(), Vec::new());
+    }
     for e in edges {
         let f = edn::encode(get(e, "from").unwrap()).unwrap();
         let t = edn::encode(get(e, "to").unwrap()).unwrap();
-        if !idx.contains_key(&f) || !idx.contains_key(&t) {
+        let known = |id: &String| idx.contains_key(id) || sink.contains_key(id);
+        if !known(&f) || !known(&t) {
             continue;
         }
         if !nbr[&f].contains(&t) {
@@ -275,6 +294,9 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
         }
         if !nbr[&t].contains(&f) {
             nbr.get_mut(&t).unwrap().push(f.clone());
+        }
+        if sink.contains_key(&f) || sink.contains_key(&t) {
+            continue;
         }
         let k = get(e, "kind")
             .and_then(local_name)
@@ -344,7 +366,7 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
     };
     // A level holds `rows` sub-rows; without inner dependencies rank = level.
     let rows = sub.values().max().map_or(1, |d| d + 1) as f64;
-    let rank_of = |id: &str| {
+    let class_rank = |id: &str| {
         if levels {
             level_of(id) * rows + sub[id] as f64
         } else {
@@ -355,7 +377,7 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
     let mut keys: Vec<f64> = Vec::new();
     let mut pos: HashMap<String, f64> = HashMap::new();
     for (i, id) in ids.iter().enumerate() {
-        let r = rank_of(id);
+        let r = class_rank(id);
         let key = rank_key(r);
         if !groups.contains_key(&key) {
             groups.insert(key.clone(), Vec::new());
@@ -371,6 +393,26 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
             a.partial_cmp(b).unwrap()
         }
     });
+    // The sink rank sits below the lowest level.
+    let sink_rank = keys.last().copied().unwrap_or(0.0) - 1.0;
+    if !sink.is_empty() {
+        keys.push(sink_rank);
+        let mut ids: Vec<String> = sinks.iter().map(|s| s.0.clone()).collect();
+        for (i, id) in ids.iter().enumerate() {
+            pos.insert(id.clone(), (cs.len() + i) as f64 * 80.0);
+        }
+        groups
+            .entry(rank_key(sink_rank))
+            .or_default()
+            .append(&mut ids);
+    }
+    let rank_of = |id: &str| {
+        if sink.contains_key(id) {
+            sink_rank
+        } else {
+            class_rank(id)
+        }
+    };
     let order: HashMap<String, usize> = keys
         .iter()
         .enumerate()
@@ -381,7 +423,8 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
     for (ei, e) in edges.iter().enumerate() {
         let f = edn::encode(get(e, "from").unwrap()).unwrap();
         let t = edn::encode(get(e, "to").unwrap()).unwrap();
-        if !idx.contains_key(&f) || !idx.contains_key(&t) {
+        let known = |id: &String| idx.contains_key(id) || sink.contains_key(id);
+        if !known(&f) || !known(&t) {
             continue;
         }
         let (kf, kt) = (order[&rank_key(rank_of(&f))], order[&rank_key(rank_of(&t))]);
@@ -456,6 +499,16 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
             }
         }
     }
+    let size = |id: &str| match sink.get(id) {
+        Some(&wh) => wh,
+        None => {
+            let c = &cs[idx[id]];
+            (
+                num(get(c, "w").unwrap()).unwrap(),
+                num(get(c, "h").unwrap()).unwrap(),
+            )
+        }
+    };
     let mut gs: Vec<(f64, Vec<String>, f64, f64, f64)> = Vec::new();
     let mut total_h: f64 = 0.0;
     for r in &keys {
@@ -469,15 +522,16 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
             if lane {
                 continue;
             }
-            let c = &cs[idx[id]];
-            w = w.max(num(get(c, "w").unwrap()).unwrap());
-            h = h.max(num(get(c, "h").unwrap()).unwrap());
-            colh += num(get(c, "h").unwrap()).unwrap();
+            let (cw, ch) = size(id);
+            w = w.max(cw);
+            h = h.max(ch);
+            colh += ch;
         }
         gs.push((*r, xs, w, h, colh));
         total_h = total_h.max(colh);
     }
     let mut result = Vec::new();
+    let mut sunk: Vec<Sunk> = Vec::new();
     // edge index -> (step, entry, exit) of each rank it passes
     let mut through: HashMap<usize, Vec<Pass>> = HashMap::new();
     let mut along = 0.0;
@@ -500,6 +554,11 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
                 let (near, far) = (at(along - LANE_REACH), at(along + depth + LANE_REACH));
                 let (enter, exit) = if forward { (near, far) } else { (far, near) };
                 through.entry(ei).or_default().push((j, enter, exit));
+                continue;
+            }
+            if let Some(&(cw, ch)) = sink.get(id) {
+                sunk.push((id.clone(), Rect::new(across, along, cw, ch), *rank));
+                across += cw;
                 continue;
             }
             let mut c = cs[idx[id]].clone();
@@ -540,7 +599,7 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
         })
         .collect();
     lanes.sort_by_key(|l| l.0);
-    (result, lanes)
+    (result, lanes, sunk)
 }
 
 /// Rows within one level: 0 for a class with no same-level dependency, else
@@ -623,8 +682,26 @@ fn rank_key(r: f64) -> String {
     format!("{r:?}")
 }
 
-/// `L.layout`: package rows with pooled quality, then foreign ovals to the
-/// right of the package bounding box. `:lanes` carries each long edge's
+/// A foreign class drawn as an oval sized to its name.
+fn oval(c0: &Value) -> (Value, f64, f64) {
+    let mut c = c0.clone();
+    let w = (80.0_f64).max(
+        24.0 + text_w(get(&c, "name").and_then(|n| match n {
+            Value::String(s) => Some(s.as_str()),
+            _ => None,
+        })),
+    );
+    let h = (44.0_f64).max((0.55 * w).floor());
+    put(&mut c, "shape", Value::keyword("oval"));
+    let name_line = line("name", get(&c, "name").cloned(), vec![]);
+    put(&mut c, "lines", Value::Vector(vec![name_line]));
+    (c, w, h)
+}
+
+/// `L.layout`: package rows with pooled quality, then foreign ovals. A
+/// single package ranked by `:levels` puts them in a sink rank below its
+/// last; otherwise they stack right of the packages' bounding box.
+/// `:lanes` carries each long edge's
 /// through-points (by diagram edge index) to `route`, which consumes it.
 pub fn layout(diagram: &Value) -> Value {
     let mut pkgs: Vec<Value> = Vec::new();
@@ -635,7 +712,27 @@ pub fn layout(diagram: &Value) -> Value {
     for p in seq(get(diagram, "packages")) {
         stride = stride.max(1.0 + seq(get(p, "classes")).len() as f64);
     }
-    let placed: Vec<(Vec<Value>, Vec<Lane>)> = seq(get(diagram, "packages"))
+    let mut ovals: Vec<(Value, f64, f64)> = seq(get(diagram, "foreign")).iter().map(oval).collect();
+    // Only a single package ranked by `:levels` (top to bottom) sinks them.
+    let direction = get(diagram, "direction").map(geom::name);
+    let sunk = match seq(get(diagram, "packages")) {
+        [p] => {
+            !matches!(direction.as_deref(), Some("lr" | "rl"))
+                && seq(get(p, "classes"))
+                    .iter()
+                    .any(|c| get(c, "level").is_some())
+        }
+        _ => false,
+    };
+    let sinks: Vec<(String, f64, f64)> = if sunk {
+        ovals
+            .iter()
+            .map(|(c, w, h)| (edn::encode(get(c, "id").unwrap()).unwrap(), *w, *h))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let placed: Vec<(Vec<Value>, Vec<Lane>, Vec<Sunk>)> = seq(get(diagram, "packages"))
         .iter()
         .map(|p| {
             place(
@@ -644,14 +741,25 @@ pub fn layout(diagram: &Value) -> Value {
                 &get(diagram, "direction")
                     .map(geom::name)
                     .unwrap_or_else(|| "tb".into()),
+                &sinks,
             )
         })
         .collect();
     // Sub-rows can push a package's ranks past its class count.
-    for c in placed.iter().flat_map(|(inner, _)| inner) {
+    for c in placed.iter().flat_map(|(inner, _, _)| inner) {
         stride = stride.max(1.0 + num(get(c, "rank").unwrap()).unwrap());
     }
-    for ((i, p), (inner, through)) in seq(get(diagram, "packages")).iter().enumerate().zip(placed) {
+    for ((i, p), (inner, through, sunk)) in
+        seq(get(diagram, "packages")).iter().enumerate().zip(placed)
+    {
+        for (id, r, rank) in sunk {
+            let (c, _, _) = ovals
+                .iter_mut()
+                .find(|(c, _, _)| edn::encode(get(c, "id").unwrap()).unwrap() == id)
+                .unwrap();
+            put(c, "rect", r.translate(52.0, y + 44.0).to_value());
+            put(c, "rank", numval(i as f64 * stride + rank));
+        }
         for (ei, points) in through {
             let points = points
                 .iter()
@@ -737,39 +845,32 @@ pub fn layout(diagram: &Value) -> Value {
         .map(|p| Rect::from_value(get(p, "rect").unwrap()).unwrap())
         .collect();
     let bounds = union_all(&rs).unwrap_or(Rect::new(40.0, 40.0, 400.0, 300.0));
-    let mut ovals: Vec<Value> = Vec::new();
     let mut oy = bounds.y;
-    for c0 in seq(get(diagram, "foreign")) {
-        let mut c = c0.clone();
-        let w = (80.0_f64).max(
-            24.0 + text_w(get(&c, "name").and_then(|n| match n {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            })),
-        );
-        let h = (44.0_f64).max((0.55 * w).floor());
-        put(&mut c, "shape", Value::keyword("oval"));
-        let name_line = line("name", get(&c, "name").cloned(), vec![]);
-        put(&mut c, "lines", Value::Vector(vec![name_line]));
+    let mut stacked: Vec<Value> = Vec::new();
+    for (c, w, h) in ovals.iter_mut() {
+        if get(c, "rect").is_some() {
+            classes.push(c.clone());
+            continue;
+        }
         put(
-            &mut c,
+            c,
             "rect",
-            Rect::new(bounds.right() + 40.0, oy, w, h).to_value(),
+            Rect::new(bounds.right() + 40.0, oy, *w, *h).to_value(),
         );
-        ovals.push(c);
-        oy += h + 40.0;
+        stacked.push(c.clone());
+        oy += *h + 40.0;
     }
-    let oh = if ovals.is_empty() {
+    let oh = if stacked.is_empty() {
         0.0
     } else {
         oy - 40.0 - bounds.y
     };
-    let dy = if ovals.is_empty() {
+    let dy = if stacked.is_empty() {
         0.0
     } else {
         ((bounds.h - oh) / 2.0).max(0.0)
     };
-    for c in ovals.iter_mut() {
+    for c in stacked.iter_mut() {
         let moved = Rect::from_value(get(c, "rect").unwrap())
             .unwrap()
             .translate(0.0, dy);

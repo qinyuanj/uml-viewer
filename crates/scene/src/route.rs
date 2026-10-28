@@ -137,6 +137,17 @@ fn stub_point(p: [f64; 2], f: Face, row: Rect) -> [f64; 2] {
     }
 }
 
+/// Slide both ends of a path along their boxes and square the stubs.
+fn settle(mut ps: Path, a: Rect, b: Rect) -> Path {
+    if ps.len() >= 2 {
+        let s = slide(a, ps[0], ps[1]);
+        let e = slide(b, *ps.last().unwrap(), ps[ps.len() - 2]);
+        sync(&mut ps, true, s, face(a, s));
+        sync(&mut ps, false, e, face(b, e));
+    }
+    ps
+}
+
 /// A long edge through its reserved lanes: stub, the lane entry and exit of
 /// every rank it crosses, stub. `rows` are the rank rows of its two ends.
 fn through_lanes(
@@ -601,15 +612,7 @@ pub fn route(scene: &mut Value) {
             .as_ref()
             .map(|lane| through_lanes(&nodes[a], &nodes[b], (ft, tt), lane, ends, lr))
             .filter(|ps| !hits(ps, a, b, &nodes));
-        let settle = |mut ps: Path| {
-            if ps.len() >= 2 {
-                let s = slide(nodes[a].r, ps[0], ps[1]);
-                let e = slide(nodes[b].r, *ps.last().unwrap(), ps[ps.len() - 2]);
-                sync(&mut ps, true, s, face(nodes[a].r, s));
-                sync(&mut ps, false, e, face(nodes[b].r, e));
-            }
-            ps
-        };
+        let settle = |ps: Path| settle(ps, nodes[a].r, nodes[b].r);
         let mut ps = settle(through.unwrap_or_else(|| {
             choose(
                 candidates(&nodes[a], &nodes[b], ft, tt, i, n, &rank_boxes, lr),
@@ -644,6 +647,7 @@ pub fn route(scene: &mut Value) {
                 .push((ei, start, p));
         }
     }
+    let mut spread: Vec<bool> = vec![false; edges.len()];
     for group in atts.values() {
         if group.len() > 1 {
             let ei0 = group[0].0;
@@ -666,8 +670,39 @@ pub fn route(scene: &mut Value) {
                 // lo + (hi-lo)/(n+1), matching the JVM attachment spacing.
                 let v = lo + (i + 1) as f64 * (hi - lo) / (sorted.len() + 1) as f64;
                 let p = if horiz(f) { [a.2[0], v] } else { [v, a.2[1]] };
-                sync(&mut edges[a.0].ps, a.1, p, f);
+                if p != a.2 {
+                    spread[a.0] = true;
+                    sync(&mut edges[a.0].ps, a.1, p, f);
+                }
             }
+        }
+    }
+    // Spreading the attachments can bend a path into a box beside it: take
+    // the first other candidate that stays clear, through the spread ends
+    // where it leaves by the same faces.
+    for (e, _) in edges.iter_mut().zip(&spread).filter(|(_, s)| **s) {
+        if e.ps.len() < 2 || !hits(&e.ps, e.a, e.b, &nodes) {
+            continue;
+        }
+        let (s, t) = (e.ps[0], *e.ps.last().unwrap());
+        let (ra, rb) = (nodes[e.a].r, nodes[e.b].r);
+        let (ft, tt, i, n) = (e.ft, e.tt, e.i, e.n);
+        let clear = candidates(&nodes[e.a], &nodes[e.b], ft, tt, i, n, &rank_boxes, lr)
+            .into_iter()
+            .filter(|c| c.len() >= 2)
+            .map(|c| {
+                let mut c = settle(c, ra, rb);
+                if face(ra, c[0]) == face(ra, s) {
+                    sync(&mut c, true, s, face(ra, s));
+                }
+                if face(rb, *c.last().unwrap()) == face(rb, t) {
+                    sync(&mut c, false, t, face(rb, t));
+                }
+                c
+            })
+            .find(|c| !hits(c, e.a, e.b, &nodes));
+        if let Some(clear) = clear {
+            e.ps = clear;
         }
     }
     let mut out: Vec<Value> = Vec::new();
