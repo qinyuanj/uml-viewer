@@ -176,14 +176,57 @@ fn lerp(a: [f64; 2], b: [f64; 2], t: f64) -> [f64; 2] {
 /// `G.gap_segment`: the sub-segments of `a–b` left visible after clipping the
 /// padded obstacle rects. The rect scan order is irrelevant (intervals are
 /// sorted and merged), so callers may source rects from a spatial index.
+#[cfg(test)]
 pub fn gap_segment(a: [f64; 2], b: [f64; 2], rects: &[Rect], pad: f64) -> Vec<[[f64; 2]; 2]> {
+    let padded: Vec<Rect> = rects.iter().map(|r| r.inflate(pad)).collect();
     let mut out: Vec<[[f64; 2]; 2]> = Vec::new();
-    if near(a, b) {
-        return out;
+    clip_segment(a, b, &padded, &mut Scratch::default(), &mut |p, q| {
+        out.push([p, q])
+    });
+    out
+}
+
+/// Interval buffers reused across the segments of one polyline.
+#[derive(Default)]
+struct Scratch {
+    removed: Vec<[f64; 2]>,
+    merged: Vec<[f64; 2]>,
+}
+
+/// Lower and upper corners of the points' bounding box.
+fn corners(ps: &[[f64; 2]]) -> ([f64; 2], [f64; 2]) {
+    let (mut lo, mut hi) = (ps[0], ps[0]);
+    for p in &ps[1..] {
+        lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+        hi = [hi[0].max(p[0]), hi[1].max(p[1])];
     }
-    let mut removed: Vec<[f64; 2]> = Vec::new();
-    for r0 in rects {
-        let r = r0.inflate(pad);
+    (lo, hi)
+}
+
+/// The box `lo..hi` lies strictly on one side of `r`. A segment inside such
+/// a box gets no interval from the slab test in `clip_segment`: subtraction
+/// and division round monotonically, so its entry parameter stays ≥ 1 or its
+/// exit parameter ≤ 0. Skipping the rect therefore leaves the pieces
+/// bit-for-bit unchanged.
+fn apart(lo: [f64; 2], hi: [f64; 2], r: Rect) -> bool {
+    hi[0] < r.x || lo[0] > r.right() || hi[1] < r.y || lo[1] > r.bottom()
+}
+
+/// `gap_segment` over rects already inflated by the pad: each visible piece
+/// goes to `keep`.
+fn clip_segment(
+    a: [f64; 2],
+    b: [f64; 2],
+    padded: &[Rect],
+    scratch: &mut Scratch,
+    keep: &mut impl FnMut([f64; 2], [f64; 2]),
+) {
+    if near(a, b) {
+        return;
+    }
+    let removed = &mut scratch.removed;
+    removed.clear();
+    for &r in padded {
         let dx = b[0] - a[0];
         let dy = b[1] - a[1];
         let (mut lo, mut hi): (f64, f64) = (0.0, 1.0);
@@ -221,8 +264,9 @@ pub fn gap_segment(a: [f64; 2], b: [f64; 2], rects: &[Rect], pad: f64) -> Vec<[[
         }
     }
     removed.sort_by(|x, y| x[0].partial_cmp(&y[0]).unwrap());
-    let mut merged: Vec<[f64; 2]> = Vec::new();
-    for iv in removed {
+    let merged = &mut scratch.merged;
+    merged.clear();
+    for &iv in removed.iter() {
         if let Some(last) = merged.last_mut()
             && iv[0] <= last[1] + 1e-9
         {
@@ -231,26 +275,32 @@ pub fn gap_segment(a: [f64; 2], b: [f64; 2], rects: &[Rect], pad: f64) -> Vec<[[
         }
         merged.push(iv);
     }
-    let mut keep = |lo: f64, hi: f64| {
+    let mut piece = |lo: f64, hi: f64| {
         let (p, q) = (lerp(a, b, lo), lerp(a, b, hi));
         if !near(p, q) {
-            out.push([p, q]);
+            keep(p, q);
         }
     };
     let mut u = 0.0;
-    for iv in &merged {
+    for iv in merged.iter() {
         if u < iv[0] - 1e-9 {
-            keep(u, iv[0]);
+            piece(u, iv[0]);
         }
         u = u.max(iv[1]);
     }
     if u < 0.999999 {
-        keep(u, 1.0);
+        piece(u, 1.0);
     }
-    out
 }
 
+/// Points per block whose bounding box pre-filters the rects (one flattened
+/// cubic at the scene's 16-step sampling).
+const BLOCK: usize = 16;
+
 /// `G.gap_polyline`: every polyline segment clipped, adjacent pieces joined.
+/// Rects are filtered with [`apart`] per block of segments, then per
+/// segment, so a long edge only tests the boxes near each stretch; the
+/// pieces are the same as clipping every segment against every rect.
 pub fn gap_polyline(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 2]>> {
     let mut out: Vec<Vec<[f64; 2]>> = Vec::new();
     if ps.len() < 2 {
@@ -259,12 +309,23 @@ pub fn gap_polyline(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 
     if rects.is_empty() {
         return vec![ps.to_vec()];
     }
-    for seg in ps.windows(2) {
-        for piece in gap_segment(seg[0], seg[1], rects, pad) {
-            match out.last_mut() {
-                Some(last) if near(*last.last().unwrap(), piece[0]) => last.push(piece[1]),
-                _ => out.push(vec![piece[0], piece[1]]),
-            }
+    let padded: Vec<Rect> = rects.iter().map(|r| r.inflate(pad)).collect();
+    let (mut nearby, mut touching): (Vec<Rect>, Vec<Rect>) = (Vec::new(), Vec::new());
+    let mut scratch = Scratch::default();
+    let mut join = |p: [f64; 2], q: [f64; 2]| match out.last_mut() {
+        Some(last) if near(*last.last().unwrap(), p) => last.push(q),
+        _ => out.push(vec![p, q]),
+    };
+    for first in (0..ps.len() - 1).step_by(BLOCK) {
+        let block = &ps[first..=(first + BLOCK).min(ps.len() - 1)];
+        let (lo, hi) = corners(block);
+        nearby.clear();
+        nearby.extend(padded.iter().filter(|r| !apart(lo, hi, **r)));
+        for seg in block.windows(2) {
+            let (lo, hi) = corners(seg);
+            touching.clear();
+            touching.extend(nearby.iter().filter(|r| !apart(lo, hi, **r)));
+            clip_segment(seg[0], seg[1], &touching, &mut scratch, &mut join);
         }
     }
     out

@@ -3,7 +3,8 @@
 //! edge (O(E·N)); here the index and a spatial grid over class rects are
 //! built once per scene, so preparation is near-linear. Geometry is
 //! unchanged: the grid yields the same obstacle set and `gap_segment`
-//! merges intervals independent of rect order.
+//! merges intervals independent of rect order. Strokes are bit-for-bit
+//! those of clipping every segment against every overlapping rect (#186).
 
 use crate::curve;
 use crate::geom::{self, Rect};
@@ -15,43 +16,95 @@ use std::collections::HashMap;
 /// dummy boxes are tracked but never clip strokes.
 struct ClassIndex {
     rect_by_id: HashMap<String, Rect>,
-    cells: HashMap<(i64, i64), Vec<usize>>,
+    grid: Grid,
     obstacles: Vec<(Value, Rect, bool)>, // (id, rect, dummy?)
+    seen: Vec<u32>,                      // per obstacle: the last query that saw it
+    query: u32,
 }
 
 const CELL: f64 = 256.0;
 
+/// Inclusive cell span `(x0, y0, x1, y1)` of a rect.
+fn span(r: Rect) -> (i64, i64, i64, i64) {
+    let cell = |v: f64| (v / CELL).floor() as i64;
+    (cell(r.x), cell(r.y), cell(r.right()), cell(r.bottom()))
+}
+
+/// Most cells a dense grid may hold; a wider spread scans the obstacles
+/// instead (16 MiB of empty cells, 64 times the 2000-class bench scene).
+const MAX_CELLS: i64 = 1 << 20;
+
+/// Obstacle slots per cell, dense over the cells the obstacles cover. An
+/// empty grid (no obstacles, or more than [`MAX_CELLS`]) covers no cell.
+#[derive(Default)]
+struct Grid {
+    x0: i64,
+    y0: i64,
+    cols: i64,
+    rows: i64,
+    cells: Vec<Vec<usize>>,
+}
+
+impl Grid {
+    fn new(rects: &[Rect]) -> Grid {
+        let spans: Vec<_> = rects.iter().map(|r| span(*r)).collect();
+        let Some(&(x0, y0, _, _)) = spans.first() else {
+            return Grid::default();
+        };
+        let (mut lo, mut hi) = ((x0, y0), (x0, y0));
+        for &(a, b, c, d) in &spans {
+            lo = (lo.0.min(a), lo.1.min(b));
+            hi = (hi.0.max(c), hi.1.max(d));
+        }
+        let (cols, rows) = (hi.0 - lo.0 + 1, hi.1 - lo.1 + 1);
+        if cols.saturating_mul(rows) > MAX_CELLS {
+            return Grid::default();
+        }
+        let mut grid = Grid {
+            x0: lo.0,
+            y0: lo.1,
+            cols,
+            rows,
+            cells: vec![Vec::new(); (cols * rows) as usize],
+        };
+        for (slot, &(x0, y0, x1, y1)) in spans.iter().enumerate() {
+            for cx in x0..=x1 {
+                for cy in y0..=y1 {
+                    let at = grid.at(cx, cy).unwrap();
+                    grid.cells[at].push(slot);
+                }
+            }
+        }
+        grid
+    }
+
+    fn at(&self, cx: i64, cy: i64) -> Option<usize> {
+        let (i, j) = (cx - self.x0, cy - self.y0);
+        ((0..self.cols).contains(&i) && (0..self.rows).contains(&j))
+            .then(|| (i * self.rows + j) as usize)
+    }
+}
+
 impl ClassIndex {
     fn new(scene: &Value) -> ClassIndex {
-        let mut index = ClassIndex {
-            rect_by_id: HashMap::new(),
-            cells: HashMap::new(),
-            obstacles: Vec::new(),
-        };
+        let mut rect_by_id = HashMap::new();
+        let mut obstacles = Vec::new();
         for c in seq(get(scene, "classes")) {
             let (Some(id), Some(rect)) = (get(c, "id"), get(c, "rect").and_then(Rect::from_value))
             else {
                 continue;
             };
-            index.rect_by_id.insert(edn::encode(id).unwrap(), rect);
-            let dummy = flag(c, "dummy?");
-            let slot = index.obstacles.len();
-            index.obstacles.push((id.clone(), rect, dummy));
-            let (x0, y0) = (
-                (rect.x / CELL).floor() as i64,
-                (rect.y / CELL).floor() as i64,
-            );
-            let (x1, y1) = (
-                (rect.right() / CELL).floor() as i64,
-                (rect.bottom() / CELL).floor() as i64,
-            );
-            for cx in x0..=x1 {
-                for cy in y0..=y1 {
-                    index.cells.entry((cx, cy)).or_default().push(slot);
-                }
-            }
+            rect_by_id.insert(edn::encode(id).unwrap(), rect);
+            obstacles.push((id.clone(), rect, flag(c, "dummy?")));
         }
-        index
+        let rects: Vec<Rect> = obstacles.iter().map(|o| o.1).collect();
+        ClassIndex {
+            rect_by_id,
+            grid: Grid::new(&rects),
+            seen: vec![0; obstacles.len()],
+            obstacles,
+            query: 0,
+        }
     }
 
     fn rect_of(&self, id: &Value) -> Option<Rect> {
@@ -59,33 +112,38 @@ impl ClassIndex {
     }
 
     /// Obstacle rects overlapping the probe, excluding dummy boxes and the
-    /// edge's own endpoints.
-    fn obstacles_in(&self, probe: Rect, from: Option<&Value>, to: Option<&Value>) -> Vec<Rect> {
-        let (x0, y0) = (
-            (probe.x / CELL).floor() as i64,
-            (probe.y / CELL).floor() as i64,
-        );
-        let (x1, y1) = (
-            (probe.right() / CELL).floor() as i64,
-            (probe.bottom() / CELL).floor() as i64,
-        );
-        let mut seen: Vec<bool> = vec![false; self.obstacles.len()];
+    /// edge's own endpoints. A probe spanning more cells than there are
+    /// obstacles (a long edge) scans the obstacles directly; the order of
+    /// the rects differs, which `gap_segment` does not see.
+    fn obstacles_in(&mut self, probe: Rect, from: Option<&Value>, to: Option<&Value>) -> Vec<Rect> {
+        let (x0, y0, x1, y1) = span(probe);
+        let admits = |(id, rect, dummy): &(Value, Rect, bool)| {
+            probe.overlaps(*rect) && !*dummy && Some(id) != from && Some(id) != to
+        };
+        let cells = (x1 - x0 + 1).saturating_mul(y1 - y0 + 1);
+        if self.grid.cells.is_empty() || cells > self.obstacles.len() as i64 {
+            return self
+                .obstacles
+                .iter()
+                .filter(|o| admits(o))
+                .map(|o| o.1)
+                .collect();
+        }
+        self.query += 1;
         let mut out = Vec::new();
         for cx in x0..=x1 {
             for cy in y0..=y1 {
-                let Some(slots) = self.cells.get(&(cx, cy)) else {
+                let Some(at) = self.grid.at(cx, cy) else {
                     continue;
                 };
-                for &slot in slots {
-                    if seen[slot] {
+                for &slot in &self.grid.cells[at] {
+                    if self.seen[slot] == self.query {
                         continue;
                     }
-                    seen[slot] = true;
-                    let (id, rect, dummy) = &self.obstacles[slot];
-                    if *dummy || Some(id) == from || Some(id) == to || !probe.overlaps(*rect) {
-                        continue;
+                    self.seen[slot] = self.query;
+                    if admits(&self.obstacles[slot]) {
+                        out.push(self.obstacles[slot].1);
                     }
-                    out.push(*rect);
                 }
             }
         }
@@ -180,7 +238,7 @@ fn fit(scene: &mut Value) {
 /// overlapping class box and record `:tip`, `:behind`, `:draw-bounds` and
 /// `:strokes`; then index classes and packages by id.
 pub fn prepare_scene(scene: &mut Value) {
-    let index = ClassIndex::new(scene);
+    let mut index = ClassIndex::new(scene);
     let mut edges: Vec<Value> = Vec::new();
     for raw in seq(get(scene, "edges")) {
         let mut e = raw.clone();

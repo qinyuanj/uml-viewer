@@ -79,3 +79,68 @@ fn clipped_strokes_never_hit_the_hidden_gap() {
             .any(|s| geom::near_polyline([20.0, 0.0], s, 1.0))
     );
 }
+
+/// Every segment clipped against every rect, pieces joined: `gap_polyline`
+/// without its rect filter (#186).
+fn gap_polyline_unfiltered(ps: &[[f64; 2]], rects: &[Rect], pad: f64) -> Vec<Vec<[f64; 2]>> {
+    let mut out: Vec<Vec<[f64; 2]>> = Vec::new();
+    for seg in ps.windows(2) {
+        for piece in geom::gap_segment(seg[0], seg[1], rects, pad) {
+            match out.last_mut() {
+                Some(last)
+                    if geom::point_seg_dist(*last.last().unwrap(), piece[0], piece[0]) < 0.51 =>
+                {
+                    last.push(piece[1])
+                }
+                _ => out.push(vec![piece[0], piece[1]]),
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn the_rect_filter_keeps_strokes_bit_for_bit() {
+    // A long wavy edge past a grid of boxes, then segments lying exactly on
+    // each padded side of a box: the filtered clip must produce the very
+    // same floats as clipping against every rect.
+    let ps: Vec<[f64; 2]> = (0..400)
+        .map(|i| {
+            let t = i as f64 * 0.37;
+            [
+                t * 31.0 + (t * 0.7).sin() * 90.0,
+                t * 53.0 + (t * 1.3).cos() * 40.0,
+            ]
+        })
+        .chain([
+            [5000.0, 6995.0],
+            [5000.0, 7100.0],
+            [5100.0, 7100.0],
+            [6000.0, 0.0],
+            [6000.0, 300.0],
+            [6300.0, 300.0],
+            [6300.0, 600.0],
+            [6600.0, 600.0],
+        ])
+        .collect();
+    let mut rs: Vec<Rect> = (0..30)
+        .flat_map(|i| {
+            (0..30).map(move |j| Rect::new(i as f64 * 180.0, j as f64 * 260.0, 120.0, 70.0))
+        })
+        .collect();
+    rs.push(Rect::new(5005.0, 7000.0, 40.0, 40.0));
+    rs.push(Rect::new(4900.0, 7105.0, 40.0, 40.0));
+    // Segments lying on the padded left, right, top and bottom sides.
+    rs.push(Rect::new(5900.0, 100.0, 95.0, 50.0));
+    rs.push(Rect::new(6100.0, 305.0, 50.0, 50.0));
+    rs.push(Rect::new(6400.0, 520.0, 50.0, 75.0));
+    let got = geom::gap_polyline(&ps, &rs, 5.0);
+    let want = gap_polyline_unfiltered(&ps, &rs, 5.0);
+    assert!(got.len() > 10, "the edge is cut many times");
+    let bits = |s: &[Vec<[f64; 2]>]| -> Vec<Vec<[u64; 2]>> {
+        s.iter()
+            .map(|r| r.iter().map(|p| [p[0].to_bits(), p[1].to_bits()]).collect())
+            .collect()
+    };
+    assert_eq!(bits(&want), bits(&got));
+}
