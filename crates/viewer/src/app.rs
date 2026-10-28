@@ -50,15 +50,17 @@ pub const RESIZE_GRIP: f32 = 6.0;
 /// Window decoration decision (ADR 0008 / #134): decorated X11 when the
 /// X11 preflight passes, otherwise an undecorated Wayland window with custom
 /// drag and resize regions (winit's client decorations disconnect Weston).
+/// macOS windows through AppKit, which always draws its own title bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowMode {
     X11Decorated,
     WaylandUndecorated,
+    NativeDecorated,
 }
 
 impl WindowMode {
     pub fn decorated(self) -> bool {
-        self == WindowMode::X11Decorated
+        self != WindowMode::WaylandUndecorated
     }
 }
 
@@ -178,6 +180,8 @@ impl Setup {
 pub fn run(options: Options) -> ExitCode {
     // WSLg: d3d12 through Mesa and the GL wgpu backend; never override a user
     // value. Also set by the launcher; this keeps direct launches on the GPU.
+    // macOS keeps wgpu's native Metal backend.
+    #[cfg(target_os = "linux")]
     for (key, value) in [("GALLIUM_DRIVER", "d3d12"), ("WGPU_BACKEND", "gl")] {
         if std::env::var_os(key).is_none() {
             // SAFETY: called before any thread is spawned (eframe starts the
@@ -193,10 +197,12 @@ pub fn run(options: Options) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let mode = mode_for(
-        x11_available(),
-        env_nonempty("UML_VIEWER_TEST_UNDECORATED").is_some(),
-    );
+    let force_undecorated = env_nonempty("UML_VIEWER_TEST_UNDECORATED").is_some();
+    let mode = if cfg!(target_os = "macos") && !force_undecorated {
+        WindowMode::NativeDecorated
+    } else {
+        mode_for(x11_available(), force_undecorated)
+    };
     let exit = Arc::new(AtomicU8::new(0));
     // A simulated scale also scales the window, so the canvas stays
     // 1500x920 points (Lua `display.window_size`: view units × ui).
@@ -212,11 +218,13 @@ pub fn run(options: Options) -> ExitCode {
     if !mode.decorated() {
         viewport = viewport.with_title(format!("{WINDOW_TITLE} (无装饰)"));
     }
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
     let mut native = eframe::NativeOptions {
         viewport,
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
+    #[cfg(target_os = "linux")]
     if mode == WindowMode::X11Decorated {
         native.event_loop_builder = Some(Box::new(|builder| {
             use winit::platform::x11::EventLoopBuilderExtX11;

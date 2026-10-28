@@ -34,10 +34,15 @@ fn shared_trunk_is_drawn_once_without_an_extra_head_and_chain_keeps_branches_ind
     else {
         unreachable!()
     };
-    assert_eq!(
-        vec![[274.1041975308642, 1101.9074074074085], [273.56, 1139.5]],
-        *points
-    );
+    // Layout arithmetic differs in the last bits between hosts' libm (x86_64
+    // glibc vs arm64 macOS), so the trunk is compared within 1e-9 points.
+    let expected = [[274.1041975308642, 1101.9074074074085], [273.56, 1139.5]];
+    assert_eq!(expected.len(), points.len(), "{points:?}");
+    for (want, got) in expected.iter().zip(points.iter()) {
+        for axis in 0..2 {
+            assert!((want[axis] - got[axis]).abs() < 1e-9, "{points:?}");
+        }
+    }
     assert_eq!(2, members.len(), "the trunk names its member edges");
     assert_eq!(
         1,

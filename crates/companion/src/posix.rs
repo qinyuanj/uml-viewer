@@ -20,15 +20,70 @@ use crate::vocab::{Failure, Owner, Result, RunOut};
 #[allow(non_camel_case_types)]
 mod sys {
     pub type pid_t = i32;
-    pub const CLOCK_MONOTONIC: i32 = 1;
     pub const WNOHANG: i32 = 1;
     pub const SIGTERM: i32 = 15;
     pub const O_WRONLY: i32 = 1;
-    pub const O_CREAT: i32 = 0x40;
-    pub const O_TRUNC: i32 = 0x200;
-    pub const POSIX_SPAWN_SETSID: i16 = 0x80;
     pub const LOCK_EX: i32 = 2;
     pub const LOCK_NB: i32 = 4;
+
+    // The values that differ between the two hosts' headers.
+    #[cfg(target_os = "linux")]
+    mod host {
+        pub const CLOCK_MONOTONIC: i32 = 1;
+        pub const O_CREAT: i32 = 0x40;
+        pub const O_TRUNC: i32 = 0x200;
+        pub const POSIX_SPAWN_SETSID: i16 = 0x80;
+    }
+    #[cfg(target_os = "macos")]
+    mod host {
+        pub const CLOCK_MONOTONIC: i32 = 6;
+        pub const O_CREAT: i32 = 0x200;
+        pub const O_TRUNC: i32 = 0x400;
+        pub const POSIX_SPAWN_SETSID: i16 = 0x400;
+    }
+    pub use host::*;
+
+    /// `struct proc_bsdinfo` from `<sys/proc_info.h>` (macOS only).
+    #[cfg(target_os = "macos")]
+    #[repr(C)]
+    pub struct ProcBsdInfo {
+        pub pbi_flags: u32,
+        pub pbi_status: u32,
+        pub pbi_xstatus: u32,
+        pub pbi_pid: u32,
+        pub pbi_ppid: u32,
+        pub pbi_uid: u32,
+        pub pbi_gid: u32,
+        pub pbi_ruid: u32,
+        pub pbi_rgid: u32,
+        pub pbi_svuid: u32,
+        pub pbi_svgid: u32,
+        pub rfu_1: u32,
+        pub pbi_comm: [u8; 16],
+        pub pbi_name: [u8; 32],
+        pub pbi_nfiles: u32,
+        pub pbi_pgid: u32,
+        pub pbi_pjobc: u32,
+        pub e_tdev: u32,
+        pub e_tpgid: u32,
+        pub pbi_nice: i32,
+        pub pbi_start_tvsec: u64,
+        pub pbi_start_tvusec: u64,
+    }
+    #[cfg(target_os = "macos")]
+    pub const PROC_PIDTBSDINFO: i32 = 3;
+    #[cfg(target_os = "macos")]
+    pub const SZOMB: u32 = 5;
+    #[cfg(target_os = "macos")]
+    unsafe extern "C" {
+        pub fn proc_pidinfo(
+            pid: i32,
+            flavor: i32,
+            arg: u64,
+            buffer: *mut std::ffi::c_void,
+            size: i32,
+        ) -> i32;
+    }
 
     #[repr(C)]
     pub struct Timespec {
@@ -108,10 +163,29 @@ pub fn current_pid() -> i32 {
     unsafe { sys::getpid() }
 }
 
+/// `NAME=value` entries of this process's environment, NUL-separated.
+#[cfg(target_os = "linux")]
+fn environ_bytes() -> Vec<u8> {
+    std::fs::read("/proc/self/environ").unwrap_or_default()
+}
+
+/// macOS has no `/proc`; the std snapshot carries the same literal bytes.
+#[cfg(target_os = "macos")]
+fn environ_bytes() -> Vec<u8> {
+    let mut raw = Vec::new();
+    for (name, value) in std::env::vars_os() {
+        raw.extend_from_slice(name.as_bytes());
+        raw.push(b'=');
+        raw.extend_from_slice(value.as_bytes());
+        raw.push(0);
+    }
+    raw
+}
+
 /// Environment snapshot without the removed names, kept as literal
-/// `NAME=value` bytes read from `/proc/self/environ`.
+/// `NAME=value` bytes (`/proc/self/environ` on Linux).
 fn environment(remove: &[&str]) -> Result<Vec<CString>> {
-    let raw = std::fs::read("/proc/self/environ").unwrap_or_default();
+    let raw = environ_bytes();
     let mut out = Vec::new();
     for entry in raw.split(|byte| *byte == 0) {
         if entry.is_empty() {
@@ -133,6 +207,7 @@ fn environment(remove: &[&str]) -> Result<Vec<CString>> {
 /// `/proc/<pid>/stat`: field 2 (comm) may contain spaces and parens, so parse
 /// from the last `)`. A zombie (state Z or X) is not a running process: an
 /// exited child keeps its /proc entry until its parent reaps it.
+#[cfg(target_os = "linux")]
 fn stat_start(pid: i32) -> Option<String> {
     let text = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let rest = text.rsplit(')').next()?.trim_start();
@@ -147,16 +222,55 @@ fn stat_start(pid: i32) -> Option<String> {
     fields.get(19).map(|start| (*start).to_owned())
 }
 
+#[cfg(target_os = "linux")]
+fn start_and_name(pid: i32) -> Option<(String, String)> {
+    let start = stat_start(pid)?;
+    let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .map(|text| text.trim_end().to_owned())
+        .unwrap_or_default();
+    Some((start, name))
+}
+
+/// macOS: `proc_pidinfo(PROC_PIDTBSDINFO)`. The start is the kernel's
+/// creation time in microseconds since the epoch, as decimal text, so it
+/// stays the same opaque digit string Linux records. A zombie is not running.
+#[cfg(target_os = "macos")]
+fn start_and_name(pid: i32) -> Option<(String, String)> {
+    let mut info = std::mem::MaybeUninit::<sys::ProcBsdInfo>::zeroed();
+    let size = std::mem::size_of::<sys::ProcBsdInfo>() as i32;
+    // SAFETY: info is a writable buffer of exactly `size` bytes.
+    let written = unsafe {
+        sys::proc_pidinfo(
+            pid,
+            sys::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if written != size {
+        return None;
+    }
+    // SAFETY: the kernel filled the whole struct.
+    let info = unsafe { info.assume_init() };
+    if info.pbi_status == sys::SZOMB {
+        return None;
+    }
+    let start = info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec;
+    let comm = info.pbi_comm.split(|byte| *byte == 0).next().unwrap_or(&[]);
+    Some((
+        start.to_string(),
+        String::from_utf8_lossy(comm).into_owned(),
+    ))
+}
+
 pub fn identity(pid: i32) -> Result<Option<Owner>> {
     if pid < 1 {
         return Err(Failure::new(format!("Invalid owned process PID: {pid}")));
     }
-    let Some(start) = stat_start(pid) else {
+    let Some((start, name)) = start_and_name(pid) else {
         return Ok(None);
     };
-    let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
-        .map(|text| text.trim_end().to_owned())
-        .unwrap_or_default();
     Ok(Some(Owner { pid, start, name }))
 }
 
@@ -655,10 +769,10 @@ pub mod atomic {
 // --- Delivered platform decision (ADR 0007) --------------------------------
 
 /// The single delivered-platform decision. The Lua adapter asked LOVE's
-/// `getOS()`; the Rust equivalent is the compile-time target OS. Only Linux
-/// (WSL2) is delivered.
+/// `getOS()`; the Rust equivalent is the compile-time target OS. Linux
+/// (WSL2) and macOS are delivered.
 pub fn platform_support() -> std::result::Result<(), String> {
-    if cfg!(target_os = "linux") {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
         Ok(())
     } else if cfg!(target_os = "windows") {
         Err("Windows native is not a supported platform (ADR 0007). Use WSL2 + WSLg".to_owned())

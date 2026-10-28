@@ -2,6 +2,23 @@
 
 **Status**: accepted
 
+增补（2026-10-27，维护者决定）：macOS（Apple Silicon 与 Intel）恢复为交付平台，与
+WSL2 + Ubuntu 24.04 + WSLg 并列；下文「macOS 当前不承诺」一句由本段取代，其余条款不变。
+平台差异仍只出现在 adapter 层，按编译目标一次选定：
+
+| 能力 | macOS 实现 |
+|---|---|
+| 交付平台判定 | `platform_support()` 与 `ir` 接受 `target_os = "macos"`；安装器 `host()` 接受 `Darwin` |
+| 进程创建身份 | `proc_pidinfo(PROC_PIDTBSDINFO)` 的启动时刻，按微秒十进制文本记录（Python `uml_posix.proc_identity`、Rust companion 与 viewer 同一口径）；zombie 视为已退出。仍是不透明文本、精确相等比较 |
+| 进程环境 | 从 `std::env::vars_os` 构造显式 `envp`（没有 `/proc/self/environ`） |
+| libc 常量 | `CLOCK_MONOTONIC`、`O_CREAT`、`O_TRUNC`、`POSIX_SPAWN_SETSID` 取 Darwin 头文件的值 |
+| 渲染 | wgpu 原生 Metal；不设 WSLg 的 `GALLIUM_DRIVER` / `WGPU_BACKEND` 默认值 |
+| 窗口 | AppKit 自带标题栏（`WindowMode::NativeDecorated`）；无 X11 / Wayland 探测 |
+| 终端 attach | `osascript` 打开 Terminal.app 执行 attach；失败时照旧只报告 attach 命令 |
+
+Linux 的 `/proc` 实现与 WSLg 路径不变。`bench` 的 CPU 与负载读数依赖 `/proc`，性能协议仍只在
+WSLg 上测量。
+
 规格 #106。本 ADR 取代 ADR 0005 中"保留 PowerShell 7 wrapper"的部分；ADR 0002 的
 恢复行为、ADR 0003/0004 的 Herdr 版本与可执行文件选择规则继续有效，只把其中的
 平台专用描述按本 ADR 解释。ADR 0006 的 Lua 表格式决定不在此实施：本轮仍读写 EDN。

@@ -11,13 +11,17 @@ import unittest
 import unittest.mock
 
 REPO = Path(__file__).resolve().parents[1]
+# check.py runs this file with python -I: import the entry by directory.
+sys.path.insert(0, str(REPO / 'scripts'))
+from uml_posix import proc_identity  # noqa: E402
 
 
 class PosixEntries(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='uml 空格项目 ')
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # macOS: TMPDIR sits under the /var -> /private/var link.
+        self.root = Path(self.temporary.name).resolve()
         shutil.copy2(REPO / 'scripts/uml', self.root / 'uml')
         (self.root / 'src').mkdir()
         (self.root / 'src/a.lua').write_text('local M={}\nfunction M.hello() return "hello" end\nreturn M\n')
@@ -284,15 +288,15 @@ class PosixEntries(unittest.TestCase):
         installer.ensure_ignore_block(self.root)
         self.assertEqual(block, ignore.read_text().lstrip())
 
-    def test_installer_refuses_hosts_other_than_wsl_x86_64(self):
-        """Only WSL2 x86_64 is delivered; macOS is not committed (ADR 0007)."""
+    def test_installer_refuses_hosts_other_than_wsl_x86_64_and_macos(self):
+        """WSL2 x86_64 and macOS are delivered (ADR 0007)."""
         import importlib.util
         from unittest import mock
         specification = importlib.util.spec_from_file_location(
             'uml_posix', REPO / 'scripts/uml_posix.py')
         installer = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(installer)
-        hosts = {('Darwin', 'arm64', '25.0.0'), ('Linux', 'aarch64', '6.6-microsoft-standard-WSL2'),
+        hosts = {('Linux', 'aarch64', '6.6-microsoft-standard-WSL2'),
                  ('Linux', 'x86_64', '6.8.0-generic'), ('Windows', 'AMD64', '11')}
         for system, machine, release in sorted(hosts):
             with self.subTest(system=system, machine=machine), \
@@ -302,12 +306,15 @@ class PosixEntries(unittest.TestCase):
                 with self.assertRaises(ValueError) as refused:
                     installer.host()
                 self.assertIn('WSL2', str(refused.exception))
-                self.assertNotIn('macOS', str(refused.exception))
         with mock.patch.object(installer.platform, 'system', return_value='Linux'), \
                 mock.patch.object(installer.platform, 'machine', return_value='x86_64'), \
                 mock.patch.object(installer.platform, 'release',
                                   return_value='6.18.33.2-microsoft-standard-WSL2'):
             self.assertIsNone(installer.host())
+        for machine in ('arm64', 'x86_64'):
+            with mock.patch.object(installer.platform, 'system', return_value='Darwin'), \
+                    mock.patch.object(installer.platform, 'machine', return_value=machine):
+                self.assertIsNone(installer.host())
 
     def test_installer_provisions_the_pinned_font_and_refuses_a_mismatch(self):
         """The font pin is enforced by hash, not by trusting the download.
@@ -417,9 +424,9 @@ class PosixEntries(unittest.TestCase):
         subprocess.run(['git', 'init', '-q', str(directory)], check=True)
         (directory / 'unique-work.txt').write_text('用户未提交内容')
         (state / 'uml-viewer').symlink_to(REPO, target_is_directory=True)
-        stat = Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[-1].split()
-        alive = {'pid': os.getpid(), 'started': stat[19], 'runtime': 'rust', 'cwd': str(self.root)}
-        closed = dict(alive, started=str(int(stat[19]) + 1))
+        started = proc_identity(os.getpid())['start']
+        alive = {'pid': os.getpid(), 'started': started, 'runtime': 'rust', 'cwd': str(self.root)}
+        closed = dict(alive, started=str(int(started) + 1))
         cases = [
             ('closed', '{:phase :cancelled :reason "Viewer closed; recovery revoked"}', closed, False),
             ('recovering', '{:phase :backoff}', closed, True),
@@ -686,7 +693,7 @@ class PosixEntries(unittest.TestCase):
         self.addCleanup(self.stop_stub, launcher)
         self.assertEqual('rust', launcher['runtime'])
         self.assertEqual(['viewer', '--backend', 'herdr', 'diagram with spaces.edn'], launcher['argv'])
-        observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        observed = proc_identity(launcher['pid'])['start']
         self.assertEqual(observed, launcher['started'])
 
     def test_default_runtime_without_a_built_binary_names_the_build_step(self):
@@ -808,7 +815,7 @@ class PosixEntries(unittest.TestCase):
             return
         pid = record['pid']
         try:
-            Path(f'/proc/{pid}').exists() and os.kill(pid, 15)
+            proc_identity(pid) is not None and os.kill(pid, 15)
         except (ProcessLookupError, PermissionError):
             pass
 
@@ -838,7 +845,7 @@ class PosixEntries(unittest.TestCase):
         self.addCleanup(self.stop_stub, launcher)
         self.assertIsNotNone(launcher, result.stdout)
         self.assertEqual('rust', launcher['runtime'])
-        observed = Path(f'/proc/{launcher["pid"]}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        observed = proc_identity(launcher['pid'])['start']
         self.assertEqual(observed, launcher['started'])
         self.assertEqual(['viewer', '--backend', 'herdr', *arguments], launcher['argv'])
         # The stub writes its argv before it sleeps, so read what the runtime
@@ -1151,7 +1158,7 @@ class PosixEntries(unittest.TestCase):
 
 class ViewerLaunchEnv(unittest.TestCase):
     """#139/#144: the launcher sets the WSLg render defaults for the only
-    runtime without overriding user values."""
+    runtime without overriding user values; macOS keeps Metal."""
 
     @classmethod
     def setUpClass(cls):
@@ -1161,14 +1168,17 @@ class ViewerLaunchEnv(unittest.TestCase):
     def test_rust_runtime_gets_render_defaults(self):
         from uml_launch import viewer_env
         env = viewer_env({})
+        if sys.platform == 'darwin':
+            self.assertEqual({}, env)
+            return
         self.assertEqual('d3d12', env['GALLIUM_DRIVER'])
         self.assertEqual('gl', env['WGPU_BACKEND'])
 
     def test_user_values_win(self):
         from uml_launch import viewer_env
-        env = viewer_env({'GALLIUM_DRIVER': 'virgl'})
+        env = viewer_env({'GALLIUM_DRIVER': 'virgl', 'WGPU_BACKEND': 'vulkan'})
         self.assertEqual('virgl', env['GALLIUM_DRIVER'])
-        self.assertEqual('gl', env['WGPU_BACKEND'])
+        self.assertEqual('vulkan', env['WGPU_BACKEND'])
 
 
 class RemovedRuntimeRecord(unittest.TestCase):
@@ -1188,12 +1198,12 @@ class RemovedRuntimeRecord(unittest.TestCase):
 
     def dead_identity(self):
         child = subprocess.Popen([sys.executable, '-c', 'pass'])
-        started = Path(f'/proc/{child.pid}/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        started = proc_identity(child.pid)['start']
         child.wait()
         return child.pid, started
 
     def own_identity(self):
-        started = Path('/proc/self/stat').read_text().rsplit(')', 1)[-1].split()[19]
+        started = proc_identity(os.getpid())['start']
         return os.getpid(), started
 
     def test_fresh_start_passes_over_a_dead_love_record(self):

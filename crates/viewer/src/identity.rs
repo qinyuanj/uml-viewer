@@ -12,10 +12,35 @@ pub const FILE_NAME: &str = "viewer-process-identity.json";
 /// starttime of a live process: /proc/<pid>/stat field 22, which is index 19
 /// of the fields after the closing parenthesis (comm in parens may contain
 /// spaces).
+#[cfg(target_os = "linux")]
 pub fn starttime(pid: u32) -> Option<String> {
     let text = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let fields: Vec<&str> = text.rsplit(')').next()?.split_whitespace().collect();
     fields.get(19).map(|s| s.to_string())
+}
+
+/// macOS: the kernel creation time in microseconds since the epoch, the same
+/// text the companion and `uml_posix.proc_identity` record.
+#[cfg(target_os = "macos")]
+pub fn starttime(pid: u32) -> Option<String> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    // SAFETY: info is a writable buffer of exactly `size` bytes.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if written != size {
+        return None;
+    }
+    // SAFETY: the kernel filled the whole struct.
+    let info = unsafe { info.assume_init() };
+    Some((info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec).to_string())
 }
 
 /// `{"pid":1234,"started":"5381724","runtime":"rust","cwd":"/abs/root"}` —
