@@ -53,6 +53,19 @@ zoom 锁在钳制后的 fit，即 viewer 自己的 0.1 下限）跑链式 500。
 保留在 `results/` 下，这本身就是选型依据。候选原型按 LOD 要求自行处理，
 不受此限。
 
+### 可重新生成的 `:levels` 场景（#188）
+
+`crates/scene/tests/common/levels.rs` 的 `scene(n)` 在测试里按规模确定性地生成 IR，
+不提交文件。形态是一个按 `:levels` 分层的包加 9 个 foreign oval，即真实 `:levels`
+包视图编译时的形态；参数按 fs-monopoly（569 类，8 个 level）校准：各 level 类数比例、
+每类 3.2 条边、61% 的类间边在同一 level 内、跨 level 边的跨度分布都取自它，
+8% 的边指向 foreign oval（fs-monopoly 0%，本仓自举图 16%）。上面两个已提交场景是
+10 个包、4 个等大 level、只有 25% 的边在 level 内，与真实项目不符，仍保留作存量对照。
+
+`bench_scene` 在 250、500、1000、2000 四个规模上各取三次最好值，拟合 log(时间)–log(类数)
+斜率，要求小于 log 10 / log 4 ≈ 1.66（与 500→2000 不超过 10 倍是同一个界），
+2000 类不超过 30 s。2026-10-28 release 实测：0.14 / 0.30 / 0.68 / 1.80 s，斜率 1.21。
+
 ### 渲染场景格式（version 1）
 
 坐标是世界单位（zoom 1 = 1 view px，DPI 由前端另乘），颜色是 0–255 RGB，取自

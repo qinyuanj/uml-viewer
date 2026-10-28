@@ -3,6 +3,8 @@
 //! structural comparison ported from `edges_spec.close`.
 #![allow(dead_code)] // each test crate uses a different subset
 
+pub mod levels;
+
 use edn::record::get;
 use edn::{Value, parse};
 use std::path::{Path, PathBuf};
