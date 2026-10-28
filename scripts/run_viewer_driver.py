@@ -53,19 +53,6 @@ def prepare_metrics(project):
         ' :coverage 100 :crap 1}]}')
 
 
-# Dependency-bundle drivers each open one fixed IR as the project diagram.
-BUNDLE_FIXTURES = {
-    'dependency_bundles': 'fixtures/bundle-goldens/shared-channel.ir.edn',
-    'bundle_safety': 'fixtures/bundle-goldens/safe-channel.ir.edn',
-    'bundle_lifecycle': 'fixtures/bundle_lifecycle.ir.edn',
-    'bundle_acceptance': 'fixtures/bundle_acceptance.ir.edn',
-}
-
-
-def prepare_bundle_fixture(name):
-    return lambda project: shutil.copy2(REPO / BUNDLE_FIXTURES[name], project / 'diagram.edn')
-
-
 def prepare_navigation(project):
     children = ' '.join(f'{{:id :source.child{n}}}' for n in range(1, 21))
     ops = ' '.join(f'"operation{n}"' for n in range(1, 71))
@@ -200,7 +187,6 @@ def prepare_mail(project):
 
 
 FIXTURES = {
-    **{name: prepare_bundle_fixture(name) for name in BUNDLE_FIXTURES},
     'metrics': prepare_metrics,
     'navigation': prepare_navigation,
     'search': prepare_search,
@@ -390,24 +376,6 @@ FIXTURES.update({name: prepare_session for name in SESSION_PHASES})
 
 
 DRIVERS = {
-    'bundle_acceptance': {'seconds': 60, 'evidence': ['bundle-acceptance-pass.txt',
-        'acceptance-root.edn', 'acceptance-chain.edn', 'acceptance-ui.edn',
-        'acceptance-back.edn', 'acceptance-proposal.edn', 'acceptance-shell.edn',
-        'acceptance-triangles.edn', 'acceptance-root-violating.png',
-        'acceptance-chain.png', 'acceptance-ui.png', 'acceptance-proposal.png',
-        'acceptance-triangles.png']},
-    'bundle_safety': {'seconds': 30, 'evidence': ['bundle-safety-pass.txt',
-        'bundle-safety.edn', 'bundle-safety.png', 'bundle-safety-branch.png',
-        'bundle-safety-branch.edn']},
-    'bundle_lifecycle': {'seconds': 60, 'evidence': ['bundle-lifecycle-pass.txt',
-        'lifecycle-root.edn', 'lifecycle-child.edn', 'lifecycle-proposal.edn',
-        'lifecycle-open.edn', 'lifecycle-root.png', 'lifecycle-child.png',
-        'lifecycle-proposal.png', 'lifecycle-triangles.png']},
-    'dependency_bundles': {'seconds': 30, 'evidence': ['dependency-bundles-pass.txt',
-        'bundle-initial.edn', 'bundle-hover.edn', 'bundle-chain.edn',
-        'bundle-triangles.edn', 'bundle-hover.png', 'bundle-branch.png',
-        'bundle-chain.png', 'bundle-triangles.png', 'bundle-violating.png',
-        'bundle-violating.edn']},
     'class_boxes': {'seconds': 20, 'evidence': ['class-boxes-pass.txt', 'render.png']},
     'detail_scroll': {'seconds': 30, 'evidence': ['inspector-pass.txt', 'inspector.png', 'inspector-empty.png']},
     'inspector': {'seconds': 30, 'evidence': ['inspector-pass.txt', 'inspector.png']},

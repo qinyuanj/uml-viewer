@@ -34,11 +34,6 @@ fn same_edge(e: &Value, hit: Option<&Value>) -> bool {
     let Some(hit) = hit else {
         return false;
     };
-    if get(hit, "kind").and_then(local_name) == Some("bundle") {
-        return seq(get(hit, "members")).iter().any(|member| {
-            get(e, "from") == get(member, "from") && get(e, "to") == get(member, "to")
-        });
-    }
     get(hit, "kind").and_then(local_name) == Some("edge")
         && get(e, "from") == get(hit, "from")
         && get(e, "to") == get(hit, "to")

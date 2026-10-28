@@ -188,11 +188,3 @@ fn rejects_gui_steps_without_a_target_or_check() {
     assert!(Script::parse(r#"{:steps [{:op :gui-click}]}"#).is_err());
     assert!(Script::parse(r#"{:steps [{:op :assert-gui :path [:a]}]}"#).is_err());
 }
-
-#[test]
-fn dependency_bundle_driver_uses_the_existing_declarative_viewer_seam() {
-    Script::parse(include_str!(
-        "../../../scripts/drivers/dependency_bundles.edn"
-    ))
-    .unwrap();
-}

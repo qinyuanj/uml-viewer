@@ -8,16 +8,6 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-/// The `renderer.txt` record of a wgpu adapter. Some backends (GL) report no
-/// driver name; that line is left out rather than written blank.
-pub fn renderer_info(name: &str, backend: &str, device: &str, driver: &str) -> String {
-    let mut info = format!("renderer: {name}\nbackend: {backend}\ndevice: {device}\n");
-    if !driver.trim().is_empty() {
-        info += &format!("driver: {}\n", driver.trim());
-    }
-    info
-}
-
 #[derive(Debug, Clone)]
 pub struct Evidence {
     pub dir: PathBuf,

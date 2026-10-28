@@ -7,14 +7,13 @@
 
 use crate::curve;
 use crate::geom::{self, Rect};
-use crate::layout::RankOrder;
 use edn::Value;
 use edn::record::{flag, get, put, seq};
 use std::collections::HashMap;
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
 /// dummy boxes are tracked but never clip strokes.
-pub(crate) struct ClassIndex {
+struct ClassIndex {
     rect_by_id: HashMap<String, Rect>,
     cells: HashMap<(i64, i64), Vec<usize>>,
     obstacles: Vec<(Value, Rect, bool)>, // (id, rect, dummy?)
@@ -61,12 +60,7 @@ impl ClassIndex {
 
     /// Obstacle rects overlapping the probe, excluding dummy boxes and the
     /// edge's own endpoints.
-    pub(crate) fn obstacles_in(
-        &self,
-        probe: Rect,
-        from: Option<&Value>,
-        to: Option<&Value>,
-    ) -> Vec<Rect> {
+    fn obstacles_in(&self, probe: Rect, from: Option<&Value>, to: Option<&Value>) -> Vec<Rect> {
         let (x0, y0) = (
             (probe.x / CELL).floor() as i64,
             (probe.y / CELL).floor() as i64,
@@ -188,10 +182,8 @@ fn fit(scene: &mut Value) {
 pub fn prepare_scene(scene: &mut Value) {
     let index = ClassIndex::new(scene);
     let mut edges: Vec<Value> = Vec::new();
-    let mut flats = Vec::new();
     for raw in seq(get(scene, "edges")) {
         let mut e = raw.clone();
-        flats.push(None);
         if let Some(p) = path(&e, &index) {
             let bb = curve::path_bounds(&p).unwrap();
             let probe = bb.inflate(13.0);
@@ -212,12 +204,10 @@ pub fn prepare_scene(scene: &mut Value) {
                         .collect(),
                 ),
             );
-            *flats.last_mut().unwrap() = Some(flat);
         }
         edges.push(e);
     }
     put(scene, "edges", Value::Vector(edges));
-    crate::bundle::plan(scene, &index, flats);
     for (list, key) in [("classes", "class-by-id"), ("packages", "package-by-id")] {
         let mut idx = Value::Map(vec![]);
         for c in seq(get(scene, list)) {
@@ -231,8 +221,8 @@ pub fn prepare_scene(scene: &mut Value) {
 
 /// One diagram: layout, route, fit, prepare; `:hide-edges` swaps strokes for
 /// dependency indicators.
-pub fn compile_diagram(diagram: &Value, order: RankOrder) -> Value {
-    let mut scene = crate::layout::layout(diagram, order);
+pub fn compile_diagram(diagram: &Value) -> Value {
+    let mut scene = crate::layout::layout(diagram);
     crate::route::route(&mut scene);
     fit(&mut scene);
     prepare_scene(&mut scene);
@@ -279,7 +269,7 @@ fn prefix_ids(scene: &mut Value, prefix: &str) {
 
 /// A document compiled as one or more sections, stacked vertically with
 /// `d<i>-` id prefixes so the sections cannot collide.
-pub fn compile_document(doc: &Value, order: RankOrder) -> Value {
+pub fn compile_document(doc: &Value) -> Value {
     let (mut sections, mut classes, mut packages, mut edges) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut y = 24.0;
@@ -288,7 +278,7 @@ pub fn compile_document(doc: &Value, order: RankOrder) -> Value {
         _ => vec![doc.clone()],
     };
     for (i, d) in diagrams.iter().enumerate() {
-        let mut scene = crate::layout::layout(d, order);
+        let mut scene = crate::layout::layout(d);
         crate::route::route(&mut scene);
         fit(&mut scene);
         let h = get(&scene, "size")

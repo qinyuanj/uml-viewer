@@ -641,11 +641,6 @@ impl ViewerSession {
         &self.state
     }
 
-    /// Lay out in `order` from now on (a driver script's `:rank-order`).
-    pub(crate) fn set_rank_order(&mut self, order: scene::RankOrder) {
-        self.state = document::with_rank_order(self.state.clone(), order);
-    }
-
     /// What the mail driver observes: the cursor, whether the canvas still
     /// waits for `:display`, the loaded path and title and the discussion
     /// context.

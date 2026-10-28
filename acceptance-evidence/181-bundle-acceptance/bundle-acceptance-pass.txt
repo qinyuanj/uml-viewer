@@ -1,1 +1,0 @@
-PASS bundle acceptance: rank-hop and violating trunks, fallback, chain, drill/back, proposal layer, remove arrows

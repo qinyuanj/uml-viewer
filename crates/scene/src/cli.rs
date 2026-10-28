@@ -11,9 +11,8 @@
 //! without it the scene has no quality overlay, exactly like the parity specs.
 
 use crate::curve;
-use crate::document::compile_view_with;
+use crate::document::compile_view;
 use crate::geom;
-use crate::layout::RankOrder;
 use crate::overlay::Snapshot;
 use edn::Value;
 use edn::record::get;
@@ -29,19 +28,6 @@ const EX_FAILURE: u8 = 1;
 
 /// Geometry projection of one compiled view: the golden view shape.
 pub fn project(doc: &Value, snapshots: Option<&[Snapshot]>, focus: &Value, extra: &Value) -> Value {
-    project_with(doc, snapshots, focus, extra, RankOrder::default())
-}
-
-/// [`project`] with an explicit rank order: the historical JVM/Lua and route
-/// goldens pin the migration geometry of [`RankOrder::Base`], while the
-/// viewer and the `scene` command lay out with the default span order.
-pub fn project_with(
-    doc: &Value,
-    snapshots: Option<&[Snapshot]>,
-    focus: &Value,
-    extra: &Value,
-    order: RankOrder,
-) -> Value {
     let snapshots = snapshots.unwrap_or(&[]);
     let empty = Vec::new();
     let focus_path = match focus {
@@ -49,7 +35,7 @@ pub fn project_with(
         Value::Nil => empty,
         _ => empty,
     };
-    let scene = compile_view_with(doc, snapshots, &focus_path, extra, order);
+    let scene = compile_view(doc, snapshots, &focus_path, extra);
     if get(&scene, "sections").is_some() {
         section_projection(&scene, focus)
     } else {
@@ -102,20 +88,12 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
                 index.get(&edn::encode(&from).unwrap()).copied(),
                 index.get(&edn::encode(&to).unwrap()).copied(),
             );
-            let mut projected = Value::Map(vec![
+            Value::Map(vec![
                 (Value::keyword("from"), from),
                 (Value::keyword("to"), to),
                 (
                     Value::keyword("kind"),
                     get(e, "kind").cloned().unwrap_or(Value::Nil),
-                ),
-                (
-                    Value::keyword("head"),
-                    get(e, "head").cloned().unwrap_or(Value::Nil),
-                ),
-                (
-                    Value::keyword("deps"),
-                    get(e, "deps").cloned().unwrap_or(Value::Vector(vec![])),
                 ),
                 (Value::keyword("points"), points),
                 (
@@ -131,11 +109,7 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
                     get(e, "draw-bounds").cloned().unwrap_or(Value::Nil),
                 ),
                 (Value::keyword("curve"), path),
-            ]);
-            if let Some(branches) = get(e, "branches") {
-                edn::record::put(&mut projected, "branches", branches.clone());
-            }
-            projected
+            ])
         })
         .collect();
     let size = get(scene, "size").cloned().unwrap_or(Value::Map(vec![]));
@@ -146,41 +120,12 @@ fn diagram_projection(scene: &Value, focus: &Value) -> Value {
         (Value::keyword("classes"), Value::Vector(classes)),
         (Value::keyword("edges"), Value::Vector(edges)),
     ]);
-    if let Some(bundles) = bundles_projection(scene) {
-        edn::record::put(&mut view, "bundles", bundles);
-    }
     for k in ["foreign", "title", "proposal", "dep-indicators"] {
         if let Some(v) = get(scene, k) {
             edn::record::put(&mut view, k, v.clone());
         }
     }
     view
-}
-
-/// Final trunks with their members spelled out as visible logical edges, the
-/// same shape for golden views and multi-diagram exports.
-fn bundles_projection(scene: &Value) -> Option<Value> {
-    let Some(Value::Vector(bundles)) = get(scene, "bundles") else {
-        return None;
-    };
-    let projected = bundles
-        .iter()
-        .map(|bundle| {
-            Value::Map(vec![
-                (
-                    Value::keyword("members"),
-                    Value::Vector(crate::hit::bundle_members(scene, bundle)),
-                ),
-                (
-                    Value::keyword("strokes"),
-                    get(bundle, "strokes")
-                        .cloned()
-                        .unwrap_or(Value::Vector(vec![])),
-                ),
-            ])
-        })
-        .collect();
-    Some(Value::Vector(projected))
 }
 
 /// Multi-diagram documents have no golden views. Each section is exported
@@ -225,25 +170,14 @@ fn section_projection(scene: &Value, focus: &Value) -> Value {
             ])
         })
         .collect();
-    let mut view = Value::Map(vec![
+    Value::Map(vec![
         (Value::keyword("focus"), focus.clone()),
         (
             Value::keyword("size"),
             get(scene, "size").cloned().unwrap_or(Value::Map(vec![])),
         ),
         (Value::keyword("sections"), Value::Vector(sections)),
-    ]);
-    if let Some(bundles) = bundles_projection(scene) {
-        edn::record::put(&mut view, "bundles", bundles);
-        edn::record::put(
-            &mut view,
-            "edges",
-            get(scene, "edges")
-                .cloned()
-                .unwrap_or(Value::Vector(vec![])),
-        );
-    }
-    view
+    ])
 }
 
 #[derive(Default)]

@@ -1,7 +1,0 @@
-{
-  "driver": "bundle_acceptance",
-  "runtime": "rust",
-  "project": "/tmp/uml viewer 项目 vpd2fzct",
-  "evidence": "/tmp/uml181/drv2",
-  "ok": true
-}

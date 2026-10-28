@@ -363,11 +363,9 @@ impl Viewer {
             .unwrap_or_default();
         let renderer = cc.wgpu_render_state.as_ref().map(|state| {
             let info = state.adapter.get_info();
-            crate::evidence::renderer_info(
-                &info.name,
-                &format!("{:?}", info.backend),
-                &format!("{:?}", info.device_type),
-                &info.driver,
+            format!(
+                "renderer: {}\nbackend: {:?}\napi: {:?}\ndriver: {}\n",
+                info.name, info.backend, info.device_type, info.driver
             )
         });
         // The first frames measure the window before the content rect is
@@ -395,16 +393,13 @@ impl Viewer {
         // for (LOVE's `mail` exists in both cases); only the helper process is
         // backend-specific and starts after the first scene, as in LOVE.
         let opened = ViewerSession::open_with_companion(setup.launch);
-        let mut session = match opened {
+        let session = match opened {
             Ok(session) => session,
             Err(error) => {
                 wake_stop.store(true, Ordering::SeqCst);
                 return Err(error);
             }
         };
-        if let Some(script) = &setup.script {
-            session.set_rank_order(script.rank_order);
-        }
         let mut app = Viewer {
             session,
             project_root: setup.project_root.clone(),
@@ -1579,52 +1574,6 @@ impl driver::Host for Viewer {
         batch.push(event(false));
         batch.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
         self.gui_batches.push_back(batch);
-    }
-
-    fn canvas_record(&self) -> Value {
-        use crate::commands::{self, Command};
-        use edn::record::record;
-        let state = self.session.state();
-        let number = |n: f64| Value::Float(n);
-        let popup = commands::chrome(state, self.gui.canvas_width(self.window_w), self.window_h)
-            .into_iter()
-            .find_map(|c| match c {
-                Command::DependencyPopup { x, y, w, h, rows } => Some(record(vec![
-                    ("x", number(x)),
-                    ("y", number(y)),
-                    ("w", number(w)),
-                    ("h", number(h)),
-                    (
-                        "rows",
-                        Value::Vector(rows.iter().map(|r| Value::String(r.text.clone())).collect()),
-                    ),
-                ])),
-                _ => None,
-            })
-            .unwrap_or(Value::Nil);
-        let hit = state
-            .pointer
-            .and_then(|(x, y)| {
-                let (wx, wy) = scene::events::world_xy(state, x, y);
-                scene::hit::at(&state.scene, wx, wy)
-            })
-            .unwrap_or(Value::Nil);
-        record(vec![
-            ("scene", state.scene.clone()),
-            ("hit", hit),
-            ("hover", state.hover.clone().unwrap_or(Value::Nil)),
-            ("popup", popup),
-            ("presentation", self.render_cache.presentation()),
-        ])
-    }
-
-    fn canvas_point(&mut self, world: [f64; 2]) -> Result<(), String> {
-        let state = self.session.state();
-        self.pending.push(Input::MouseMove {
-            x: (world[0] - state.cam_x) * state.zoom,
-            y: (world[1] - state.cam_y) * state.zoom,
-        });
-        Ok(())
     }
 
     fn gui_record(&self) -> Value {

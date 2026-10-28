@@ -1,4 +1,0 @@
-scene: 240 parallel edges 0.699s bundled, 0.402s twin, 1.74x
-scene: 2000-class compile 14.622s (2000 classes, 6495 edges)
-scene: 500-class 1.350s, 2000-class 11.484s, ratio 8.5x (4x data)
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 55.08s

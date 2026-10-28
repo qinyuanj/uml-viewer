@@ -33,16 +33,15 @@
 //! `cli::edge_curve`, the call the diagram projection and `prepare_scene`
 //! make.
 //! The strokes, tip, behind and draw bounds compared above are the scene's
-//! own output of that path. The goldens pin the migration geometry, so
-//! both compile in the base rank order (#183).
+//! own output of that path.
 
 mod common;
 
 use common::{assert_close, assert_golden_tolerance, items, read_edn};
 use edn::record::get;
 use edn::{Value, parse};
+use scene::Rect;
 use scene::events::{self, Dims};
-use scene::{RankOrder, Rect};
 use std::path::PathBuf;
 
 const SCENARIOS: [&str; 8] = [
@@ -74,24 +73,17 @@ fn document(scenario: &str) -> Value {
 }
 
 fn compiled(scenario: &str) -> Value {
-    scene::document::compile_view_with(
-        &document(scenario),
-        &[],
-        &[],
-        &extra(scenario),
-        RankOrder::Base,
-    )
+    scene::document::compile_view(&document(scenario), &[], &[], &extra(scenario))
 }
 
 /// Each edge's `:curve` (by edge index), from the projection when it
 /// carries one; see the module comment for the sectioned case.
 fn curves(scenario: &str, scene: &Value) -> Vec<Value> {
-    let projection = scene::cli::project_with(
+    let projection = scene::cli::project(
         &document(scenario),
         None,
         &Value::Vector(vec![]),
         &extra(scenario),
-        RankOrder::Base,
     );
     let edges = items(get(scene, "edges"));
     if get(&projection, "sections").is_none() {

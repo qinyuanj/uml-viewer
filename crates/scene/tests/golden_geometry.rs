@@ -1,15 +1,12 @@
 //! Golden geometry parity (Seam A): the `scene` projection of each JVM
 //! golden view must match `fixtures/jvm-goldens/*.geometry.edn` exactly in
-//! structure, with every finite number within 1e-6; NaN/Inf fail. The
-//! goldens pin the migration geometry, so the views lay out in the base
-//! rank order (#183).
+//! structure, with every finite number within 1e-6; NaN/Inf fail.
 
 mod common;
 
 use common::{assert_close, assert_golden_tolerance, read_edn as read, repo};
 use edn::Value;
 use edn::record::get;
-use scene::RankOrder;
 
 fn focuses(golden: &Value) -> Vec<Value> {
     match get(golden, "views") {
@@ -37,8 +34,7 @@ fn projection_matches_every_golden_view_package_class_and_size() {
                 .collect::<Vec<_>>(),
             _ => panic!("no views"),
         } {
-            let projection =
-                scene::cli::project_with(&doc, None, &focus, &Value::Map(vec![]), RankOrder::Base);
+            let projection = scene::cli::project(&doc, None, &focus, &Value::Map(vec![]));
             let label = format!("{lang} {focus:?}");
             // Packages: count and rects by index.
             let want_packages = get(&view, "packages").unwrap();
@@ -92,8 +88,7 @@ fn projection_matches_every_golden_edge_and_constrained_curve() {
             _ => panic!(),
         } {
             let focus = get(&view, "focus").unwrap().clone();
-            let projection =
-                scene::cli::project_with(&doc, None, &focus, &Value::Map(vec![]), RankOrder::Base);
+            let projection = scene::cli::project(&doc, None, &focus, &Value::Map(vec![]));
             let label = format!("{lang} {focus:?}");
             let want = match get(&view, "edges").unwrap() {
                 Value::Vector(v) => v.clone(),

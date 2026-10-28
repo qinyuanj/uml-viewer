@@ -415,20 +415,6 @@ pub enum Step {
     DumpGui {
         evidence: String,
     },
-    /// Live scene, canvas hit/hover, popup and the commands actually cached
-    /// for painting; unlike revision evidence this follows in-place rebuilds.
-    DumpCanvas {
-        evidence: String,
-    },
-    AssertCanvas {
-        path: Vec<Value>,
-        check: GuiCheck,
-        message: String,
-    },
-    /// Move through the normal pointer path, with a world-space target.
-    CanvasPoint {
-        world: [f64; 2],
-    },
     AssertGui {
         path: Vec<Value>,
         check: GuiCheck,
@@ -551,9 +537,6 @@ pub fn check_gui(record: &Value, path: &[Value], check: &GuiCheck) -> Result<(),
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Script {
     pub steps: Vec<Step>,
-    /// `:rank-order :base` lays the scene out in the base rank order, for
-    /// fixtures that pin bundles planned on the base layout (#183).
-    pub rank_order: scene::RankOrder,
 }
 
 fn get<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
@@ -609,23 +592,7 @@ impl Script {
         for step in steps {
             out.push(parse_step(step)?);
         }
-        let rank_order = match get(&value, "rank-order") {
-            None => scene::RankOrder::default(),
-            Some(v) => match text(Some(v)).as_deref() {
-                Some("base") => scene::RankOrder::Base,
-                Some("span") => scene::RankOrder::Span,
-                _ => {
-                    return Err(format!(
-                        "driver :rank-order must be :base or :span, got {}",
-                        edn::encode(v).unwrap_or_default()
-                    ));
-                }
-            },
-        };
-        Ok(Script {
-            steps: out,
-            rank_order,
-        })
+        Ok(Script { steps: out })
     }
 
     pub fn load(path: &Path) -> Result<Script, String> {
@@ -930,20 +897,6 @@ fn parse_step(step: &Value) -> Result<Step, String> {
             ctrl: edn::record::is_true(step, "ctrl"),
             shift: edn::record::is_true(step, "shift"),
         },
-        "dump-canvas" => Step::DumpCanvas {
-            evidence: evidence_name(step)?,
-        },
-        "assert-canvas" => Step::AssertCanvas {
-            path: match get(step, "path") {
-                Some(Value::Vector(items)) => items.clone(),
-                _ => return Err("assert-canvas needs :path [..]".into()),
-            },
-            check: gui_check(step)?,
-            message: message(step, "canvas assertion failed"),
-        },
-        "canvas-point" => Step::CanvasPoint {
-            world: pair(get(step, "world")).ok_or("canvas-point needs :world [x y]")?,
-        },
         "dump-gui" => Step::DumpGui {
             evidence: evidence_name(step)?,
         },
@@ -1036,13 +989,6 @@ pub trait Host {
     }
     fn gui_key(&mut self, key: &str, ctrl: bool, shift: bool) {
         let _ = (key, ctrl, shift);
-    }
-    fn canvas_record(&self) -> Value {
-        Value::Nil
-    }
-    fn canvas_point(&mut self, world: [f64; 2]) -> Result<(), String> {
-        let _ = world;
-        Err("this host has no canvas".into())
     }
     /// The inspector / card / source window record (`:dump-gui`).
     fn gui_record(&self) -> Value {
@@ -1431,24 +1377,6 @@ impl Runner {
                 }
                 Step::GuiKey { key, ctrl, shift } => {
                     host.gui_key(&key, ctrl, shift);
-                    return Ok(self.yield_after_input());
-                }
-                Step::DumpCanvas { evidence: name } => {
-                    let body = edn::encode(&host.canvas_record()).map_err(|e| e.to_string())?;
-                    self.write_evidence(evidence, &name, &body)?;
-                }
-                Step::AssertCanvas {
-                    path,
-                    check,
-                    message,
-                } => {
-                    check_gui(&host.canvas_record(), &path, &check).map_err(|seen| {
-                        let at = edn::encode(&Value::Vector(path.clone())).unwrap_or_default();
-                        format!("{message}: {at}: {seen}")
-                    })?;
-                }
-                Step::CanvasPoint { world } => {
-                    host.canvas_point(world)?;
                     return Ok(self.yield_after_input());
                 }
                 Step::DumpGui { evidence: name } => {

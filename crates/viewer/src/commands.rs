@@ -274,16 +274,6 @@ pub enum EdgeCommand {
         warm: bool,
         dimmed: bool,
     },
-    /// A shared trunk, drawn once for its member edges (scene edge indices).
-    Trunk {
-        members: Vec<usize>,
-        points: Vec<[f64; 2]>,
-        color: Rgb,
-        width: f32,
-        hot: bool,
-        warm: bool,
-        dimmed: bool,
-    },
     Head {
         from: Option<Value>,
         to: Option<Value>,
@@ -783,7 +773,9 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
     out
 }
 
-use scene::hit::edge_violating;
+fn edge_violating(e: &Value) -> bool {
+    flag(e, "violating") || seq(get(e, "deps")).iter().any(|dep| flag(dep, "violating"))
+}
 
 #[derive(Clone, Copy)]
 enum Attention {
@@ -836,39 +828,7 @@ pub fn edge_commands(
         }
         return out;
     }
-    let edges = seq(get(scene, "edges"));
-    for bundle in seq(get(scene, "bundles")) {
-        let indices: Vec<usize> = seq(get(bundle, "members"))
-            .iter()
-            .filter_map(|v| edn::record::num(v).map(|i| i as usize))
-            .filter(|i| *i < edges.len())
-            .collect();
-        let members: Vec<&Value> = indices.iter().map(|i| &edges[*i]).collect();
-        let chain = members.iter().any(|e| h.on_chain(e));
-        let hot = members.iter().any(|e| h.hot(e, hover));
-        let warm = !hot && members.iter().any(|e| h.warm(e));
-        let attention = if hot || warm {
-            Attention::Hovered
-        } else if chain {
-            Attention::Chain
-        } else {
-            Attention::Outside
-        };
-        let dimmed = h.focus.is_some() && matches!(attention, Attention::Outside);
-        let (color, width) = edge_style(members.iter().any(|e| edge_violating(e)), attention);
-        for ps in seq(get(bundle, "strokes")) {
-            out.push(EdgeCommand::Trunk {
-                members: indices.clone(),
-                points: points_of(Some(ps)),
-                color,
-                width,
-                hot,
-                warm,
-                dimmed,
-            });
-        }
-    }
-    for e in edges {
+    for e in seq(get(scene, "edges")) {
         let chain = h.on_chain(e);
         let hot = h.hot(e, hover);
         let warm = !hot && h.warm(e);
@@ -884,7 +844,7 @@ pub fn edge_commands(
         let (color, width) = edge_style(violating, attention);
         let from = get(e, "from").cloned();
         let to = get(e, "to").cloned();
-        for ps in seq(get(e, "branches").or_else(|| get(e, "strokes"))) {
+        for ps in seq(get(e, "strokes")) {
             out.push(EdgeCommand::Stroke {
                 from: from.clone(),
                 to: to.clone(),
@@ -1052,17 +1012,8 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
                 .to_owned()
         })
         .unwrap_or_default();
-    let deps = state.hover.as_ref().and_then(|hv| {
-        get(
-            hv,
-            if hover_kind == "bundle" {
-                "members"
-            } else {
-                "deps"
-            },
-        )
-    });
-    if (hover_kind == "edge" || hover_kind == "dep" || hover_kind == "bundle")
+    let deps = state.hover.as_ref().and_then(|hv| get(hv, "deps"));
+    if (hover_kind == "edge" || hover_kind == "dep")
         && let Some(Value::Vector(deps)) = deps
         && !deps.is_empty()
         && let Some((mx, my)) = state.pointer
@@ -1089,19 +1040,6 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
             })
             .collect();
         rows.sort_by(|a, b| b.violating.cmp(&a.violating).then(a.text.cmp(&b.text)));
-        if hover_kind == "bundle" {
-            let capacity =
-                (((height - 32.0).max(0.0) / (fonts::BODY as f64 + 2.0)) as usize).clamp(2, 12);
-            if rows.len() > capacity {
-                let remaining = rows.len() - (capacity - 1);
-                rows.truncate(capacity - 1);
-                rows.push(PopupRow {
-                    text: format!("另有 {remaining} 对可见依赖"),
-                    violating: false,
-                    color: theme::MUTED.color32(),
-                });
-            }
-        }
         let mut tw = 40.0f64;
         for row in &rows {
             tw = tw.max(estimate_w(&row.text, fonts::BODY as f64));

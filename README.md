@@ -408,60 +408,6 @@ The `fixtures/jvm-goldens/` files are the frozen parity oracle captured from
 the removed JVM viewer. The Rust cargo golden tests read them unchanged; only
 the JVM regeneration tooling was deleted.
 
-依赖线束在基础路由之后生成显式主干、分支和成员；逻辑边、leaf 明细与各自目标头部仍保留。
-只有同向、同违规样式的普通依赖会成束：共线的直段，或两端都有声明层级的边在相距不超过
-48px、方向相差约 11° 以内的近平行段（汇聚到同一框的线只在靠近该框处合并）。主干取中间成员
-展平后的基础曲线，其他成员沿自身曲线以平滑弯段并入，不产生直角折返。每个束最多 12 个成员；
-分支短于 24px、弯段碰框或新增交叉时，先裁短主干或剔除冲突成员再试，仍不可行就保留基础路径。
-主干悬停显示可见模块对摘要（最多 12 行，按窗口高度收缩，超出时给出剩余数量），
-分支悬停显示该边的 leaf 明细；移除箭头仍使用原逻辑边生成依赖三角。
-
-ADR 0008 的 `1e-6` parity 约束固定迁移时的**基础路由**，不是永久禁止后续路由呈现特性。
-`scene` projection 的原有 `:points`、`:curve`、`:tip`、`:behind` 与 `:draw-bounds`
-继续对应基础路由，场景边的原 `:strokes` 也保持不变；新增 `:branches` 与 `:bundles`
-表示最终绘制和命中几何。旧 JVM/Lua fixtures 不改写，新增对照位于
-`fixtures/bundle-goldens/`，仍使用同一 scene projection 接缝。
-
-运行 `python3 -I scripts/run_viewer_driver.py dependency_bundles` 可在真实窗口重放
-主干/分支指针、选中依赖链及移除箭头。既有声明式 driver 的 `:dump-canvas` 和
-`:assert-canvas` 读取当前场景、画布命中、悬停、弹窗及绘制缓存；`:canvas-point`
-把世界坐标目标转换成正常画布指针输入。证据不依赖 `scene-<revision>.edn` 的发布频率，
-因此 declutter 原地重编译后也能获取当前场景。截图是实际呈现证据，不是像素 golden。
-
-2026-10-27 的 #178 验收已在真实 WSLg viewer 通过：两条逻辑依赖产生一个主干、四个分支和
-两个独立头部；主干命中列出两对可见端点，分支只显示自身 leaf 明细，移开后清除弹窗。
-选中 D 后主干及 D 的分支进入依赖链，C 的分支保持链外；直接悬停主干时两成员按直接边
-悬停呈现。移除箭头后绘制缓存没有主干、分支或头部，仍有四个包含原依赖的三角；
-热重载违规依赖后主干和成员分支均保持红色。上述结果由已提交 driver 的断言与真实截图
-共同核验，可通过同一命令重放；临时证据目录不是唯一交接依据。
-
-#180 的生命周期验收使用独立的 `fixtures/bundle_lifecycle.ir.edn`，根视图和 `f` 子层都实际
-产生非空主干。运行 `python3 -I scripts/run_viewer_driver.py bundle_lifecycle` 可在真实窗口重放
-根层钻取/返回、提案及打开下一层、五档 declutter、三角 leaf 悬停、热重载，以及缩放、平移与
-视口变化。该 driver 已注册到 `scripts/check.py --native`；提交的真实 WSLg 证据位于
-`acceptance-evidence/180-bundle-lifecycle/`，含四张截图和当前画布、命中、弹窗、绘制缓存记录。
-场景重编译会清除旧 hover/pointer，下一次指针输入从当前几何重新命中，避免旧主干成员残留。
-`crates/scene/tests/bundle_lifecycle.rs` 另验证当前视图重建、成员顺序、leaf 明细及世界坐标稳定性；
-不改历史基础路由 golden，也不改 IR、policy、mail 或质量快照契约。
-
-同轮 `cargo test --workspace --locked` 为 588 passed、0 failed、0 ignored，默认
-`scripts/check.py` 三项检查及全目标 clippy 通过；既有 release 场景性能测试四项通过，
-2000 类编译约 2.35 秒。未运行完整 native driver 套件、真实窗口性能协议或 fs-monopoly
-前后人工对照；这些结果不证明大量平行线束性能及全视图生命周期已验收。当前线束只识别
-精确共线的已有基础通道，参与成员使用显式折线分支；未参与的边保持基础曲线。
-
-#179 起，同方向、同违规样式且两端都有 level 的普通依赖，也可以并入偏移不超过 48 px 的
-近邻平行通道（每个主干最多 12 个成员）；类框、组件标题或 ports 部分遮挡，或者会新增交叉时，
-保留基础路由。
-
-#181 的组合验收见 `acceptance-evidence/181-bundle-acceptance/README.md`。
-`crates/viewer/tests/bundle_acceptance.rs` 在 `fixtures/bundle_acceptance.ir.edn` 的每个当前视图上
-检查逻辑边、端点、头部、命中、悬停、依赖链和违规样式；
-`python3 -I scripts/run_viewer_driver.py bundle_acceptance` 在真实窗口重放同一组合。
-`bench_scene` 要求计时场景产生非空主干，并用不成线束的关联孪生场景限制平行边规划开销。
-真实窗口性能协议在基线和本实现上都判为 FAIL，阈值未改；fs-monopoly 前后截图中端点不变，
-但视觉拥挤没有明显改善。
-
 ### Linux / WSL2
 
 Linux is the primary delivery path, exercised through WSL2 + Ubuntu 24.04 +

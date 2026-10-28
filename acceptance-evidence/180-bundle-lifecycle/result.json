@@ -1,7 +1,0 @@
-{
-  "driver": "bundle_lifecycle",
-  "runtime": "rust",
-  "project": "/tmp/uml viewer 项目 96kcjp3v",
-  "evidence": "/home/lzx/dev/github/uml-viewer-spec-172-180/acceptance-evidence/180-bundle-lifecycle",
-  "ok": true
-}

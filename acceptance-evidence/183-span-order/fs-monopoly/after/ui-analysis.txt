@@ -1,7 +1,0 @@
-edges 35 bundles 8 member sizes [2, 2, 2, 3, 3, 3, 3, 3]
-trunk lengths [33, 105, 108, 133, 137, 152, 163, 179]
-edges with branches 14, branch pieces 35
-branch pieces shorter than 24px: []
-edges whose branches do not start/end at the base stroke ends: 0
-base stroke pieces shorter than 24px: []
-sharpest branch turn vs sharpest base turn (deg), top 6: [(15, 15), (15, 13), (15, 12), (15, 12), (14, 14), (14, 14)]

@@ -962,7 +962,8 @@ pub fn collapse_arrows(view: &Value) -> Value {
         let mut via: Vec<Value> = Vec::new();
         let mut deps: Vec<Value> = Vec::new();
         for e in &g.edges {
-            let violating = crate::hit::edge_violating(e);
+            let violating = flag(e, "violating")
+                || seq(get(e, "deps")).iter().any(|dep| flag(dep, "violating"));
             if violating && !viol {
                 best = Some(e);
                 viol = true;

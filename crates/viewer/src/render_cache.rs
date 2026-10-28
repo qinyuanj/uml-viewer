@@ -9,7 +9,6 @@ use scene::document::ViewState;
 
 use crate::commands::{self, Command, EdgeCommand};
 use crate::lod::{self, Tier};
-use crate::theme;
 
 /// The inputs the cached geometry is a pure function of. The scene is
 /// `compile_view(document, snapshots, focus, extra)`; every document or
@@ -128,9 +127,7 @@ impl RenderCache {
             .edges
             .iter()
             .map(|e| match e {
-                EdgeCommand::Stroke { points, .. } | EdgeCommand::Trunk { points, .. }
-                    if points.len() >= 2 =>
-                {
+                EdgeCommand::Stroke { points, .. } if points.len() >= 2 => {
                     let points = decimated(points, tier, step);
                     let bounds = bounds_of(&points);
                     Some(Polyline { points, bounds })
@@ -163,120 +160,5 @@ impl RenderCache {
         self.edges
             .iter()
             .zip(self.polylines.iter().map(Option::as_ref))
-    }
-
-    /// The drawn edge layer as driver evidence: trunks, branches, heads and
-    /// indicators with the attention each is painted with, at the points
-    /// actually stroked.
-    pub fn presentation(&self) -> Value {
-        use edn::record::record;
-        let number = |n: f64| Value::Float(n);
-        let points = |ps: &[[f64; 2]]| {
-            Value::Vector(
-                ps.iter()
-                    .map(|p| Value::Vector(vec![number(p[0]), number(p[1])]))
-                    .collect(),
-            )
-        };
-        let ends = |from: &Option<Value>, to: &Option<Value>| {
-            vec![
-                ("from", from.clone().unwrap_or(Value::Nil)),
-                ("to", to.clone().unwrap_or(Value::Nil)),
-            ]
-        };
-        let painted = |mut fields: Vec<(&'static str, Value)>,
-                       color: &theme::Rgb,
-                       width: f32,
-                       hot: bool,
-                       dimmed: bool| {
-            fields.extend([
-                (
-                    "color",
-                    Value::Vector(
-                        [color.0, color.1, color.2]
-                            .map(|c| Value::Integer(c as i64))
-                            .to_vec(),
-                    ),
-                ),
-                ("width", number(width as f64)),
-                ("hot", Value::Bool(hot)),
-                ("dimmed", Value::Bool(dimmed)),
-            ]);
-            record(fields)
-        };
-        let (mut trunks, mut branches, mut heads, mut indicators) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for (command, polyline) in self.edges() {
-            let stroked = |raw: &[[f64; 2]]| points(polyline.map_or(raw, |p| p.points.as_slice()));
-            match command {
-                EdgeCommand::Stroke {
-                    from,
-                    to,
-                    points: raw,
-                    color,
-                    width,
-                    hot,
-                    dimmed,
-                    ..
-                } => {
-                    let mut fields = ends(from, to);
-                    fields.push(("points", stroked(raw)));
-                    branches.push(painted(fields, color, *width, *hot, *dimmed));
-                }
-                EdgeCommand::Trunk {
-                    members,
-                    points: raw,
-                    color,
-                    width,
-                    hot,
-                    dimmed,
-                    ..
-                } => {
-                    let members = members.iter().map(|m| Value::Integer(*m as i64));
-                    let fields = vec![
-                        ("members", Value::Vector(members.collect())),
-                        ("points", stroked(raw)),
-                    ];
-                    trunks.push(painted(fields, color, *width, *hot, *dimmed));
-                }
-                EdgeCommand::Head {
-                    from,
-                    to,
-                    head,
-                    tip,
-                    behind,
-                    color,
-                    width,
-                    hot,
-                    dimmed,
-                    ..
-                } => {
-                    let mut fields = ends(from, to);
-                    fields.extend([
-                        ("head", Value::keyword(head)),
-                        ("tip", points(&[*tip])),
-                        ("behind", points(&[*behind])),
-                    ]);
-                    heads.push(painted(fields, color, *width, *hot, *dimmed));
-                }
-                EdgeCommand::Indicator {
-                    id,
-                    points: triangle,
-                    violating,
-                    dimmed,
-                } => indicators.push(record(vec![
-                    ("id", id.clone().unwrap_or(Value::Nil)),
-                    ("points", points(triangle)),
-                    ("violating", Value::Bool(*violating)),
-                    ("dimmed", Value::Bool(*dimmed)),
-                ])),
-            }
-        }
-        record(vec![
-            ("trunks", Value::Vector(trunks)),
-            ("branches", Value::Vector(branches)),
-            ("heads", Value::Vector(heads)),
-            ("indicators", Value::Vector(indicators)),
-        ])
     }
 }

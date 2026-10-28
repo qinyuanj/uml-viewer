@@ -139,71 +139,14 @@ pub(crate) fn indicator_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Va
     None
 }
 
-/// Whether a visible edge or any leaf dependency it carries violates policy.
-pub fn edge_violating(e: &Value) -> bool {
-    edn::record::flag(e, "violating")
-        || seq(edn::record::get(e, "deps"))
-            .iter()
-            .any(|d| edn::record::flag(d, "violating"))
-}
-
-/// Visible logical edges carried by a trunk, in stable scene order.
-pub fn bundle_members(scene: &Value, bundle: &Value) -> Vec<Value> {
-    let edges = seq(edn::record::get(scene, "edges"));
-    seq(edn::record::get(bundle, "members"))
-        .iter()
-        .filter_map(|m| {
-            let index = edn::record::num(m)? as usize;
-            let e = edges.get(index)?;
-            Some(record(vec![
-                ("edge", Value::Integer(index as i64)),
-                (
-                    "from",
-                    edn::record::get(e, "from").cloned().unwrap_or(Value::Nil),
-                ),
-                (
-                    "to",
-                    edn::record::get(e, "to").cloned().unwrap_or(Value::Nil),
-                ),
-                ("deps", deps_of(e).unwrap_or(Value::Vector(vec![]))),
-                ("violating", Value::Bool(edge_violating(e))),
-            ]))
-        })
-        .collect()
-}
-
-fn bundle_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
-    for bundle in seq(edn::record::get(scene, "bundles")).iter().rev() {
-        for path in seq(edn::record::get(bundle, "strokes")) {
-            let points: Vec<[f64; 2]> = seq(Some(path)).iter().filter_map(geom::vec2).collect();
-            if geom::near_polyline([x, y], &points, pad) {
-                return Some(record(vec![
-                    ("kind", Value::keyword("bundle")),
-                    ("members", Value::Vector(bundle_members(scene, bundle))),
-                ]));
-            }
-        }
-    }
-    None
-}
-
 /// Topmost edge at the point, tested against its clipped strokes (the hidden
 /// gap never hits), else its raw points.
 pub(crate) fn edge_at(scene: &Value, x: f64, y: f64, pad: f64) -> Option<Value> {
-    if edn::record::get(scene, "diagram").is_some_and(|d| edn::record::flag(d, "hide-edges")) {
-        return None;
-    }
-    if let Some(bundle) = bundle_at(scene, x, y, pad) {
-        return Some(bundle);
-    }
     let es = seq(edn::record::get(scene, "edges"));
     for e in es.iter().rev() {
         let strokes = seq(edn::record::get(e, "strokes"));
-        let branches = edn::record::get(e, "branches");
         let fallback;
-        let paths: &[Value] = if let Some(Value::Vector(branches)) = branches {
-            branches
-        } else if !strokes.is_empty() {
+        let paths: &[Value] = if !strokes.is_empty() {
             strokes
         } else {
             let ps = edn::record::get(e, "points");

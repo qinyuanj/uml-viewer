@@ -455,12 +455,6 @@ fn paint_edges(
                 width,
                 dimmed,
                 ..
-            }
-            | EdgeCommand::Trunk {
-                color,
-                width,
-                dimmed,
-                ..
             } if tier == lod::Tier::Frames || transform.scale < MESH_EDGE_SCALE => {
                 let Some(line) = polyline else {
                     continue;
@@ -472,12 +466,6 @@ fn paint_edges(
                 }
             }
             EdgeCommand::Stroke {
-                color,
-                width,
-                dimmed,
-                ..
-            }
-            | EdgeCommand::Trunk {
                 color,
                 width,
                 dimmed,
