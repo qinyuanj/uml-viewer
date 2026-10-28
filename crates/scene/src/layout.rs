@@ -225,9 +225,25 @@ fn ports(c: &mut Value) {
     put(c, "out-ports", Value::Vector(op));
 }
 
+/// Gap between two neighbouring lanes, and between a lane and a box.
+const LANE_GAP: f64 = 12.0;
+const LANE_MARGIN: f64 = 20.0;
+/// A lane runs this far into the gaps on both sides of its rank, so the
+/// rounded bend onto it (24px corners, `curve::basis_path`) stays clear of
+/// the rank's boxes.
+const LANE_REACH: f64 = 30.0;
+
+/// The through-points of one long edge: an entry and an exit per rank it
+/// crosses, ordered from its `:from` end.
+type Lane = (usize, Vec<[f64; 2]>);
+type Pass = (usize, [f64; 2], [f64; 2]);
+
 /// Rank classes by dependency depth and place them in rank columns/rows
 /// (Lua `place`). Positions are multiples of 80 with barycentric sweeps.
-fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
+/// An edge spanning more than one rank gets a zero-width lane in every rank
+/// between its ends; the lanes are ordered with the boxes, so the edge
+/// passes each rank in a reserved gap instead of across a box.
+fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Vec<Lane>) {
     use std::collections::HashMap;
     let mut cs: Vec<Value> = Vec::with_capacity(classes.len());
     let mut ids: Vec<String> = Vec::with_capacity(classes.len());
@@ -325,6 +341,62 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
             a.partial_cmp(b).unwrap()
         }
     });
+    let order: HashMap<String, usize> = keys
+        .iter()
+        .enumerate()
+        .map(|(k, r)| (rank_key(*r), k))
+        .collect();
+    let rank_of = |id: &str| {
+        let c = &cs[idx[id]];
+        if levels {
+            get(c, "level").and_then(num).unwrap_or(0.0)
+        } else {
+            ranks.get(id).copied().unwrap_or(0.0)
+        }
+    };
+    // lane id -> (edge index, step from the :from end, :from nearer rank 0?)
+    let mut lane_of: HashMap<String, (usize, usize, bool)> = HashMap::new();
+    for (ei, e) in edges.iter().enumerate() {
+        let f = edn::encode(get(e, "from").unwrap()).unwrap();
+        let t = edn::encode(get(e, "to").unwrap()).unwrap();
+        if !idx.contains_key(&f) || !idx.contains_key(&t) {
+            continue;
+        }
+        let (kf, kt) = (order[&rank_key(rank_of(&f))], order[&rank_key(rank_of(&t))]);
+        if kf.abs_diff(kt) < 2 {
+            continue;
+        }
+        let steps: Vec<usize> = if kf < kt {
+            (kf + 1..kt).collect()
+        } else {
+            (kt + 1..kf).rev().collect()
+        };
+        let chain: Vec<String> = (0..steps.len()).map(|j| format!("lane:{ei}:{j}")).collect();
+        for (j, (k, id)) in steps.iter().zip(&chain).enumerate() {
+            let prev = if j == 0 {
+                f.clone()
+            } else {
+                chain[j - 1].clone()
+            };
+            let next = chain.get(j + 1).cloned().unwrap_or_else(|| t.clone());
+            nbr.insert(id.clone(), vec![prev, next]);
+            groups
+                .get_mut(&rank_key(keys[*k]))
+                .unwrap()
+                .push(id.clone());
+            pos.insert(id.clone(), pos[&f]);
+            lane_of.insert(id.clone(), (ei, j, kf < kt));
+        }
+    }
+    let gap = |a: bool, b: bool| {
+        if a && b {
+            LANE_GAP
+        } else if a || b {
+            LANE_MARGIN
+        } else {
+            40.0
+        }
+    };
     let ordered = |xs: &[String], pos: &HashMap<String, f64>| -> Vec<String> {
         let score = |id: &str| -> f64 {
             let mut sum = 0.0;
@@ -368,15 +440,24 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
         let xs = ordered(&groups[&rank_key(*r)], &pos);
         let (mut w, mut h, mut colh): (f64, f64, f64) = (0.0, 0.0, 0.0);
         for (i, id) in xs.iter().enumerate() {
+            let lane = lane_of.contains_key(id);
+            if i > 0 {
+                colh += gap(lane_of.contains_key(&xs[i - 1]), lane);
+            }
+            if lane {
+                continue;
+            }
             let c = &cs[idx[id]];
             w = w.max(num(get(c, "w").unwrap()).unwrap());
             h = h.max(num(get(c, "h").unwrap()).unwrap());
-            colh += num(get(c, "h").unwrap()).unwrap() + if i > 0 { 40.0 } else { 0.0 };
+            colh += num(get(c, "h").unwrap()).unwrap();
         }
         gs.push((*r, xs, w, h, colh));
         total_h = total_h.max(colh);
     }
     let mut result = Vec::new();
+    // edge index -> (step, entry, exit) of each rank it passes
+    let mut through: HashMap<usize, Vec<Pass>> = HashMap::new();
     let mut along = 0.0;
     for (rank, group_ids, gw, gh, colh) in &gs {
         let mut across = if horizontal {
@@ -384,7 +465,21 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
         } else {
             0.0
         };
-        for id in group_ids {
+        let depth = if horizontal { *gw } else { *gh };
+        for (i, id) in group_ids.iter().enumerate() {
+            if i > 0 {
+                across += gap(
+                    lane_of.contains_key(&group_ids[i - 1]),
+                    lane_of.contains_key(id),
+                );
+            }
+            if let Some(&(ei, j, forward)) = lane_of.get(id) {
+                let at = |d: f64| if horizontal { [d, across] } else { [across, d] };
+                let (near, far) = (at(along - LANE_REACH), at(along + depth + LANE_REACH));
+                let (enter, exit) = if forward { (near, far) } else { (far, near) };
+                through.entry(ei).or_default().push((j, enter, exit));
+                continue;
+            }
             let mut c = cs[idx[id]].clone();
             let (cw, ch, content_w, content_h, in_space) = (
                 num(get(&c, "w").unwrap()).unwrap(),
@@ -411,11 +506,19 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> Vec<Value> {
             );
             put(&mut c, "rank", numval(*rank));
             result.push(c);
-            across += (if horizontal { ch } else { cw }) + 40.0;
+            across += if horizontal { ch } else { cw };
         }
-        along += (if horizontal { *gw } else { *gh }) + 140.0;
+        along += depth + 140.0;
     }
-    result
+    let mut lanes: Vec<Lane> = through
+        .into_iter()
+        .map(|(ei, mut steps)| {
+            steps.sort_by_key(|s| s.0);
+            (ei, steps.into_iter().flat_map(|s| [s.1, s.2]).collect())
+        })
+        .collect();
+    lanes.sort_by_key(|l| l.0);
+    (result, lanes)
 }
 
 /// Ranks are integral in practice; Lua keyed hop groups by string
@@ -425,23 +528,35 @@ fn rank_key(r: f64) -> String {
 }
 
 /// `L.layout`: package rows with pooled quality, then foreign ovals to the
-/// right of the package bounding box.
+/// right of the package bounding box. `:lanes` carries each long edge's
+/// through-points (by diagram edge index) to `route`, which consumes it.
 pub fn layout(diagram: &Value) -> Value {
     let mut pkgs: Vec<Value> = Vec::new();
     let mut classes: Vec<Value> = Vec::new();
+    let mut lanes: Vec<Value> = Vec::new();
     let mut y = 40.0;
     let mut stride: f64 = 2.0;
     for p in seq(get(diagram, "packages")) {
         stride = stride.max(1.0 + seq(get(p, "classes")).len() as f64);
     }
     for (i, p) in seq(get(diagram, "packages")).iter().enumerate() {
-        let inner = place(
+        let (inner, through) = place(
             seq(get(p, "classes")),
             seq(get(diagram, "edges")),
             &get(diagram, "direction")
                 .map(geom::name)
                 .unwrap_or_else(|| "tb".into()),
         );
+        for (ei, points) in through {
+            let points = points
+                .iter()
+                .map(|q| geom::point([q[0] + 52.0, q[1] + y + 44.0]))
+                .collect();
+            lanes.push(edn::record::record(vec![
+                ("edge", numval(ei as f64)),
+                ("points", Value::Vector(points)),
+            ]));
+        }
         let mut rects: Vec<Rect> = Vec::new();
         let mut real: Vec<Value> = Vec::new();
         let mut inner = inner;
@@ -561,6 +676,7 @@ pub fn layout(diagram: &Value) -> Value {
         (Value::keyword("packages"), Value::Vector(pkgs)),
         (Value::keyword("classes"), Value::Vector(classes)),
         (Value::keyword("edges"), Value::Vector(vec![])),
+        (Value::keyword("lanes"), Value::Vector(lanes)),
     ])
 }
 

@@ -123,6 +123,29 @@ struct RouteEdge {
     i: usize,
     n: usize,
     ps: Path,
+    lane: Option<Path>,
+}
+
+/// One step away from a box face, so the attachment sync keeps a stub.
+fn stub_point(p: [f64; 2], f: Face) -> [f64; 2] {
+    match f {
+        Face::Left => [p[0] - 20.0, p[1]],
+        Face::Right => [p[0] + 20.0, p[1]],
+        Face::Top => [p[0], p[1] - 20.0],
+        Face::Bottom => [p[0], p[1] + 20.0],
+    }
+}
+
+/// A long edge through its reserved lanes: stub, the lane entry and exit of
+/// every rank it crosses, stub.
+fn through_lanes(a: &Node, b: &Node, ft: f64, tt: f64, lane: &[[f64; 2]], lr: bool) -> Path {
+    let (ff, tf) = flow(a.r, b.r, lr);
+    let (s, e) = (port(a.r, ff, ft), port(b.r, tf, tt));
+    let mut ps = vec![s, stub_point(s, ff)];
+    ps.extend_from_slice(lane);
+    ps.push(stub_point(e, tf));
+    ps.push(e);
+    collapse(&ps)
 }
 
 /// Candidate point sequences for one edge: the direct attachment run first,
@@ -431,6 +454,18 @@ pub fn route(scene: &mut Value) {
         .unwrap_or(Value::Nil);
     let direction = edn::record::get(&diagram, "direction").map(geom::name);
     let lr = direction.as_deref() == Some("lr") || direction.as_deref() == Some("rl");
+    let mut lanes: HashMap<usize, Path> = HashMap::new();
+    for l in edn::record::seq(edn::record::get(scene, "lanes")) {
+        let ei = edn::record::get(l, "edge")
+            .and_then(edn::record::num)
+            .unwrap() as usize;
+        let ps = edn::record::seq(edn::record::get(l, "points"))
+            .iter()
+            .filter_map(geom::vec2)
+            .collect();
+        lanes.insert(ei, ps);
+    }
+    edn::record::remove(scene, "lanes");
     let mut nodes: Vec<Node> = Vec::new();
     let mut idx: HashMap<String, usize> = HashMap::new();
     if let Some(Value::Vector(classes)) = edn::record::get(scene, "classes") {
@@ -458,7 +493,7 @@ pub fn route(scene: &mut Value) {
         edn::record::get(scene, "diagram").unwrap_or(&Value::Nil),
         "edges",
     ) {
-        for e in diagram_edges {
+        for (dei, e) in diagram_edges.iter().enumerate() {
             let f = edn::record::get(e, "from").and_then(|v| idx.get(&edn::encode(v).unwrap()));
             let t = edn::record::get(e, "to").and_then(|v| idx.get(&edn::encode(v).unwrap()));
             if let (Some(&f), Some(&t)) = (f, t) {
@@ -472,6 +507,7 @@ pub fn route(scene: &mut Value) {
                     i: 0,
                     n: 0,
                     ps: Vec::new(),
+                    lane: lanes.remove(&dei),
                 });
                 from.entry(nodes[f].id.clone()).or_default().push(ei);
                 to.entry(nodes[t].id.clone()).or_default().push(ei);
@@ -543,12 +579,19 @@ pub fn route(scene: &mut Value) {
             let e = &edges[ei];
             (e.a, e.b, e.ft, e.tt, e.i, e.n)
         };
-        let mut ps = choose(
-            candidates(&nodes[a], &nodes[b], ft, tt, i, n, &rank_boxes, lr),
-            a,
-            b,
-            &nodes,
-        );
+        let through = edges[ei]
+            .lane
+            .as_ref()
+            .map(|lane| through_lanes(&nodes[a], &nodes[b], ft, tt, lane, lr))
+            .filter(|ps| !hits(ps, a, b, &nodes));
+        let mut ps = through.unwrap_or_else(|| {
+            choose(
+                candidates(&nodes[a], &nodes[b], ft, tt, i, n, &rank_boxes, lr),
+                a,
+                b,
+                &nodes,
+            )
+        });
         if ps.is_empty() {
             continue;
         }

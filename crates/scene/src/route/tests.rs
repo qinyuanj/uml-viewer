@@ -104,3 +104,61 @@ fn face_picks_the_nearest_rect_side() {
         crate::route::face(r, [200.0, 150.0])
     );
 }
+
+fn crosses(p: [f64; 2], q: [f64; 2], r: Rect) -> bool {
+    // Liang-Barsky clip of segment p-q against the open rect.
+    let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    for (pp, qq) in [
+        (-dx, p[0] - r.x),
+        (dx, r.right() - p[0]),
+        (-dy, p[1] - r.y),
+        (dy, r.bottom() - p[1]),
+    ] {
+        if pp == 0.0 {
+            if qq <= 0.0 {
+                return false;
+            }
+        } else if pp < 0.0 {
+            t0 = t0.max(qq / pp);
+        } else {
+            t1 = t1.min(qq / pp);
+        }
+        if t0 >= t1 {
+            return false;
+        }
+    }
+    true
+}
+
+#[test]
+fn a_long_edge_passes_intermediate_ranks_beside_their_boxes() {
+    // One class per level stacks a column; a -> d spans two ranks between.
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 3} {:id :b :name \"b\" :level 2} {:id :c :name \"c\" :level 1} {:id :d :name \"d\" :level 0}]}] :edges [{:from :a :to :b} {:from :b :to :c} {:from :c :to :d} {:from :a :to :d}]}",
+    )
+    .unwrap();
+    let mut s = crate::layout::layout(&d);
+    route(&mut s);
+    assert!(
+        edn::record::get(&s, "lanes").is_none(),
+        "lanes stay internal"
+    );
+    let classes = edn::record::seq(edn::record::get(&s, "classes"));
+    let rect = |id: &str| {
+        let c = classes
+            .iter()
+            .find(|c| edn::record::get(c, "id") == Some(&edn::Value::keyword(id)))
+            .unwrap();
+        Rect::from_value(edn::record::get(c, "rect").unwrap()).unwrap()
+    };
+    let pts = points_of(&s, 3);
+    for id in ["b", "c"] {
+        for w in pts.windows(2) {
+            assert!(
+                !crosses(w[0], w[1], rect(id)),
+                "a -> d crosses {id}: {pts:?}"
+            );
+        }
+    }
+}

@@ -969,7 +969,9 @@ Layout follows Mermaid's three stages:
 
 1. **Size** each class from its text (padding 12).
 2. **Place** packages in document order; classes Sugiyama-ranked inside a
-   package; ~40px spacing.
+   package; ~40px spacing. An arrow spanning more than one rank gets a
+   zero-width lane in every rank between its ends, ordered with the boxes,
+   so it passes each rank in a reserved gap instead of across a box.
 3. **Route** like Mermaid/ELK: ports on facing sides, orthogonal tracks in
    the rank gap, short same-rank connections through the stack gap (local U
    only when a sibling sits in the way), then stroke with D3 `curveBasis`
