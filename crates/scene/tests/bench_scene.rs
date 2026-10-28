@@ -31,7 +31,9 @@ fn scene_of(name: &str) -> (Value, usize, usize) {
 }
 
 /// mutator runs each mutant's tests in a slot under `target/mutation-workers/`
-/// on shared cores; a timing bound there measures the machine, not the code.
+/// on shared cores; a timing bound there measures the machine, not the code,
+/// and a 2000-class debug compile costs every mutant seconds the unit tests
+/// and goldens already cover.
 fn under_mutation() -> bool {
     std::env::var_os("CARGO_TARGET_DIR").is_some_and(|dir| {
         Path::new(&dir)
@@ -117,6 +119,9 @@ fn prepare_scene_scales_near_linearly_from_500_to_2000_classes() {
 
 #[test]
 fn the_exported_projection_covers_every_bench_class_and_edge() {
+    if under_mutation() {
+        return;
+    }
     let (doc, classes, edges) = scene_of("synthetic-2000.edn");
     let view = scene::cli::project(&doc, None, &Value::Vector(vec![]), &Value::Map(vec![]));
     // The synthetic scenes are flat diagrams, so the projection stacks one
