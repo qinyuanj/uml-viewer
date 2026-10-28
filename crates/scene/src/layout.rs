@@ -562,6 +562,23 @@ fn place(
         gs.push((*r, xs, w, h, colh));
         total_h = total_h.max(colh);
     }
+    // Levels only: boxes slide toward their box neighbours within the widest
+    // packed row; lanes keep their order in the gaps between boxes (#185).
+    let start: Option<HashMap<String, f64>> = levels.then(|| {
+        let rows: Vec<Vec<Slot>> = gs
+            .iter()
+            .map(|g| {
+                g.1.iter()
+                    .map(|id| {
+                        let lane = lane_of.contains_key(id);
+                        let w = if lane { 0.0 } else { size(id).0 };
+                        (id.clone(), w, lane)
+                    })
+                    .collect()
+            })
+            .collect();
+        nearby(&rows, &nbr, &gap)
+    });
     let mut result = Vec::new();
     let mut sunk: Vec<Sunk> = Vec::new();
     // edge index -> (step, entry, exit) of each rank it passes
@@ -580,6 +597,9 @@ fn place(
                     lane_of.contains_key(&group_ids[i - 1]),
                     lane_of.contains_key(id),
                 );
+            }
+            if let Some(start) = &start {
+                across = start[id];
             }
             if let Some(&(ei, j, forward)) = lane_of.get(id) {
                 let at = |d: f64| if horizontal { [d, across] } else { [across, d] };
@@ -645,6 +665,156 @@ fn place(
         .collect();
     lanes.sort_by_key(|l| l.0);
     (result, lanes, sunk)
+}
+
+/// One node of a row: id, width across the row, lane?
+type Slot = (String, f64, bool);
+
+/// Sweeps that move each box toward its neighbours.
+const NEARBY_SWEEPS: usize = 8;
+
+/// The non-decreasing sequence nearest to `targets` in weighted least
+/// squares (pool adjacent violators), each value clamped to `lo..=hi`.
+fn isotonic(targets: &[(f64, f64)], lo: f64, hi: f64) -> Vec<f64> {
+    // Blocks: (weighted sum, weight, members).
+    let mut blocks: Vec<(f64, f64, usize)> = Vec::new();
+    for &(t, w) in targets {
+        blocks.push((t * w, w, 1));
+        while let [.., a, b] = blocks[..] {
+            if a.0 / a.1 <= b.0 / b.1 {
+                break;
+            }
+            blocks.pop();
+            let a = blocks.last_mut().unwrap();
+            *a = (a.0 + b.0, a.1 + b.1, a.2 + b.2);
+        }
+    }
+    blocks
+        .iter()
+        .flat_map(|&(s, w, n)| std::iter::repeat_n((s / w).clamp(lo, hi.max(lo)), n))
+        .collect()
+}
+
+/// Left edge of every node of `rows` (in their order, with the `gap`
+/// spacing). Each row is first packed from 0; the widest packed row fixes
+/// the width. Alternate sweeps then move each box toward the mean centre of
+/// its box neighbours in any row, as one weighted isotonic regression of
+/// the row's shifts clipped to `[0, widest − row width]`, so the diagram is
+/// never wider than packed. Lanes pull no box: each run of lanes between two
+/// boxes keeps its order and spacing and sits, within that gap, nearest the
+/// nodes before and after it on its edge.
+fn nearby(
+    rows: &[Vec<Slot>],
+    nbr: &std::collections::HashMap<String, Vec<String>>,
+    gap: &impl Fn(bool, bool) -> f64,
+) -> std::collections::HashMap<String, f64> {
+    use std::collections::HashMap;
+    let packed: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|row| {
+            let mut d = 0.0;
+            (0..row.len())
+                .map(|i| {
+                    if i > 0 {
+                        d += row[i - 1].1 + gap(row[i - 1].2, row[i].2);
+                    }
+                    d
+                })
+                .collect()
+        })
+        .collect();
+    let width = |k: usize| {
+        rows[k]
+            .last()
+            .map_or(0.0, |l| packed[k].last().unwrap() + l.1)
+    };
+    let widest = (0..rows.len()).map(width).fold(0.0, f64::max);
+    let mut left: HashMap<&str, f64> = HashMap::new();
+    let mut centre: HashMap<&str, f64> = HashMap::new();
+    for (row, offs) in rows.iter().zip(&packed) {
+        for ((id, w, _), x) in row.iter().zip(offs) {
+            left.insert(id, *x);
+            centre.insert(id, x + w / 2.0);
+        }
+    }
+    let lanes: std::collections::HashSet<&str> = rows
+        .iter()
+        .flatten()
+        .filter(|n| n.2)
+        .map(|n| n.0.as_str())
+        .collect();
+    let lane = |id: &str| lanes.contains(id);
+    let mean = |ids: &mut dyn Iterator<Item = &String>, centre: &HashMap<&str, f64>| {
+        let (mut sum, mut n) = (0.0, 0.0);
+        for t in ids {
+            if let Some(c) = centre.get(t.as_str()) {
+                sum += c;
+                n += 1.0;
+            }
+        }
+        (n > 0.0).then(|| (sum / n, n))
+    };
+    for sweep in 0..NEARBY_SWEEPS {
+        let order: Vec<usize> = if sweep % 2 == 0 {
+            (0..rows.len()).collect()
+        } else {
+            (0..rows.len()).rev().collect()
+        };
+        for k in order {
+            let (row, offs) = (&rows[k], &packed[k]);
+            let boxes: Vec<usize> = (0..row.len()).filter(|&i| !row[i].2).collect();
+            let targets: Vec<(f64, f64)> = boxes
+                .iter()
+                .map(|&i| {
+                    let (id, w, _) = &row[i];
+                    let near = mean(&mut nbr[id].iter().filter(|t| !lane(t)), &centre);
+                    // A box without box neighbours holds its place, barely.
+                    let (target, weight) = near.unwrap_or((centre[id.as_str()], 0.01));
+                    (target - offs[i] - w / 2.0, weight)
+                })
+                .collect();
+            let shifts = isotonic(&targets, 0.0, widest - width(k));
+            for (&i, z) in boxes.iter().zip(shifts) {
+                left.insert(&row[i].0, offs[i] + z);
+            }
+            let mut i = 0;
+            while i < row.len() {
+                if !row[i].2 {
+                    i += 1;
+                    continue;
+                }
+                let first = i;
+                while i < row.len() && row[i].2 {
+                    i += 1;
+                }
+                let lo = match first.checked_sub(1) {
+                    Some(b) => left[row[b].0.as_str()] + row[b].1 + gap(false, true),
+                    None => 0.0,
+                };
+                let hi = match row.get(i) {
+                    Some(b) => left[b.0.as_str()] - gap(true, false),
+                    None => widest,
+                };
+                let step = gap(true, true);
+                let targets: Vec<(f64, f64)> = (first..i)
+                    .enumerate()
+                    .map(|(j, l)| {
+                        let at = mean(&mut nbr[&row[l].0].iter(), &centre)
+                            .map_or(left[row[l].0.as_str()], |m| m.0);
+                        (at - j as f64 * step, 1.0)
+                    })
+                    .collect();
+                let top = hi - (i - first - 1) as f64 * step;
+                for (j, x) in isotonic(&targets, lo, top).into_iter().enumerate() {
+                    left.insert(&row[first + j].0, x + j as f64 * step);
+                }
+            }
+            for (id, w, _) in row {
+                centre.insert(id, left[id.as_str()] + w / 2.0);
+            }
+        }
+    }
+    left.into_iter().map(|(id, x)| (id.to_owned(), x)).collect()
 }
 
 /// Rows within one level: 0 for a class with no same-level dependency, else

@@ -236,3 +236,30 @@ fn spreading_the_attachments_does_not_bend_an_edge_into_a_box() {
     let pts = points_of(&s, 4);
     assert_clear(&s, &pts, &["c"]);
 }
+
+fn fell_back(scene: &edn::Value, edge: usize) -> bool {
+    edn::record::flag(
+        &edn::record::seq(edn::record::get(scene, "edges"))[edge],
+        "lane-fallback",
+    )
+}
+
+#[test]
+fn a_lane_through_a_box_is_dropped_and_flagged() {
+    // The lane runs down x=60, straight through m: the edge takes an
+    // ordinary candidate instead and says so (#185).
+    let mut s = parse(
+        "{:diagram {:edges [{:from :a :to :b}]} :lanes [{:edge 0 :points [[60 230] [60 290]]}] :classes [{:id :a :rank 2 :rect {:x 0 :y 0 :w 40 :h 20}} {:id :m :rank 1 :rect {:x 0 :y 240 :w 140 :h 40}} {:id :b :rank 0 :rect {:x 180 :y 400 :w 40 :h 20}}]}",
+    )
+    .unwrap();
+    route(&mut s);
+    assert!(!points_of(&s, 0).contains(&[60.0, 230.0]));
+    assert!(fell_back(&s, 0));
+    let mut kept = parse(
+        "{:diagram {:edges [{:from :a :to :b}]} :lanes [{:edge 0 :points [[160 230] [160 290]]}] :classes [{:id :a :rank 2 :rect {:x 0 :y 0 :w 40 :h 20}} {:id :m :rank 1 :rect {:x 0 :y 240 :w 140 :h 40}} {:id :b :rank 0 :rect {:x 180 :y 400 :w 40 :h 20}}]}",
+    )
+    .unwrap();
+    route(&mut kept);
+    assert!(points_of(&kept, 0).contains(&[160.0, 230.0]));
+    assert!(!fell_back(&kept, 0));
+}

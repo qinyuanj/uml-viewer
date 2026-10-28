@@ -124,6 +124,8 @@ struct RouteEdge {
     n: usize,
     ps: Path,
     lane: Option<Path>,
+    /// Had a lane path, but it hit a box and an ordinary candidate replaced it.
+    fallback: bool,
 }
 
 /// A stub out of a box face that also clears the box's rank row by 20px,
@@ -534,6 +536,7 @@ pub fn route(scene: &mut Value) {
                     n: 0,
                     ps: Vec::new(),
                     lane: lanes.remove(&dei),
+                    fallback: false,
                 });
                 from.entry(nodes[f].id.clone()).or_default().push(ei);
                 to.entry(nodes[t].id.clone()).or_default().push(ei);
@@ -612,6 +615,7 @@ pub fn route(scene: &mut Value) {
             .as_ref()
             .map(|lane| through_lanes(&nodes[a], &nodes[b], (ft, tt), lane, ends, lr))
             .filter(|ps| !hits(ps, a, b, &nodes));
+        edges[ei].fallback = edges[ei].lane.is_some() && through.is_none();
         let settle = |ps: Path| settle(ps, nodes[a].r, nodes[b].r);
         let mut ps = settle(through.unwrap_or_else(|| {
             choose(
@@ -720,6 +724,9 @@ pub fn route(scene: &mut Value) {
             _ => "open",
         };
         edn::record::put(&mut edge, "head", Value::keyword(head));
+        if e.fallback {
+            edn::record::put(&mut edge, "lane-fallback", Value::Bool(true));
+        }
         out.push(edge);
     }
     edn::record::put(scene, "edges", Value::Vector(out));

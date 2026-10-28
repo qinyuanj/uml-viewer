@@ -199,3 +199,91 @@ fn edgeless_classes_of_a_levels_package_sit_in_a_grid_below() {
     }
     assert!(row_of(&s, "g") > first, "the fifth starts a new row");
 }
+
+/// Rows of (id, width, lane?) and the neighbour lists for `nearby`.
+fn nearby_of(
+    rows: &[&[(&str, f64, bool)]],
+    links: &[(&str, &str)],
+) -> std::collections::HashMap<String, f64> {
+    let rows: Vec<Vec<super::Slot>> = rows
+        .iter()
+        .map(|r| {
+            r.iter()
+                .map(|(id, w, l)| (id.to_string(), *w, *l))
+                .collect()
+        })
+        .collect();
+    let mut nbr: std::collections::HashMap<String, Vec<String>> = rows
+        .iter()
+        .flatten()
+        .map(|n| (n.0.clone(), Vec::new()))
+        .collect();
+    for (a, b) in links {
+        nbr.get_mut(*a).unwrap().push(b.to_string());
+        nbr.get_mut(*b).unwrap().push(a.to_string());
+    }
+    let gap = |a: bool, b: bool| match (a, b) {
+        (true, true) => 12.0,
+        (true, false) | (false, true) => 20.0,
+        _ => 40.0,
+    };
+    super::nearby(&rows, &nbr, &gap)
+}
+
+#[test]
+fn nearby_moves_a_box_toward_its_neighbour_but_not_the_widest_row() {
+    // The top row packs to 380 wide; b slides under the far right box c.
+    let x = nearby_of(
+        &[
+            &[
+                ("a", 100.0, false),
+                ("x", 100.0, false),
+                ("c", 100.0, false),
+            ],
+            &[("b", 100.0, false)],
+        ],
+        &[("b", "c")],
+    );
+    assert_eq!(
+        (0.0, 140.0, 280.0),
+        (x["a"], x["x"], x["c"]),
+        "widest row stays"
+    );
+    assert_eq!(280.0, x["b"], "b sits under c");
+}
+
+#[test]
+fn nearby_never_moves_a_row_past_the_widest_packed_row() {
+    // The top row packs to 340 wide. b (300 wide) wants its centre under
+    // c's at 240, i.e. x = 90, but may only shift 340 - 300 = 40.
+    let x = nearby_of(
+        &[
+            &[("a", 100.0, false), ("c", 200.0, false)],
+            &[("b", 300.0, false)],
+        ],
+        &[("b", "c")],
+    );
+    assert_eq!((0.0, 140.0), (x["a"], x["c"]));
+    assert_eq!(40.0, x["b"]);
+}
+
+#[test]
+fn nearby_keeps_lanes_in_order_between_their_boxes() {
+    // Both lanes lead toward z far left of the gap between a and c: they
+    // stop at a's right edge plus 20 and keep their 12px spacing.
+    let x = nearby_of(
+        &[
+            &[("z", 40.0, false)],
+            &[
+                ("a", 100.0, false),
+                ("l1", 0.0, true),
+                ("l2", 0.0, true),
+                ("c", 100.0, false),
+            ],
+        ],
+        &[("l1", "z"), ("l2", "z")],
+    );
+    assert_eq!(120.0, x["l1"]);
+    assert_eq!(132.0, x["l2"]);
+    assert!(x["l2"] + 20.0 <= x["c"], "lanes stay left of c");
+}
