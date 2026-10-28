@@ -162,3 +162,40 @@ fn a_levels_package_puts_foreign_ovals_in_a_rank_below_its_lowest_level() {
     let lanes = edn::record::seq(get(&s, "lanes"));
     assert_eq!(1, lanes.len(), "a -> std passes b's rank in a lane");
 }
+
+fn rect_of(scene: &edn::Value, id: &str) -> crate::geom::Rect {
+    let c = edn::record::seq(get(scene, "classes"))
+        .iter()
+        .find(|c| get(c, "id") == Some(&edn::Value::keyword(id)))
+        .unwrap();
+    crate::geom::Rect::from_value(get(c, "rect").unwrap()).unwrap()
+}
+
+#[test]
+fn levels_are_further_apart_than_the_sub_rows_of_one_level() {
+    // a -> b -> c: a and b share level 1 (two sub-rows), c is level 0.
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 1} {:id :b :name \"b\" :level 1} {:id :c :name \"c\" :level 0}]}] :edges [{:from :a :to :b} {:from :b :to :c}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    let (a, b, c) = (rect_of(&s, "a"), rect_of(&s, "b"), rect_of(&s, "c"));
+    assert_eq!(140.0, b.y - a.bottom(), "sub-rows");
+    assert_eq!(220.0, c.y - b.bottom(), "levels");
+}
+
+#[test]
+fn edgeless_classes_of_a_levels_package_sit_in_a_grid_below() {
+    // a -> b; c..g have no edges: four to a grid row, below b.
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 1} {:id :b :name \"b\" :level 0} {:id :c :name \"c\" :level 1} {:id :d :name \"d\" :level 1} {:id :e :name \"e\" :level 0} {:id :f :name \"f\" :level 1} {:id :g :name \"g\" :level 0}]}] :edges [{:from :a :to :b}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    let first = row_of(&s, "c");
+    assert!(first > row_of(&s, "b"), "below the levels");
+    for id in ["d", "e", "f"] {
+        assert_eq!(first, row_of(&s, id), "{id} shares the first grid row");
+    }
+    assert!(row_of(&s, "g") > first, "the fifth starts a new row");
+}

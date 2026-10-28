@@ -229,6 +229,13 @@ fn ports(c: &mut Value) {
 /// bounds the height (and the long edges through it) of a deep level.
 const SUB_ROWS: usize = 3;
 
+/// Classes per row of the grid that collects a levels package's edgeless
+/// classes below its levels.
+const GRID: usize = 4;
+
+/// Rank gap between two levels; sub-rows of one level keep 140.
+const LEVEL_GAP: f64 = 220.0;
+
 /// Gap between two neighbouring lanes, and between a lane and a box.
 const LANE_GAP: f64 = 12.0;
 const LANE_MARGIN: f64 = 20.0;
@@ -376,7 +383,14 @@ fn place(
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
     let mut keys: Vec<f64> = Vec::new();
     let mut pos: HashMap<String, f64> = HashMap::new();
+    // With levels, a class without any edge leaves its level for the grid.
+    let mut alone: Vec<String> = Vec::new();
     for (i, id) in ids.iter().enumerate() {
+        pos.insert(id.clone(), (i as f64) * 80.0);
+        if levels && nbr[id].is_empty() {
+            alone.push(id.clone());
+            continue;
+        }
         let r = class_rank(id);
         let key = rank_key(r);
         if !groups.contains_key(&key) {
@@ -384,7 +398,6 @@ fn place(
             keys.push(r);
         }
         groups.get_mut(&key).unwrap().push(id.clone());
-        pos.insert(id.clone(), (i as f64) * 80.0);
     }
     keys.sort_by(|a, b| {
         if levels {
@@ -406,9 +419,28 @@ fn place(
             .or_default()
             .append(&mut ids);
     }
+    // Ranks of the levels; the sink and grid ranks below them are not.
+    let level_keys: std::collections::HashSet<String> = keys.iter().map(|r| rank_key(*r)).collect();
+    // The grid of edgeless classes: rows of GRID below everything else.
+    let grid_top = if sink.is_empty() {
+        sink_rank
+    } else {
+        sink_rank - 1.0
+    };
+    let mut grid: HashMap<String, f64> = HashMap::new();
+    for (row, chunk) in alone.chunks(GRID).enumerate() {
+        let r = grid_top - row as f64;
+        keys.push(r);
+        groups.insert(rank_key(r), chunk.to_vec());
+        for id in chunk {
+            grid.insert(id.clone(), r);
+        }
+    }
     let rank_of = |id: &str| {
         if sink.contains_key(id) {
             sink_rank
+        } else if let Some(&r) = grid.get(id) {
+            r
         } else {
             class_rank(id)
         }
@@ -535,7 +567,7 @@ fn place(
     // edge index -> (step, entry, exit) of each rank it passes
     let mut through: HashMap<usize, Vec<Pass>> = HashMap::new();
     let mut along = 0.0;
-    for (rank, group_ids, gw, gh, colh) in &gs {
+    for (k, (rank, group_ids, gw, gh, colh)) in gs.iter().enumerate() {
         let mut across = if horizontal {
             (total_h - colh) / 2.0
         } else {
@@ -589,7 +621,20 @@ fn place(
             result.push(c);
             across += if horizontal { ch } else { cw };
         }
-        along += depth + 140.0;
+        // A new level starts after a wider gap; its sub-rows keep 140.
+        let band = |r: f64| {
+            if level_keys.contains(&rank_key(r)) {
+                (r / rows).floor()
+            } else {
+                f64::NEG_INFINITY
+            }
+        };
+        let next = gs.get(k + 1).map(|g| g.0);
+        along += depth
+            + match next {
+                Some(n) if levels && band(n) != band(*rank) => LEVEL_GAP,
+                _ => 140.0,
+            };
     }
     let mut lanes: Vec<Lane> = through
         .into_iter()
