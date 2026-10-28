@@ -30,6 +30,16 @@ fn scene_of(name: &str) -> (Value, usize, usize) {
     (doc, classes, edges)
 }
 
+/// mutator runs each mutant's tests in a slot under `target/mutation-workers/`
+/// on shared cores; a timing bound there measures the machine, not the code.
+fn under_mutation() -> bool {
+    std::env::var_os("CARGO_TARGET_DIR").is_some_and(|dir| {
+        Path::new(&dir)
+            .components()
+            .any(|c| c.as_os_str() == "mutation-workers")
+    })
+}
+
 fn compile(doc: &Value) -> (Duration, Value) {
     let started = Instant::now();
     let scene = scene::document::compile_view(doc, &[], &[], &Value::Map(vec![]));
@@ -51,6 +61,9 @@ fn the_bench_scenes_load_with_the_expected_size() {
 // Coverage instrumentation slows the build several-fold; time it uninstrumented.
 #[cfg_attr(coverage, ignore)]
 fn the_2000_class_scene_compiles_in_seconds() {
+    if under_mutation() {
+        return;
+    }
     let (doc, _, _) = scene_of("synthetic-2000.edn");
     let (elapsed, scene) = compile(&doc);
     let classes = edn::record::seq(edn::record::get(&scene, "classes")).len();
@@ -74,6 +87,9 @@ fn the_2000_class_scene_compiles_in_seconds() {
 // Coverage instrumentation slows the build several-fold; time it uninstrumented.
 #[cfg_attr(coverage, ignore)]
 fn prepare_scene_scales_near_linearly_from_500_to_2000_classes() {
+    if under_mutation() {
+        return;
+    }
     let (small, _, _) = scene_of("synthetic-500.edn");
     let (large, _, _) = scene_of("synthetic-2000.edn");
     // Warm up both once so allocator/page-cache effects do not dominate.
