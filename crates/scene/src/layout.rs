@@ -225,6 +225,10 @@ fn ports(c: &mut Value) {
     put(c, "out-ports", Value::Vector(op));
 }
 
+/// Sub-rows a level may split into; deeper chains share the top row, which
+/// bounds the height (and the long edges through it) of a deep level.
+const SUB_ROWS: usize = 3;
+
 /// Gap between two neighbouring lanes, and between a lane and a box.
 const LANE_GAP: f64 = 12.0;
 const LANE_MARGIN: f64 = 20.0;
@@ -317,15 +321,41 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
         }
     }
     let levels = levels && !horizontal;
+    let level_of = |id: &str| get(&cs[idx[id]], "level").and_then(num).unwrap_or(0.0);
+    let sub = if levels {
+        let inner: HashMap<String, Vec<String>> = ids
+            .iter()
+            .map(|id| {
+                let same = out_edges[id]
+                    .iter()
+                    .filter(|t| level_of(t) == level_of(id))
+                    .cloned()
+                    .collect();
+                (id.clone(), same)
+            })
+            .collect();
+        let mut sub = sublayers(&ids, &inner);
+        for row in sub.values_mut() {
+            *row = (*row).min(SUB_ROWS - 1);
+        }
+        sub
+    } else {
+        HashMap::new()
+    };
+    // A level holds `rows` sub-rows; without inner dependencies rank = level.
+    let rows = sub.values().max().map_or(1, |d| d + 1) as f64;
+    let rank_of = |id: &str| {
+        if levels {
+            level_of(id) * rows + sub[id] as f64
+        } else {
+            ranks.get(id).copied().unwrap_or(0.0)
+        }
+    };
     let mut groups: HashMap<String, Vec<String>> = HashMap::new();
     let mut keys: Vec<f64> = Vec::new();
     let mut pos: HashMap<String, f64> = HashMap::new();
     for (i, id) in ids.iter().enumerate() {
-        let r = if levels {
-            get(&cs[idx[id]], "level").and_then(num).unwrap_or(0.0)
-        } else {
-            ranks.get(id).copied().unwrap_or(0.0)
-        };
+        let r = rank_of(id);
         let key = rank_key(r);
         if !groups.contains_key(&key) {
             groups.insert(key.clone(), Vec::new());
@@ -346,14 +376,6 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
         .enumerate()
         .map(|(k, r)| (rank_key(*r), k))
         .collect();
-    let rank_of = |id: &str| {
-        let c = &cs[idx[id]];
-        if levels {
-            get(c, "level").and_then(num).unwrap_or(0.0)
-        } else {
-            ranks.get(id).copied().unwrap_or(0.0)
-        }
-    };
     // lane id -> (edge index, step from the :from end, :from nearer rank 0?)
     let mut lane_of: HashMap<String, (usize, usize, bool)> = HashMap::new();
     for (ei, e) in edges.iter().enumerate() {
@@ -521,6 +543,80 @@ fn place(classes: &[Value], edges: &[Value], direction: &str) -> (Vec<Value>, Ve
     (result, lanes)
 }
 
+/// Rows within one level: 0 for a class with no same-level dependency, else
+/// one above its highest same-level dependency. Classes on a cycle share a
+/// row (Tarjan's components, finished dependencies first).
+fn sublayers(
+    ids: &[String],
+    next: &std::collections::HashMap<String, Vec<String>>,
+) -> std::collections::HashMap<String, usize> {
+    use std::collections::{HashMap, HashSet};
+    struct Walk<'a> {
+        next: &'a HashMap<String, Vec<String>>,
+        index: HashMap<String, usize>,
+        low: HashMap<String, usize>,
+        stack: Vec<String>,
+        open: HashSet<String>,
+        row: HashMap<String, usize>,
+    }
+    impl Walk<'_> {
+        fn visit(&mut self, u: &str) {
+            let i = self.index.len();
+            self.index.insert(u.to_owned(), i);
+            self.low.insert(u.to_owned(), i);
+            self.stack.push(u.to_owned());
+            self.open.insert(u.to_owned());
+            for v in &self.next[u] {
+                if !self.index.contains_key(v) {
+                    self.visit(v);
+                    let low = self.low[u].min(self.low[v]);
+                    self.low.insert(u.to_owned(), low);
+                } else if self.open.contains(v) {
+                    let low = self.low[u].min(self.index[v]);
+                    self.low.insert(u.to_owned(), low);
+                }
+            }
+            if self.low[u] != i {
+                return;
+            }
+            let mut members = Vec::new();
+            loop {
+                let w = self.stack.pop().unwrap();
+                self.open.remove(&w);
+                let done = w == u;
+                members.push(w);
+                if done {
+                    break;
+                }
+            }
+            let row = members
+                .iter()
+                .flat_map(|m| &self.next[m])
+                .filter(|v| !members.contains(v))
+                .map(|v| self.row[v] + 1)
+                .max()
+                .unwrap_or(0);
+            for m in members {
+                self.row.insert(m, row);
+            }
+        }
+    }
+    let mut walk = Walk {
+        next,
+        index: HashMap::new(),
+        low: HashMap::new(),
+        stack: Vec::new(),
+        open: HashSet::new(),
+        row: HashMap::new(),
+    };
+    for id in ids {
+        if !walk.index.contains_key(id) {
+            walk.visit(id);
+        }
+    }
+    walk.row
+}
+
 /// Ranks are integral in practice; Lua keyed hop groups by string
 /// concatenation, so any total order preserving distinct values works.
 fn rank_key(r: f64) -> String {
@@ -539,14 +635,23 @@ pub fn layout(diagram: &Value) -> Value {
     for p in seq(get(diagram, "packages")) {
         stride = stride.max(1.0 + seq(get(p, "classes")).len() as f64);
     }
-    for (i, p) in seq(get(diagram, "packages")).iter().enumerate() {
-        let (inner, through) = place(
-            seq(get(p, "classes")),
-            seq(get(diagram, "edges")),
-            &get(diagram, "direction")
-                .map(geom::name)
-                .unwrap_or_else(|| "tb".into()),
-        );
+    let placed: Vec<(Vec<Value>, Vec<Lane>)> = seq(get(diagram, "packages"))
+        .iter()
+        .map(|p| {
+            place(
+                seq(get(p, "classes")),
+                seq(get(diagram, "edges")),
+                &get(diagram, "direction")
+                    .map(geom::name)
+                    .unwrap_or_else(|| "tb".into()),
+            )
+        })
+        .collect();
+    // Sub-rows can push a package's ranks past its class count.
+    for c in placed.iter().flat_map(|(inner, _)| inner) {
+        stride = stride.max(1.0 + num(get(c, "rank").unwrap()).unwrap());
+    }
+    for ((i, p), (inner, through)) in seq(get(diagram, "packages")).iter().enumerate().zip(placed) {
         for (ei, points) in through {
             let points = points
                 .iter()

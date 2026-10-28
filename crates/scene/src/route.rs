@@ -126,24 +126,32 @@ struct RouteEdge {
     lane: Option<Path>,
 }
 
-/// One step away from a box face, so the attachment sync keeps a stub.
-fn stub_point(p: [f64; 2], f: Face) -> [f64; 2] {
+/// A stub out of a box face that also clears the box's rank row by 20px,
+/// so the bend after it cannot cut a taller neighbour in that row.
+fn stub_point(p: [f64; 2], f: Face, row: Rect) -> [f64; 2] {
     match f {
-        Face::Left => [p[0] - 20.0, p[1]],
-        Face::Right => [p[0] + 20.0, p[1]],
-        Face::Top => [p[0], p[1] - 20.0],
-        Face::Bottom => [p[0], p[1] + 20.0],
+        Face::Left => [(p[0] - 20.0).min(row.x - 20.0), p[1]],
+        Face::Right => [(p[0] + 20.0).max(row.right() + 20.0), p[1]],
+        Face::Top => [p[0], (p[1] - 20.0).min(row.y - 20.0)],
+        Face::Bottom => [p[0], (p[1] + 20.0).max(row.bottom() + 20.0)],
     }
 }
 
 /// A long edge through its reserved lanes: stub, the lane entry and exit of
-/// every rank it crosses, stub.
-fn through_lanes(a: &Node, b: &Node, ft: f64, tt: f64, lane: &[[f64; 2]], lr: bool) -> Path {
+/// every rank it crosses, stub. `rows` are the rank rows of its two ends.
+fn through_lanes(
+    a: &Node,
+    b: &Node,
+    (ft, tt): (f64, f64),
+    lane: &[[f64; 2]],
+    rows: (Rect, Rect),
+    lr: bool,
+) -> Path {
     let (ff, tf) = flow(a.r, b.r, lr);
     let (s, e) = (port(a.r, ff, ft), port(b.r, tf, tt));
-    let mut ps = vec![s, stub_point(s, ff)];
+    let mut ps = vec![s, stub_point(s, ff, rows.0)];
     ps.extend_from_slice(lane);
-    ps.push(stub_point(e, tf));
+    ps.push(stub_point(e, tf, rows.1));
     ps.push(e);
     collapse(&ps)
 }
@@ -468,12 +476,19 @@ pub fn route(scene: &mut Value) {
     edn::record::remove(scene, "lanes");
     let mut nodes: Vec<Node> = Vec::new();
     let mut idx: HashMap<String, usize> = HashMap::new();
+    // Rank rows of laid-out classes only: an unranked foreign oval is no row.
+    let mut rows: HashMap<String, Rect> = HashMap::new();
     if let Some(Value::Vector(classes)) = edn::record::get(scene, "classes") {
         for c in classes {
             let Some(r) = edn::record::get(c, "rect").and_then(Rect::from_value) else {
                 continue;
             };
             let id = edn::encode(edn::record::get(c, "id").unwrap()).unwrap();
+            if let Some(rank) = edn::record::get(c, "rank").and_then(edn::record::num) {
+                rows.entry(rank_key(rank))
+                    .and_modify(|bb| *bb = union_rect(*bb, r))
+                    .or_insert(r);
+            }
             idx.insert(id.clone(), nodes.len());
             nodes.push(Node {
                 r,
@@ -579,27 +594,41 @@ pub fn route(scene: &mut Value) {
             let e = &edges[ei];
             (e.a, e.b, e.ft, e.tt, e.i, e.n)
         };
+        let row = |c: &Node| rows.get(&rank_key(c.rank)).copied().unwrap_or(c.r);
+        let ends = (row(&nodes[a]), row(&nodes[b]));
         let through = edges[ei]
             .lane
             .as_ref()
-            .map(|lane| through_lanes(&nodes[a], &nodes[b], ft, tt, lane, lr))
+            .map(|lane| through_lanes(&nodes[a], &nodes[b], (ft, tt), lane, ends, lr))
             .filter(|ps| !hits(ps, a, b, &nodes));
-        let mut ps = through.unwrap_or_else(|| {
+        let settle = |mut ps: Path| {
+            if ps.len() >= 2 {
+                let s = slide(nodes[a].r, ps[0], ps[1]);
+                let e = slide(nodes[b].r, *ps.last().unwrap(), ps[ps.len() - 2]);
+                sync(&mut ps, true, s, face(nodes[a].r, s));
+                sync(&mut ps, false, e, face(nodes[b].r, e));
+            }
+            ps
+        };
+        let mut ps = settle(through.unwrap_or_else(|| {
             choose(
                 candidates(&nodes[a], &nodes[b], ft, tt, i, n, &rank_boxes, lr),
                 a,
                 b,
                 &nodes,
             )
-        });
+        }));
         if ps.is_empty() {
             continue;
         }
-        if ps.len() >= 2 {
-            let s = slide(nodes[a].r, ps[0], ps[1]);
-            let e = slide(nodes[b].r, *ps.last().unwrap(), ps[ps.len() - 2]);
-            sync(&mut ps, true, s, face(nodes[a].r, s));
-            sync(&mut ps, false, e, face(nodes[b].r, e));
+        // The settled path still crosses a box, as when a taller box shares
+        // the start row (or end sync bends a clear detour across one): leave
+        // that row, then enter the end row.
+        if nodes[a].rank != nodes[b].rank && hits(&ps, a, b, &nodes) {
+            let rows_apart = settle(through_lanes(&nodes[a], &nodes[b], (ft, tt), &[], ends, lr));
+            if !hits(&rows_apart, a, b, &nodes) {
+                ps = rows_apart;
+            }
         }
         edges[ei].ps = ps;
         for start in [true, false] {

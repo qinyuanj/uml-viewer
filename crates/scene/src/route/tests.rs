@@ -162,3 +162,64 @@ fn a_long_edge_passes_intermediate_ranks_beside_their_boxes() {
         }
     }
 }
+
+fn rect_of(scene: &edn::Value, id: &str) -> Rect {
+    let classes = edn::record::seq(edn::record::get(scene, "classes"));
+    let c = classes
+        .iter()
+        .find(|c| edn::record::get(c, "id") == Some(&edn::Value::keyword(id)))
+        .unwrap();
+    Rect::from_value(edn::record::get(c, "rect").unwrap()).unwrap()
+}
+
+fn assert_clear(scene: &edn::Value, pts: &[[f64; 2]], ids: &[&str]) {
+    for id in ids {
+        for w in pts.windows(2) {
+            assert!(
+                !crosses(w[0], w[1], rect_of(scene, id)),
+                "crosses {id}: {pts:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_lane_stub_clears_a_taller_box_in_its_start_row() {
+    // t shares a's row and hangs below it: a 20px stub would bend into t on
+    // its way to the lane, so the lane would be dropped.
+    let mut s = parse(
+        "{:diagram {:edges [{:from :a :to :b}]} :lanes [{:edge 0 :points [[200 230] [200 290]]}] :classes [{:id :a :rank 2 :rect {:x 0 :y 0 :w 40 :h 20}} {:id :t :rank 2 :rect {:x 60 :y 0 :w 40 :h 100}} {:id :m :rank 1 :rect {:x 0 :y 240 :w 140 :h 40}} {:id :b :rank 0 :rect {:x 180 :y 400 :w 40 :h 20}}]}",
+    )
+    .unwrap();
+    route(&mut s);
+    let pts = points_of(&s, 0);
+    assert!(pts.contains(&[200.0, 230.0]), "keeps its lane: {pts:?}");
+    assert_clear(&s, &pts, &["t", "m"]);
+}
+
+#[test]
+fn an_unranked_oval_is_not_part_of_a_rank_row() {
+    // The oval has no :rank; counted in rank 0's row it would pull b's stub
+    // up beside a and cut c.
+    let mut s = parse(
+        "{:diagram {:edges [{:from :a :to :b}]} :lanes [{:edge 0 :points [[160 152] [160 254]]}] :classes [{:id :a :rank 2 :rect {:x 0 :y 0 :w 120 :h 42}} {:id :c :rank 1 :rect {:x 0 :y 182 :w 120 :h 42}} {:id :b :rank 0 :rect {:x 0 :y 364 :w 120 :h 42}} {:id :o :oval? true :rect {:x 300 :y 0 :w 80 :h 30}}]}",
+    )
+    .unwrap();
+    route(&mut s);
+    let pts = points_of(&s, 0);
+    assert!(pts.contains(&[160.0, 152.0]), "keeps its lane: {pts:?}");
+    assert_clear(&s, &pts, &["c"]);
+}
+
+#[test]
+fn an_edge_bent_across_a_taller_row_neighbour_leaves_the_row_first() {
+    // End sync bends the chosen detour from a across t, which shares a's row.
+    let mut s = parse(
+        "{:diagram {:edges [{:from :a :to :b}]} :classes [{:id :t :rank 1 :rect {:x 0 :y 0 :w 200 :h 558}} {:id :a :rank 1 :rect {:x 252 :y 0 :w 136 :h 108}} {:id :b :rank 0 :rect {:x 12 :y 756 :w 120 :h 162}}]}",
+    )
+    .unwrap();
+    route(&mut s);
+    let pts = points_of(&s, 0);
+    assert!(pts[1][1] > 558.0, "drops below the row first: {pts:?}");
+    assert_clear(&s, &pts, &["t"]);
+}

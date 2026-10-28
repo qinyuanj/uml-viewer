@@ -84,3 +84,60 @@ fn box_width_grows_with_the_widest_line() {
     let (w, _, _) = class_box_size(&parse("{:name \"abcdefghijklmnopqrstuvw\"}").unwrap());
     assert_eq!(24.0 + 23.0 * 8.0, w);
 }
+
+fn row_of(scene: &edn::Value, id: &str) -> f64 {
+    let c = edn::record::seq(get(scene, "classes"))
+        .iter()
+        .find(|c| get(c, "id") == Some(&edn::Value::keyword(id)))
+        .unwrap();
+    crate::geom::Rect::from_value(get(c, "rect").unwrap())
+        .unwrap()
+        .y
+}
+
+#[test]
+fn one_level_stacks_dependents_above_their_dependencies() {
+    // a -> b -> c in one level; d and e depend on each other, then on c.
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 1} {:id :b :name \"b\" :level 1} {:id :c :name \"c\" :level 1} {:id :d :name \"d\" :level 1} {:id :e :name \"e\" :level 1} {:id :z :name \"z\" :level 0}]}] :edges [{:from :a :to :b} {:from :b :to :c} {:from :d :to :e} {:from :e :to :d} {:from :e :to :c} {:from :c :to :z}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    let (a, b, c, z) = (
+        row_of(&s, "a"),
+        row_of(&s, "b"),
+        row_of(&s, "c"),
+        row_of(&s, "z"),
+    );
+    assert!(a < b && b < c && c < z, "a {a} b {b} c {c} z {z}");
+    assert_eq!(row_of(&s, "d"), row_of(&s, "e"), "a cycle shares a row");
+    assert_eq!(b, row_of(&s, "d"), "d and e sit one row above c");
+}
+
+#[test]
+fn a_level_without_inner_dependencies_keeps_one_row() {
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 1} {:id :b :name \"b\" :level 1} {:id :z :name \"z\" :level 0}]}] :edges [{:from :a :to :z} {:from :b :to :z}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    assert_eq!(row_of(&s, "a"), row_of(&s, "b"));
+}
+
+#[test]
+fn a_deep_chain_in_one_level_shares_its_top_row() {
+    // a -> b -> c -> d -> e in one level: rows stop at three, so a and b
+    // join c in the top row.
+    let d = parse(
+        "{:packages [{:id :p :classes [{:id :a :name \"a\" :level 0} {:id :b :name \"b\" :level 0} {:id :c :name \"c\" :level 0} {:id :d :name \"d\" :level 0} {:id :e :name \"e\" :level 0}]}] :edges [{:from :a :to :b} {:from :b :to :c} {:from :c :to :d} {:from :d :to :e}]}",
+    )
+    .unwrap();
+    let s = crate::layout::layout(&d);
+    let ys: Vec<f64> = ["a", "b", "c", "d", "e"]
+        .iter()
+        .map(|id| row_of(&s, id))
+        .collect();
+    assert_eq!(ys[0], ys[1], "{ys:?}");
+    assert_eq!(ys[1], ys[2], "{ys:?}");
+    assert!(ys[2] < ys[3] && ys[3] < ys[4], "{ys:?}");
+}
