@@ -48,6 +48,8 @@ fn the_bench_scenes_load_with_the_expected_size() {
 }
 
 #[test]
+// Coverage instrumentation slows the build several-fold; time it uninstrumented.
+#[cfg_attr(coverage, ignore)]
 fn the_2000_class_scene_compiles_in_seconds() {
     let (doc, _, _) = scene_of("synthetic-2000.edn");
     let (elapsed, scene) = compile(&doc);
@@ -69,6 +71,8 @@ fn the_2000_class_scene_compiles_in_seconds() {
 }
 
 #[test]
+// Coverage instrumentation slows the build several-fold; time it uninstrumented.
+#[cfg_attr(coverage, ignore)]
 fn prepare_scene_scales_near_linearly_from_500_to_2000_classes() {
     let (small, _, _) = scene_of("synthetic-500.edn");
     let (large, _, _) = scene_of("synthetic-2000.edn");
