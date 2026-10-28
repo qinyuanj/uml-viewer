@@ -24,6 +24,10 @@ struct ClassIndex {
 
 const CELL: f64 = 256.0;
 
+/// Farthest a stroke strays from its curve, in world px (kurbo's and
+/// Skia's 0.25; #187).
+const FLATTEN_TOLERANCE: f64 = 0.25;
+
 /// Inclusive cell span `(x0, y0, x1, y1)` of a rect.
 fn span(r: Rect) -> (i64, i64, i64, i64) {
     let cell = |v: f64| (v / CELL).floor() as i64;
@@ -250,7 +254,7 @@ pub fn prepare_scene(scene: &mut Value) {
             put(&mut e, "behind", tangent[0].clone());
             put(&mut e, "tip", tangent[1].clone());
             put(&mut e, "draw-bounds", bb.to_value());
-            let flat = curve::flatten_path(&p, 0.0625);
+            let flat = curve::flatten_path(&p, FLATTEN_TOLERANCE);
             let strokes = geom::gap_polyline(&flat, &rects, 5.0);
             put(
                 &mut e,

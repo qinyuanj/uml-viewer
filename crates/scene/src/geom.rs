@@ -293,8 +293,7 @@ fn clip_segment(
     }
 }
 
-/// Points per block whose bounding box pre-filters the rects (one flattened
-/// cubic at the scene's 16-step sampling).
+/// Points per block whose bounding box pre-filters the rects.
 const BLOCK: usize = 16;
 
 /// `G.gap_polyline`: every polyline segment clipped, adjacent pieces joined.

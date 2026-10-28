@@ -1,6 +1,8 @@
 //! Route geometry goldens (#149, Seam A): representative routing scenarios
 //! whose expected scene geometry in `fixtures/route-goldens/` is static data
-//! produced once by the pre-#144 Lua/LOVE scene core. Every number must
+//! produced once by the pre-#144 Lua/LOVE scene core; only `:strokes` was
+//! re-recorded by the Rust core when flattening moved from 16 fixed steps
+//! to a 0.25px tolerance (#187). Every number must
 //! match within 1e-6 (the golden's `:absolute-tolerance`); edges are
 //! compared in order, with their heads and strokes, so a hidden, faded,
 //! re-headed or reordered edge fails.

@@ -91,7 +91,7 @@ fn end_tangent_and_flatten_cover_the_full_path() {
     let behind = geom::vec2(&t[0]).unwrap();
     let tip = geom::vec2(&t[1]).unwrap();
     assert!((tip[1] - behind[1]).abs() > 1.0);
-    let samples = flatten_path(&p, 0.0625);
+    let samples = flatten_path(&p, 0.25);
     assert_eq!([0.0, 0.0], samples[0]);
     assert_eq!([120.0, 80.0], *samples.last().unwrap());
     assert!(samples.len() > 4);
@@ -156,4 +156,61 @@ fn constrain_ends_pins_the_final_tangent() {
     let tip = geom::vec2(&t[1]).unwrap();
     assert!((tip[0] - behind[0]).abs() + 1e-6 >= (tip[1] - behind[1]).abs());
     close(&parse("[40 400]").unwrap(), &t[1], "tip");
+}
+
+/// Farthest point of the cubic `start c1 c2 p` (sampled densely) from the
+/// polyline.
+fn deviation(cubic: [[f64; 2]; 4], polyline: &[[f64; 2]]) -> f64 {
+    let [a, b, c, d] = cubic;
+    (0..=4096)
+        .map(|i| {
+            let t = i as f64 / 4096.0;
+            let u = 1.0 - t;
+            let (k0, k1, k2, k3) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+            let q = [
+                k0 * a[0] + k1 * b[0] + k2 * c[0] + k3 * d[0],
+                k0 * a[1] + k1 * b[1] + k2 * c[1] + k3 * d[1],
+            ];
+            polyline
+                .windows(2)
+                .map(|s| geom::point_seg_dist(q, s[0], s[1]))
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn flattening_stays_within_its_tolerance_and_spends_points_on_bends() {
+    // A long sweeping cubic (the old fixed 16 steps strayed 11 px on such
+    // spans) and a short one (16 steps oversampled it) (#187).
+    for (cubic, tolerance) in [
+        (
+            [[0.0, 0.0], [0.0, 9000.0], [400.0, 9000.0], [400.0, 18000.0]],
+            0.25,
+        ),
+        ([[0.0, 0.0], [8.0, 0.0], [16.0, 4.0], [24.0, 12.0]], 0.25),
+        (
+            [[0.0, 0.0], [300.0, -200.0], [-100.0, 500.0], [200.0, 300.0]],
+            0.1,
+        ),
+        // One control point on the chord, the other far off it.
+        ([[0.0, 0.0], [0.0, 0.0], [100.0, 300.0], [200.0, 0.0]], 0.25),
+    ] {
+        let [a, b, c, d] = cubic;
+        let path = parse(&format!(
+            "{{:start [{} {}] :ops [{{:op :cubic :c1 [{} {}] :c2 [{} {}] :p [{} {}]}}]}}",
+            a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]
+        ))
+        .unwrap();
+        let flat = flatten_path(&path, tolerance);
+        assert_eq!((a, d), (flat[0], *flat.last().unwrap()));
+        let off = deviation(cubic, &flat);
+        assert!(off <= tolerance + 1e-9, "{cubic:?}: {off} > {tolerance}");
+    }
+    let short =
+        parse("{:start [0 0] :ops [{:op :cubic :c1 [8 0] :c2 [16 4] :p [24 12]}]}").unwrap();
+    assert!(
+        flatten_path(&short, 0.25).len() < 17,
+        "a short bend needs few points"
+    );
 }

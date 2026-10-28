@@ -214,9 +214,39 @@ pub fn end_tangent(path: &Value) -> [Value; 2] {
     [pt(behind), pt(cur)]
 }
 
-/// Sample the path into a polyline; `step` is the cubic parameter step.
-pub fn flatten_path(path: &Value, step: f64) -> Vec<[f64; 2]> {
-    assert!(step > 0.0, "positive curve step required");
+/// Halvings of one cubic at most: 2^16 pieces, far below any tolerance
+/// a scene uses; it only bounds degenerate (non-finite) input.
+const MAX_DEPTH: u32 = 16;
+
+/// Append the far end of every piece of the cubic `a c1 c2 d` (`a`
+/// excluded), halving it (de Casteljau) until both control points lie
+/// within `tolerance` of the piece's chord. The curve stays inside its
+/// control hull, so no point of it is farther than `tolerance` from the
+/// polyline (Cairo's `_cairo_spline_error_squared` test).
+fn flatten_cubic(
+    [a, c1, c2, d]: [[f64; 2]; 4],
+    tolerance: f64,
+    depth: u32,
+    out: &mut Vec<[f64; 2]>,
+) {
+    let flat = crate::geom::point_seg_dist(c1, a, d) <= tolerance
+        && crate::geom::point_seg_dist(c2, a, d) <= tolerance;
+    if flat || depth >= MAX_DEPTH {
+        out.push(d);
+        return;
+    }
+    let mid = |p: [f64; 2], q: [f64; 2]| [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0];
+    let (ab, bc, cd) = (mid(a, c1), mid(c1, c2), mid(c2, d));
+    let (abc, bcd) = (mid(ab, bc), mid(bc, cd));
+    let m = mid(abc, bcd);
+    flatten_cubic([a, ab, abc, m], tolerance, depth + 1, out);
+    flatten_cubic([m, bcd, cd, d], tolerance, depth + 1, out);
+}
+
+/// Sample the path into a polyline that stays within `tolerance` (world
+/// px) of every cubic; line ops keep their end point (#187).
+pub fn flatten_path(path: &Value, tolerance: f64) -> Vec<[f64; 2]> {
+    assert!(tolerance > 0.0, "positive flattening tolerance required");
     let mut cur = v2(edn::record::get(path, "start").unwrap());
     let mut out = vec![cur];
     if let Value::Vector(ops) = edn::record::get(path, "ops").unwrap() {
@@ -224,17 +254,7 @@ pub fn flatten_path(path: &Value, step: f64) -> Vec<[f64; 2]> {
             let p = v2(op_get(op, "p").unwrap());
             match (op_get(op, "c1"), op_get(op, "c2")) {
                 (Some(c1), Some(c2)) => {
-                    let (c1, c2) = (v2(c1), v2(c2));
-                    let mut t = step;
-                    while t < 1.0000001 {
-                        let u = 1.0 - t;
-                        let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
-                        out.push([
-                            a * cur[0] + b * c1[0] + c * c2[0] + d * p[0],
-                            a * cur[1] + b * c1[1] + c * c2[1] + d * p[1],
-                        ]);
-                        t += step;
-                    }
+                    flatten_cubic([cur, v2(c1), v2(c2), p], tolerance, 0, &mut out)
                 }
                 _ => out.push(p),
             }
