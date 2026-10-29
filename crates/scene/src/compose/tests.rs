@@ -156,3 +156,21 @@ fn dummy_false_lays_out_and_routes_like_an_ordinary_class() {
         assert_eq!(dummy, drawn(&compiled(&format!(":dummy? {v}"))), "{v}");
     }
 }
+
+#[test]
+fn ports_move_with_their_class_when_a_section_is_stacked() {
+    // #189: stacking translated the class rect but left its port pills
+    // behind, so an out-port landed inside the box it hangs below.
+    let s = compile_document(&parse(
+        "{:packages [{:id :p :label \"P\" :classes [{:id :a :name \"A\" :in-deps [{:id :x :name \"X\"}] :out-deps [{:id :y :name \"Y\"}]}]}] :edges []}",
+    ).unwrap());
+    let a = &seq(&s, "classes")[0];
+    let r = Rect::from_value(edn::record::get(a, "rect").unwrap()).unwrap();
+    let port =
+        |k: &str| Rect::from_value(edn::record::get(&seq(a, k)[0], "rect").unwrap()).unwrap();
+    let (in_port, out_port) = (port("in-ports"), port("out-ports"));
+    assert_eq!(r.y - 40.0, in_port.y);
+    assert_eq!(r.bottom() + 40.0, out_port.y);
+    assert_eq!(r.cx(), in_port.cx());
+    assert_eq!(r.cx(), out_port.cx());
+}

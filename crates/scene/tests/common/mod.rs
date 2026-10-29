@@ -22,6 +22,32 @@ pub fn fixture(dir: &str, name: &str) -> PathBuf {
     repo().join("fixtures").join(dir).join(name)
 }
 
+/// Every view of the self-hosted diagram the scene tests sweep: the whole
+/// diagram, then each crate's package (label, compiled scene).
+pub fn self_hosted_views() -> Vec<(&'static str, Value)> {
+    let path = repo().join("examples/uml-viewer.edn");
+    let doc = scene::ir::read_document(&std::fs::read_to_string(path).unwrap()).unwrap();
+    [
+        "",
+        ":companion",
+        ":scene",
+        ":viewer",
+        ":ir",
+        ":edn",
+        ":main",
+    ]
+    .into_iter()
+    .map(|focus| {
+        let path: Vec<Value> = (!focus.is_empty())
+            .then(|| Value::keyword(&focus[1..]))
+            .into_iter()
+            .collect();
+        let scene = scene::document::compile_view(&doc, &[], &path, &Value::Map(vec![]));
+        (focus, scene)
+    })
+    .collect()
+}
+
 pub fn read_edn(path: &Path) -> Value {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
     parse(&text).unwrap()

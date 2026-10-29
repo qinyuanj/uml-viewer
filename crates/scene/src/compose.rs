@@ -166,13 +166,26 @@ fn path(scene_edge: &Value, index: &ClassIndex) -> Option<Value> {
     Some(curve::constrain_ends(&curve::basis_path(ps), a, b))
 }
 
+fn shift_rect(x: &mut Value, dx: f64, dy: f64) {
+    if let Some(r) = get(x, "rect").and_then(Rect::from_value) {
+        put(x, "rect", r.translate(dx, dy).to_value());
+    }
+}
+
 fn translate(scene: &mut Value, dx: f64, dy: f64) {
     for key in ["classes", "packages"] {
         if let Some(Value::Vector(items)) = get(scene, key).cloned() {
             let mut moved = Vec::with_capacity(items.len());
             for mut x in items.into_iter() {
-                if let Some(r) = get(&x, "rect").and_then(Rect::from_value) {
-                    put(&mut x, "rect", r.translate(dx, dy).to_value());
+                shift_rect(&mut x, dx, dy);
+                // Port pills hang off their class and move with it (#189).
+                for k in ["in-ports", "out-ports"] {
+                    if let Some(Value::Vector(mut ports)) = get(&x, k).cloned() {
+                        for p in ports.iter_mut() {
+                            shift_rect(p, dx, dy);
+                        }
+                        put(&mut x, k, Value::Vector(ports));
+                    }
                 }
                 moved.push(x);
             }
