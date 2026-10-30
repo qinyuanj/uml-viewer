@@ -1010,6 +1010,27 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
             color: theme::GOLD.color32(),
         });
     }
+    let rows = hover_rows(state);
+    if let (false, Some((mx, my))) = (rows.is_empty(), state.pointer) {
+        let mut tw = 40.0f64;
+        for row in &rows {
+            tw = tw.max(estimate_w(&row.text, fonts::BODY as f64));
+        }
+        let w = (tw + 16.0).min((16.0f64).max(width - 16.0));
+        let h = 16.0 + rows.len() as f64 * (fonts::BODY as f64 + 2.0);
+        let x = (8.0f64).max(mx.min(width - w - 8.0));
+        let mut y = my + 16.0;
+        if y + h > height {
+            y = (8.0f64).max(my - h - 8.0);
+        }
+        out.push(Command::Popup { x, y, w, h, rows });
+    }
+    out
+}
+
+/// The hover popup rows: an edge's dependencies, or in the overview tiers
+/// the name of the hovered class, whose box is too narrow to show it.
+fn hover_rows(state: &ViewState) -> Vec<PopupRow> {
     let hover_kind = state
         .hover
         .as_ref()
@@ -1020,13 +1041,12 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         })
         .unwrap_or_default();
     let deps = state.hover.as_ref().and_then(|hv| get(hv, "deps"));
-    let rows = if (hover_kind == "edge" || hover_kind == "dep")
+    if (hover_kind == "edge" || hover_kind == "dep")
         && let Some(Value::Vector(deps)) = deps
         && !deps.is_empty()
     {
         dependency_rows(deps)
     } else if hover_kind == "class" && lod::tier(state.zoom) != lod::Tier::Full {
-        // Overview boxes are too narrow for their names: say it on hover.
         let id = state.hover.as_ref().and_then(|hv| get(hv, "id"));
         seq(get(&state.scene, "classes"))
             .iter()
@@ -1046,22 +1066,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
             .unwrap_or_default()
     } else {
         Vec::new()
-    };
-    if let (false, Some((mx, my))) = (rows.is_empty(), state.pointer) {
-        let mut tw = 40.0f64;
-        for row in &rows {
-            tw = tw.max(estimate_w(&row.text, fonts::BODY as f64));
-        }
-        let w = (tw + 16.0).min((16.0f64).max(width - 16.0));
-        let h = 16.0 + rows.len() as f64 * (fonts::BODY as f64 + 2.0);
-        let x = (8.0f64).max(mx.min(width - w - 8.0));
-        let mut y = my + 16.0;
-        if y + h > height {
-            y = (8.0f64).max(my - h - 8.0);
-        }
-        out.push(Command::Popup { x, y, w, h, rows });
     }
-    out
 }
 
 /// `from -> to` rows, violations first.
