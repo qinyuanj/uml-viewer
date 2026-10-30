@@ -41,14 +41,15 @@ pub const SOURCE_NOT_OPENED: &str = "未能打开源码：%s";
 pub const BACK: &str = "< 返回";
 pub const PROPOSAL_BANNER: &str = "提案（未在源码中实例化）";
 pub const PERFORMANCE: &str = "性能：%d FPS · 帧耗时 %.2f ms";
-pub const HELP: &str = "单击类或命名空间查看卡片。
-双击命名空间或类进入下一层。
+pub const HELP: &str = "单击类或命名空间查看摘要。
+双击类打开详情卡片。
+双击命名空间进入下一层。
 Esc（或 ←）返回上一层。
 滚轮平移；Shift+滚轮横向平移。
 Ctrl+滚轮或 Ctrl+/− 以光标为中心缩放。
 空白处左键拖拽平移；Ctrl+0 适配全图。
 R 重新加载；F3 切换性能显示。
-单击上方的源码图或某个提案即可显示。";
+单击上方列表中的图或提案即可切换。";
 /// Element menu labels; the mail operations themselves stay English.
 pub const MENU: [(&str, &str); 4] = [
     ("refresh-crap", "刷新 CRAP"),

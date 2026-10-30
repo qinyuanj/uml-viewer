@@ -69,7 +69,11 @@ fn choosing_switches_the_view_and_names_the_discussion_context() {
 fn explains_the_empty_inspector_until_something_is_selected() {
     let mut state = load(PLAN);
     let text = inspector::empty_explanation(&state).unwrap();
-    assert!(text.contains("单击类或命名空间") && text.contains("双击命名空间或类"));
+    // The help says what a click does: a summary, then a card or a level.
+    assert!(text.contains("单击类或命名空间查看摘要"), "{text}");
+    assert!(text.contains("双击类打开详情卡片") && text.contains("双击命名空间进入下一层"));
+    // The first list entry carries the diagram title, so no fixed name.
+    assert!(!text.contains(viewer::strings::REAL_DIAGRAM), "{text}");
     state.selected = Some(edn::parse("{:kind :class :id :a}").unwrap());
     assert_eq!(inspector::empty_explanation(&state), None);
 }
