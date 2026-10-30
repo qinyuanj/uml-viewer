@@ -17,4 +17,4 @@
   [main]],
  :out "examples/uml-viewer.edn",
  :order [main viewer companion scene ir edn],
- :foreign [std core alloc libc egui eframe image winit log]}
+ :foreign [libc egui eframe image winit log]}

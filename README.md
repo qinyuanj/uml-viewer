@@ -510,7 +510,9 @@ To write a policy for a project:
 2. Set `:hierarchical true` (or omit `:packages` and `:diagrams`).
 3. List top-level **segments** in `:order` — the first dotted part after
    the prefix, in the order you want the boxes. Do not invent names.
-4. List real libraries in `:foreign` if they should appear as ovals.
+4. List real libraries in `:foreign` if they should appear as ovals. Leave
+   out the language's standard library (`std`, `core`, `alloc`, `node`):
+   nearly every module uses it, so it says nothing about the architecture.
 5. Optionally override a require with `:edge-kinds {[:from :to] :association}`
    using the **leaf** ids (`lua_language.source_lua`, not
    `lua_language`).
@@ -550,7 +552,7 @@ Right (the ns tree):
            {:lang :rust :root "crates/viewer/src" :prefix "uml.viewer"}
            {:lang :rust :root "crates/uml-viewer/src" :prefix "uml.main"}]
  :proposals [{:id :p-1791033119418, :name "test", :layers []}]
- :foreign [std core alloc libc egui eframe image winit log]
+ :foreign [libc egui eframe image winit log]
  :order [main viewer companion scene ir edn]
  :levels [[edn] [ir scene companion] [viewer] [main]]}
 ```
@@ -566,7 +568,7 @@ tree's namespace root. `src/model.ts` becomes `bookwriter.model`
  :prefix "bookwriter"
  :sources [{:lang :typescript :root "src"}
            {:lang :rust :root "src-tauri/src" :prefix "bookwriter.rust"}]
- :foreign [at.tauri-apps markdown-it highlight.js node tauri serde std]
+ :foreign [at.tauri-apps markdown-it highlight.js tauri serde]
  :hierarchical true}
 ```
 
