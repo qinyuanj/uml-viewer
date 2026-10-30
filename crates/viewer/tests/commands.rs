@@ -453,7 +453,7 @@ fn selecting_a_visible_folded_class_follows_its_bundled_leaf_dependencies() {
 }
 
 #[test]
-fn chain_gold_stays_three_to_one_above_dimmed_yellow_quality() {
+fn chain_stays_three_to_one_above_dimmed_yellow_quality() {
     let mut s = attention_scene();
     let mut classes = edn::record::seq(s.get(&Value::keyword("classes"))).to_vec();
     classes[3].assoc(
@@ -1210,4 +1210,33 @@ fn a_package_title_as_wide_as_its_slot_draws_at_the_canvas_size() {
         }
     }
     assert_eq!(1, packages);
+}
+
+#[test]
+fn a_focused_view_names_its_scope_once() {
+    let doc = scene::ir::read_document(
+        r#"{:hierarchical true :title "T" :classes [{:id :a.one :name "One"} {:id :a.two :name "Two"}] :edges []}"#,
+    )
+    .unwrap();
+    let state =
+        scene::document::new_state(doc, None, Some(&[Value::keyword("a")]), None, &[], None);
+    let kinds: Vec<&str> = commands::chrome(&state, 800.0, 600.0)
+        .iter()
+        .map(Command::kind)
+        .collect();
+    assert_eq!(kinds, ["back"]);
+}
+
+#[test]
+fn a_foreign_oval_keeps_its_red_frame_without_a_no_data_label() {
+    let s = edn::parse(
+        r#"{:packages [] :classes [{:id :std :shape :oval :rect {:x 0 :y 0 :w 80 :h 40}}] :edges []}"#,
+    )
+    .unwrap();
+    let commands = commands_of(&s);
+    let Command::Class { missing, .. } = class_command(&commands, "std") else {
+        unreachable!()
+    };
+    assert!(missing);
+    assert!(of_kind(&commands, "no-data").is_empty());
 }

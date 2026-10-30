@@ -581,12 +581,15 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
             }
             _ => {}
         };
+        let shape = local_name(get(c, "shape").unwrap_or(&Value::Nil))
+            .unwrap_or_default()
+            .to_owned();
+        // A foreign oval is never measured: its red frame says enough.
+        let no_data_label = unmeasured && shape != "oval";
         let mut class_commands = Vec::new();
         class_commands.push(Command::Class {
             rect: r,
-            shape: local_name(get(c, "shape").unwrap_or(&Value::Nil))
-                .unwrap_or_default()
-                .to_owned(),
+            shape,
             red: band == "red",
             band,
             id: id.clone(),
@@ -753,7 +756,7 @@ pub fn commands(scene: &Value, selected: Option<&Value>, hover: Option<&Value>) 
                 });
             }
         }
-        if unmeasured {
+        if no_data_label {
             class_commands.push(Command::NoData {
                 rect: r,
                 text: strings::NO_DATA.into(),
@@ -785,7 +788,7 @@ enum Attention {
 }
 
 /// Violation semantics win: attention never turns a violating edge white or
-/// gold. Other edges use white for hover and dark gold for the chain, at the
+/// gold. Other edges use white for hover and blue for the chain, at the
 /// same width so color alone distinguishes those states.
 fn edge_style(violating: bool, attention: Attention) -> (Rgb, f32) {
     use theme::widths as W;
@@ -944,7 +947,10 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         .cloned()
         .unwrap_or(Value::Map(vec![]));
     let title = get(&diagram, "title");
-    if flag(&diagram, "proposal") {
+    // A scoped view names its scope on the return line, not twice.
+    let scoped = !state.focus.is_empty() || get(&state.extra, "open-layer").is_some();
+    let banner = flag(&diagram, "proposal");
+    if banner {
         let mut proposal_name: Option<String> = None;
         if let Some(doc) = &state.document {
             for p in &scene::proposals(doc) {
@@ -968,7 +974,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
             y: 8.0,
             color: theme::GOLD.color32(),
         });
-    } else if let Some(Value::String(title)) = title {
+    } else if let Some(Value::String(title)) = title.filter(|_| !scoped) {
         out.push(Command::Title {
             text: title.clone(),
             x: 12.0,
@@ -976,7 +982,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
             color: theme::MUTED.color32(),
         });
     }
-    if !state.focus.is_empty() || get(&state.extra, "open-layer").is_some() {
+    if scoped {
         let parts: Vec<String> = state
             .focus
             .iter()
@@ -999,7 +1005,7 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         out.push(Command::Back {
             text: format!("{} · {scope}", strings::BACK),
             x: 12.0,
-            y: 28.0,
+            y: if banner { 28.0 } else { 8.0 },
             color: theme::GOLD.color32(),
         });
     }

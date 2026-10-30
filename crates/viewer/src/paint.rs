@@ -1059,20 +1059,19 @@ pub fn paint(
                 x,
                 y,
                 color,
-            } => draw_text(
-                ctx,
-                text,
-                painter,
-                screen.min.x + x as f32,
-                screen.min.y + y as f32,
-                &label,
-                18.0,
-                color,
-                false,
-                false,
-                false,
-                None,
-            ),
+            } => {
+                let at = screen.min + egui::vec2(x as f32, y as f32);
+                // A plate keeps the scope legible over the diagram beneath.
+                let size = text.galley(ctx, &label, 18.0, color, false, false).size();
+                painter.rect_filled(
+                    egui::Rect::from_min_size(at, size).expand2(egui::vec2(6.0, 2.0)),
+                    3.0,
+                    theme::CANVAS_BG.color32().gamma_multiply(0.92),
+                );
+                draw_text(
+                    ctx, text, painter, at.x, at.y, &label, 18.0, color, false, false, false, None,
+                )
+            }
             Command::Hint { text: label } => draw_text(
                 ctx,
                 text,
