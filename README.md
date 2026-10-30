@@ -460,10 +460,11 @@ instructions before starting fresh.
   file at the declaration. See [Source extractors](#source-extractors).
 - Methods on the card are `+` public and `-` private. Private functions are not
   drawn on the class box.
-- Abstract classes show a white **α** in the upper-right; interfaces a white
-  **I**. Names of rectangles that are not classes (components/layers,
-  interfaces, enumerations, package banners) are italic. Foreign libraries
-  listed in policy are ovals outside the components.
+- Abstract classes show a white **α** in the upper-left, after the level number
+  when there is one; interfaces a white **I** in the same place. Names of
+  rectangles that are not classes (components/layers, interfaces, enumerations,
+  package banners) are italic. Foreign libraries listed in policy are ovals
+  outside the components.
 - The main window is resizable.
 - Scroll to pan vertically; Shift-scroll (or left/right arrows) for
   horizontal. Pan can follow arrows that bow past the origin.
