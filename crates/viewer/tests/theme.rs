@@ -72,3 +72,21 @@ fn source_window_is_dark_and_readable() {
     assert!(contrast(theme::SOURCE_FILE, theme::SOURCE_BG) >= 4.5);
     assert!(contrast(theme::SOURCE_GUTTER, theme::SOURCE_GUTTER_BG) >= 4.5);
 }
+
+#[test]
+fn the_dependency_chain_hue_stays_clear_of_quality_and_plain_edges() {
+    let distance = |a: Rgb, b: Rgb| {
+        let d = |x: u8, y: u8| (x as f64 - y as f64).powi(2);
+        (d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)).sqrt()
+    };
+    let mut others: Vec<Rgb> = (0..=10).map(|g| theme::stroke(Some(g as f64))).collect();
+    others.extend(["red", "yellow", "green"].map(theme::band_color));
+    others.extend([theme::EDGE, theme::GOLD, theme::WARN, theme::WHITE]);
+    for other in others {
+        assert!(
+            distance(theme::RELATED, other) >= 100.0,
+            "chain {:?} too close to {other:?}",
+            theme::RELATED
+        );
+    }
+}

@@ -89,13 +89,13 @@ pub const BAND_RED: Rgb = Rgb(196, 42, 36);
 pub const BAND_YELLOW: Rgb = Rgb(232, 196, 72);
 pub const BAND_GREEN: Rgb = Rgb(95, 181, 138);
 pub const EDGE: Rgb = Rgb(157, 184, 168);
-pub const EDGE_HOT: Rgb = Rgb(232, 196, 72);
 pub const EDGE_VIOLATING: Rgb = Rgb(196, 42, 36);
 pub const EDGE_VIOLATING_HOT: Rgb = Rgb(255, 64, 48);
 pub const EDGE_WARM: Rgb = Rgb(200, 214, 204);
 pub const EDGE_VIOLATING_WARM: Rgb = Rgb(220, 56, 44);
 pub const INDICATOR: Rgb = Rgb(157, 184, 168);
-pub const RELATED: Rgb = Rgb(176, 145, 42);
+/// The dependency chain: a blue no quality grade or plain edge uses.
+pub const RELATED: Rgb = Rgb(62, 152, 236);
 pub const CHILD_WASH: Rgb = Rgb(232, 196, 72);
 pub const PORT_FILL: Rgb = Rgb(42, 56, 52);
 pub const PORT_FILL_ON: Rgb = Rgb(74, 96, 78);
