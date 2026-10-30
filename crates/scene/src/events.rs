@@ -327,6 +327,9 @@ fn anchor(dims: &Dims, s: &ViewState) -> (f64, f64) {
     (dims.vw() / 2.0, dims.vh() / 2.0)
 }
 
+/// Screen points at the top of the canvas kept for the title or scope line.
+pub const CHROME_INSET: f64 = 36.0;
+
 /// Fit the whole scene into the usable canvas, centred; small diagrams stay
 /// at 100% instead of being magnified.
 pub fn fit(s: &ViewState, dims: &Dims) -> ViewState {
@@ -355,9 +358,11 @@ pub fn fit(s: &ViewState, dims: &Dims) -> ViewState {
         .max(1.0);
     let vw = dims.vw();
     let vh = dims.vh();
-    n.zoom = clamp_zoom((vw / w).min(vh / h).min(1.0));
+    // The scope line owns the top strip: the scene centres below it.
+    let usable = (vh - CHROME_INSET).max(1.0);
+    n.zoom = clamp_zoom((vw / w).min(usable / h).min(1.0));
     n.cam_x = x0 + w / 2.0 - vw / (2.0 * n.zoom);
-    n.cam_y = y0 + h / 2.0 - vh / (2.0 * n.zoom);
+    n.cam_y = y0 + h / 2.0 - usable / (2.0 * n.zoom) - CHROME_INSET / n.zoom;
     n
 }
 

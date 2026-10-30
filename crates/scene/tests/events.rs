@@ -507,7 +507,8 @@ fn fits_the_whole_diagram_left_of_the_sidebar_with_control_zero() {
         &with(|d| d.control = true),
     );
     assert!((f.zoom - 0.5).abs() < 1e-12);
-    let (mx, my) = events::world_xy(&f, 610.0, 450.0);
+    // The centre sits mid-way below the chrome inset: 36 + 864/2.
+    let (mx, my) = events::world_xy(&f, 610.0, 468.0);
     assert!((mx - 1220.0).abs() < 1e-9 && (my - 450.0).abs() < 1e-9);
     s.scene.assoc(
         Value::keyword("size"),
@@ -515,7 +516,7 @@ fn fits_the_whole_diagram_left_of_the_sidebar_with_control_zero() {
     );
     let small = events::fit(&s, &dims());
     assert!((small.zoom - 1.0).abs() < 1e-12);
-    let (sx, sy) = events::world_xy(&small, 610.0, 450.0);
+    let (sx, sy) = events::world_xy(&small, 610.0, 468.0);
     assert!((sx - 100.0).abs() < 1e-9 && (sy - 100.0).abs() < 1e-9);
 }
 
@@ -668,4 +669,19 @@ fn search_results_refresh_on_document_replacement_and_stale_targets_are_rejected
         1,
         scene::search::search(n.document.as_ref().unwrap(), "替代").len()
     );
+}
+
+#[test]
+fn fit_keeps_the_scene_below_the_chrome_line() {
+    let mut s = tree();
+    s.scene.assoc(
+        Value::keyword("size"),
+        parse("{:w 2440 :h 1800 :min-x 0 :min-y 0}").unwrap(),
+    );
+    let f = events::fit(&s, &dims());
+    // The scene top sits at or below the screen inset the scope line uses.
+    let (_, top) = events::world_xy(&f, 0.0, events::CHROME_INSET);
+    assert!(top <= 1e-9, "scene top drawn above the chrome inset: {top}");
+    let (_, bottom) = events::world_xy(&f, 0.0, 900.0);
+    assert!(bottom >= 1800.0 - 1e-9, "scene bottom cut off: {bottom}");
 }
