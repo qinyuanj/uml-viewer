@@ -152,7 +152,7 @@ impl MailBoundary for DisplayBoundary {
             doc,
             mtime.map(Value::String),
             None,
-            None,
+            Some(&crate::session::view_options()),
             &snapshots,
             Some(stamp),
         );

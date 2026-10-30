@@ -3,12 +3,15 @@
 //!
 //! ```text
 //! uml-viewer scene --ir <file.edn> [--focus <edn>]... [--metrics-root <dir>]
-//!                  [--output <file>]
+//!                  [--output <file>] [--wide [--aspect <w/h>]]
 //! ```
 //!
 //! `--focus` may repeat; `[]` (the default) is the root view. `--metrics-root`
 //! loads `<root>/.metrics/crap.edn` and `<root>/.metrics/mutate/*.edn`;
 //! without it the scene has no quality overlay, exactly like the parity specs.
+//! `--wide` compiles the views in the viewer's wide layout (#191), fitting
+//! `--aspect` (default the viewer canvas); without it the views keep the
+//! default top-to-bottom geometry of the goldens.
 
 use crate::curve;
 use crate::document::compile_view;
@@ -21,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: uml-viewer scene --ir <file.edn> [--focus <edn>]... \
-[--metrics-root <dir>] [--output <file>]";
+[--metrics-root <dir>] [--output <file>] [--wide [--aspect <w/h>]]";
 
 const EX_USAGE: u8 = 2;
 const EX_FAILURE: u8 = 1;
@@ -186,6 +189,8 @@ struct Options {
     focuses: Vec<Value>,
     metrics_root: Option<PathBuf>,
     output: Option<PathBuf>,
+    wide: bool,
+    aspect: Option<f64>,
 }
 
 fn parse_args(args: &[OsString]) -> Result<Options, String> {
@@ -216,12 +221,25 @@ fn parse_args(args: &[OsString]) -> Result<Options, String> {
             }
             "--metrics-root" => opts.metrics_root = Some(PathBuf::from(next("--metrics-root")?)),
             "--output" => opts.output = Some(PathBuf::from(next("--output")?)),
+            "--wide" => opts.wide = true,
+            "--aspect" => {
+                let raw = next("--aspect")?;
+                let aspect = raw
+                    .to_str()
+                    .and_then(|t| t.parse::<f64>().ok())
+                    .filter(|a| a.is_finite() && *a > 0.0)
+                    .ok_or_else(|| "--aspect must be a positive number".to_string())?;
+                opts.aspect = Some(aspect);
+            }
             other => return Err(format!("unknown option {other}")),
         }
         i += 1;
     }
     if opts.ir.is_none() {
         return Err("--ir is required".into());
+    }
+    if opts.aspect.is_some() && !opts.wide {
+        return Err("--aspect requires --wide".into());
     }
     if opts.focuses.is_empty() {
         opts.focuses.push(Value::Vector(vec![]));
@@ -300,10 +318,17 @@ fn execute(opts: &Options) -> Result<(), String> {
         Some(root) => load_snapshots(root),
         None => Vec::new(),
     };
+    let mut extra = Value::Map(vec![]);
+    if opts.wide {
+        extra.assoc(Value::keyword("wide"), Value::Bool(true));
+    }
+    if let Some(aspect) = opts.aspect {
+        extra.assoc(Value::keyword("aspect"), Value::Float(aspect));
+    }
     let views: Vec<Value> = opts
         .focuses
         .iter()
-        .map(|focus| project(&doc, Some(&snapshots), focus, &Value::Map(vec![])))
+        .map(|focus| project(&doc, Some(&snapshots), focus, &extra))
         .collect();
     let out = Value::Map(vec![
         (Value::keyword("version"), Value::Integer(1)),

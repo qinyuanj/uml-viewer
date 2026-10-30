@@ -1,7 +1,8 @@
 //! A package frame holds the edges inside it in every view of the
-//! self-hosted diagram: an edge between two of its classes never leaves it,
-//! and an edge to a foreign oval leaves it only through the face that looks
-//! at the oval, never along another side as if it ran outside the package.
+//! self-hosted diagram, default and wide (#191): an edge between two of its
+//! classes never leaves it, and an edge to a foreign oval leaves it only
+//! through the face that looks at the oval, never along another side as if
+//! it ran outside the package.
 
 mod common;
 
@@ -51,7 +52,7 @@ fn beyond_facing_face(frame: Rect, oval: Rect, p: [f64; 2]) -> bool {
 #[test]
 fn every_edge_stays_in_its_package_frame_until_it_heads_for_an_oval() {
     let mut failures = Vec::new();
-    for (focus, scene) in common::self_hosted_views() {
+    for (focus, scene) in common::self_hosted_views_both() {
         let frames: HashMap<String, Rect> = seq(get(&scene, "packages"))
             .iter()
             .filter_map(|p| Some((key(get(p, "id")?), rect(p)?)))

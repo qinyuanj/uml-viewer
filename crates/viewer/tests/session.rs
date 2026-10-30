@@ -147,3 +147,13 @@ fn an_explicit_path_overrides_the_saved_one_which_overrides_the_default() {
     );
     assert_eq!(default.to_path_buf(), session::path(None, None, default));
 }
+
+#[test]
+fn a_restored_session_keeps_the_wide_layout_of_the_loaded_state() {
+    let doc = scene::ir::read_document(DIAGRAM).unwrap();
+    let state = document::new_state(doc, None, None, Some(&session::view_options()), &[], None);
+    let restored = session::restore(&state, &love());
+    assert_eq!(Some(&Value::Bool(true)), get(&restored.extra, "wide"));
+    let direction = get(&restored.scene, "diagram").and_then(|d| get(d, "direction"));
+    assert_eq!(Some(&Value::keyword("lr")), direction);
+}

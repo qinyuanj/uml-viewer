@@ -233,8 +233,9 @@ const SUB_ROWS: usize = 3;
 /// classes below its levels.
 const GRID: usize = 4;
 
-/// Rank gap between two levels; sub-rows of one level keep 140.
+/// Rank gap between two levels; sub-rows of one level keep [`RANK_GAP`].
 const LEVEL_GAP: f64 = 220.0;
+const RANK_GAP: f64 = 140.0;
 
 /// Gap between two neighbouring lanes, and between a lane and a box.
 const LANE_GAP: f64 = 12.0;
@@ -259,12 +260,14 @@ type Sunk = (String, Rect, f64);
 /// passes each rank in a reserved gap instead of across a box. `sinks`
 /// (id, w, h) are foreign ovals of a `:levels` package: they take a rank
 /// below the lowest level, so edges to them pass the ranks between in lanes
-/// too.
+/// too. `wide` (#191) is the target aspect of the wide layout: ranks run
+/// left to right but keep the levels, and a tall rank folds into columns.
 fn place(
     classes: &[Value],
     edges: &[Value],
     direction: &str,
     sinks: &[(String, f64, f64)],
+    wide: Option<f64>,
 ) -> (Vec<Value>, Vec<Lane>, Vec<Sunk>) {
     use std::collections::HashMap;
     let mut cs: Vec<Value> = Vec::with_capacity(classes.len());
@@ -349,7 +352,8 @@ fn place(
             levels = true;
         }
     }
-    let levels = levels && !horizontal;
+    // Only the wide layout keeps levels across (#191); plain `:lr` ranks by depth.
+    let levels = levels && (!horizontal || wide.is_some());
     let level_of = |id: &str| get(&cs[idx[id]], "level").and_then(num).unwrap_or(0.0);
     let sub = if levels {
         let inner: HashMap<String, Vec<String>> = ids
@@ -436,15 +440,81 @@ fn place(
             grid.insert(id.clone(), r);
         }
     }
-    let rank_of = |id: &str| {
-        if sink.contains_key(id) {
-            sink_rank
-        } else if let Some(&r) = grid.get(id) {
-            r
-        } else {
-            class_rank(id)
+    let size = |id: &str| match sink.get(id) {
+        Some(&wh) => wh,
+        None => {
+            let c = &cs[idx[id]];
+            (
+                num(get(c, "w").unwrap()).unwrap(),
+                num(get(c, "h").unwrap()).unwrap(),
+            )
         }
     };
+    let mut rank_at: HashMap<String, f64> = groups
+        .values()
+        .flatten()
+        .map(|id| {
+            let r = if sink.contains_key(id) {
+                sink_rank
+            } else if let Some(&r) = grid.get(id) {
+                r
+            } else {
+                class_rank(id)
+            };
+            (id.clone(), r)
+        })
+        .collect();
+    // A new level starts after a wider gap; its sub-rows keep RANK_GAP.
+    let mut band: HashMap<String, f64> = keys
+        .iter()
+        .map(|&r| {
+            let b = if level_keys.contains(&rank_key(r)) {
+                (r / rows).floor()
+            } else {
+                f64::NEG_INFINITY
+            };
+            (rank_key(r), b)
+        })
+        .collect();
+    if let Some(aspect) = wide {
+        sweep(&keys, &groups, &mut pos, &nbr);
+        let ranks: Vec<Column> = keys
+            .iter()
+            .map(|r| {
+                let ids = ordered(&groups[&rank_key(*r)], &pos, &nbr);
+                let sized = ids
+                    .into_iter()
+                    .map(|id| {
+                        let (w, h) = size(&id);
+                        (id, w, h)
+                    })
+                    .collect();
+                (band[&rank_key(*r)], sized)
+            })
+            .collect();
+        let links: Vec<(String, String)> = edges
+            .iter()
+            .filter_map(|e| {
+                let f = edn::encode(get(e, "from").unwrap()).unwrap();
+                let t = edn::encode(get(e, "to").unwrap()).unwrap();
+                (rank_at.contains_key(&f) && rank_at.contains_key(&t)).then_some((f, t))
+            })
+            .collect();
+        let columns = fold(&ranks, &links, aspect, levels);
+        // Folded columns are ranks of their own, consecutive from the right.
+        let n = columns.len();
+        (keys, groups, band) = (Vec::new(), HashMap::new(), HashMap::new());
+        for (j, (b, ids)) in columns.into_iter().enumerate() {
+            let r = (n - 1 - j) as f64;
+            for id in &ids {
+                rank_at.insert(id.clone(), r);
+            }
+            keys.push(r);
+            groups.insert(rank_key(r), ids);
+            band.insert(rank_key(r), b);
+        }
+    }
+    let rank_of = |id: &str| rank_at[id];
     let order: HashMap<String, usize> = keys
         .iter()
         .enumerate()
@@ -491,60 +561,14 @@ fn place(
         } else if a || b {
             LANE_MARGIN
         } else {
-            40.0
+            BOX_GAP
         }
     };
-    let ordered = |xs: &[String], pos: &HashMap<String, f64>| -> Vec<String> {
-        let score = |id: &str| -> f64 {
-            let mut sum = 0.0;
-            let mut n = 0.0;
-            for t in &nbr[id] {
-                if let Some(p) = pos.get(t) {
-                    sum += p;
-                    n += 1.0;
-                }
-            }
-            if n > 0.0 {
-                sum / n
-            } else {
-                pos.get(id).copied().unwrap_or(0.0)
-            }
-        };
-        let mut list: Vec<(String, usize, f64)> = xs
-            .iter()
-            .enumerate()
-            .map(|(i, id)| (id.clone(), i + 1, score(id)))
-            .collect();
-        list.sort_by(|a, b| {
-            if a.2 == b.2 {
-                a.1.cmp(&b.1)
-            } else {
-                a.2.partial_cmp(&b.2).unwrap()
-            }
-        });
-        list.into_iter().map(|x| x.0).collect()
-    };
-    for _ in 0..5 {
-        for r in &keys {
-            for (i, id) in ordered(&groups[&rank_key(*r)], &pos).iter().enumerate() {
-                pos.insert(id.clone(), (i as f64) * 80.0);
-            }
-        }
-    }
-    let size = |id: &str| match sink.get(id) {
-        Some(&wh) => wh,
-        None => {
-            let c = &cs[idx[id]];
-            (
-                num(get(c, "w").unwrap()).unwrap(),
-                num(get(c, "h").unwrap()).unwrap(),
-            )
-        }
-    };
+    sweep(&keys, &groups, &mut pos, &nbr);
     let mut gs: Vec<(f64, Vec<String>, f64, f64, f64)> = Vec::new();
     let mut total_h: f64 = 0.0;
     for r in &keys {
-        let xs = ordered(&groups[&rank_key(*r)], &pos);
+        let xs = ordered(&groups[&rank_key(*r)], &pos, &nbr);
         let (mut w, mut h, mut colh): (f64, f64, f64) = (0.0, 0.0, 0.0);
         for (i, id) in xs.iter().enumerate() {
             let lane = lane_of.contains_key(id);
@@ -571,7 +595,8 @@ fn place(
                 g.1.iter()
                     .map(|id| {
                         let lane = lane_of.contains_key(id);
-                        let w = if lane { 0.0 } else { size(id).0 };
+                        let (w, h) = if lane { (0.0, 0.0) } else { size(id) };
+                        let w = if horizontal { h } else { w };
                         (id.clone(), w, lane)
                     })
                     .collect()
@@ -609,8 +634,13 @@ fn place(
                 continue;
             }
             if let Some(&(cw, ch)) = sink.get(id) {
-                sunk.push((id.clone(), Rect::new(across, along, cw, ch), *rank));
-                across += cw;
+                let r = if horizontal {
+                    Rect::new(along + (gw - cw) / 2.0, across, cw, ch)
+                } else {
+                    Rect::new(across, along, cw, ch)
+                };
+                sunk.push((id.clone(), r, *rank));
+                across += if horizontal { ch } else { cw };
                 continue;
             }
             let mut c = cs[idx[id]].clone();
@@ -626,11 +656,13 @@ fn place(
             } else {
                 (across, along)
             };
+            // A wide column centres its boxes; plain `:lr` keeps them flush.
+            let slot = if wide.is_some() { *gw } else { cw };
             put(
                 &mut c,
                 "rect",
                 Rect::new(
-                    x + (cw - content_w) / 2.0,
+                    x + (slot - content_w) / 2.0,
                     y + in_space,
                     content_w,
                     content_h,
@@ -641,19 +673,11 @@ fn place(
             result.push(c);
             across += if horizontal { ch } else { cw };
         }
-        // A new level starts after a wider gap; its sub-rows keep 140.
-        let band = |r: f64| {
-            if level_keys.contains(&rank_key(r)) {
-                (r / rows).floor()
-            } else {
-                f64::NEG_INFINITY
-            }
-        };
         let next = gs.get(k + 1).map(|g| g.0);
         along += depth
             + match next {
-                Some(n) if levels && band(n) != band(*rank) => LEVEL_GAP,
-                _ => 140.0,
+                Some(n) if levels && band[&rank_key(n)] != band[&rank_key(*rank)] => LEVEL_GAP,
+                _ => RANK_GAP,
             };
     }
     let mut lanes: Vec<Lane> = through
@@ -665,6 +689,169 @@ fn place(
         .collect();
     lanes.sort_by_key(|l| l.0);
     (result, lanes, sunk)
+}
+
+/// `xs` sorted by the mean position of their neighbours (barycentric sweep);
+/// a node without placed neighbours keeps its own position, ties their order.
+fn ordered(
+    xs: &[String],
+    pos: &std::collections::HashMap<String, f64>,
+    nbr: &std::collections::HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let score = |id: &str| -> f64 {
+        let mut sum = 0.0;
+        let mut n = 0.0;
+        for t in &nbr[id] {
+            if let Some(p) = pos.get(t) {
+                sum += p;
+                n += 1.0;
+            }
+        }
+        if n > 0.0 {
+            sum / n
+        } else {
+            pos.get(id).copied().unwrap_or(0.0)
+        }
+    };
+    let mut list: Vec<(String, usize, f64)> = xs
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.clone(), i + 1, score(id)))
+        .collect();
+    list.sort_by(|a, b| {
+        if a.2 == b.2 {
+            a.1.cmp(&b.1)
+        } else {
+            a.2.partial_cmp(&b.2).unwrap()
+        }
+    });
+    list.into_iter().map(|x| x.0).collect()
+}
+
+/// Five barycentric sweeps over the ranks `keys`: each rank's nodes take
+/// positions 0, 80, … in their neighbours' order.
+fn sweep(
+    keys: &[f64],
+    groups: &std::collections::HashMap<String, Vec<String>>,
+    pos: &mut std::collections::HashMap<String, f64>,
+    nbr: &std::collections::HashMap<String, Vec<String>>,
+) {
+    for _ in 0..5 {
+        for r in keys {
+            for (i, id) in ordered(&groups[&rank_key(*r)], pos, nbr).iter().enumerate() {
+                pos.insert(id.clone(), (i as f64) * 80.0);
+            }
+        }
+    }
+}
+
+/// One node of a wide rank: id, w, h.
+type Sized = (String, f64, f64);
+
+/// One rank of the wide layout before folding: its band (level) and its
+/// ordered nodes.
+type Column = (f64, Vec<Sized>);
+
+/// Gap between two stacked boxes of one column.
+const BOX_GAP: f64 = 40.0;
+
+/// The wide layout's columns (#191): every rank, in order, folds into
+/// columns no taller than one height limit, the limit whose diagram fits a
+/// canvas of `aspect` (width / height) at the largest zoom. Folded columns
+/// keep their rank's band; the first fold of a rank stays leftmost.
+fn fold(
+    ranks: &[Column],
+    links: &[(String, String)],
+    aspect: f64,
+    levels: bool,
+) -> Vec<(f64, Vec<String>)> {
+    // Greedy runs of one rank no taller than `limit`; a tall box runs alone.
+    let split = |nodes: &[Sized], limit: f64| -> Vec<std::ops::Range<usize>> {
+        let mut runs = Vec::new();
+        let (mut start, mut h) = (0, 0.0);
+        for (i, n) in nodes.iter().enumerate() {
+            if i > start && h + BOX_GAP + n.2 > limit {
+                runs.push(start..i);
+                (start, h) = (i, 0.0);
+            }
+            h += if i > start { BOX_GAP } else { 0.0 } + n.2;
+        }
+        if start < nodes.len() {
+            runs.push(start..nodes.len());
+        }
+        runs
+    };
+    let columns = |limit: f64| -> Vec<(f64, &[Sized])> {
+        ranks
+            .iter()
+            .flat_map(|(band, nodes)| {
+                split(nodes, limit)
+                    .into_iter()
+                    .map(move |run| (*band, &nodes[run]))
+            })
+            .collect()
+    };
+    // The larger of width over aspect and height: the zoom a fit divides by.
+    let extent = |limit: f64| -> f64 {
+        let cols = columns(limit);
+        // Lanes each column holds: one per link passing it.
+        let at: std::collections::HashMap<&str, usize> = cols
+            .iter()
+            .enumerate()
+            .flat_map(|(k, (_, nodes))| nodes.iter().map(move |n| (n.0.as_str(), k)))
+            .collect();
+        let mut lanes = vec![0usize; cols.len()];
+        for (f, t) in links {
+            let (a, b) = (at[f.as_str()], at[t.as_str()]);
+            for l in lanes.iter_mut().take(a.max(b)).skip(a.min(b) + 1) {
+                *l += 1;
+            }
+        }
+        let mut w = 0.0;
+        let mut h: f64 = 0.0;
+        for (k, (band, nodes)) in cols.iter().enumerate() {
+            w += nodes.iter().map(|n| n.1).fold(0.0, f64::max);
+            if let Some((next, _)) = cols.get(k + 1) {
+                w += if levels && next != band {
+                    LEVEL_GAP
+                } else {
+                    RANK_GAP
+                };
+            }
+            let tall: f64 = nodes.iter().map(|n| n.2).sum();
+            let lane = match lanes[k] {
+                0 => 0.0,
+                m => 2.0 * LANE_MARGIN + LANE_GAP * (m - 1) as f64,
+            };
+            h = h.max(tall + BOX_GAP * nodes.len().saturating_sub(1) as f64 + lane);
+        }
+        (w / aspect).max(h)
+    };
+    // Every height a column can reach; the tallest is no fold at all.
+    let mut limits: Vec<f64> = ranks
+        .iter()
+        .flat_map(|(_, nodes)| {
+            let mut h = 0.0;
+            nodes.iter().enumerate().map(move |(i, n)| {
+                h += if i > 0 { BOX_GAP } else { 0.0 } + n.2;
+                h
+            })
+        })
+        .collect();
+    limits.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    limits.dedup();
+    let mut best = limits.first().copied().unwrap_or(0.0);
+    let mut least = extent(best);
+    for &limit in &limits[1.min(limits.len())..] {
+        let e = extent(limit);
+        if e < least {
+            (best, least) = (limit, e);
+        }
+    }
+    columns(best)
+        .into_iter()
+        .map(|(band, nodes)| (band, nodes.iter().map(|n| n.0.clone()).collect()))
+        .collect()
 }
 
 /// One node of a row: id, width across the row, lane?
@@ -928,12 +1115,14 @@ pub fn layout(diagram: &Value) -> Value {
         stride = stride.max(1.0 + seq(get(p, "classes")).len() as f64);
     }
     let mut ovals: Vec<(Value, f64, f64)> = seq(get(diagram, "foreign")).iter().map(oval).collect();
-    // Only a single package ranked by `:levels` (top to bottom) sinks them.
+    // Only a single package ranked by `:levels` (top to bottom, or wide)
+    // sinks them.
     let direction = get(diagram, "direction").map(geom::name);
     let horizontal = matches!(direction.as_deref(), Some("lr" | "rl"));
+    let wide = get(diagram, "wide").and_then(num);
     let sunk = match seq(get(diagram, "packages")) {
         [p] => {
-            !horizontal
+            (!horizontal || wide.is_some())
                 && seq(get(p, "classes"))
                     .iter()
                     .any(|c| get(c, "level").is_some())
@@ -958,6 +1147,7 @@ pub fn layout(diagram: &Value) -> Value {
                     .map(geom::name)
                     .unwrap_or_else(|| "tb".into()),
                 &sinks,
+                wide,
             )
         })
         .collect();

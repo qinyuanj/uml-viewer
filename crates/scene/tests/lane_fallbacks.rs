@@ -1,11 +1,12 @@
-//! Every long edge of the self-hosted diagram keeps its reserved lanes:
-//! no view routes one through a fallback candidate (#185).
+//! Every long edge of the self-hosted diagram keeps its reserved lanes: no
+//! view routes one through a fallback candidate (#185), in the default or
+//! the wide layout (#191).
 
 mod common;
 
 #[test]
 fn no_view_of_the_self_hosted_diagram_drops_a_lane() {
-    for (focus, scene) in common::self_hosted_views() {
+    for (focus, scene) in common::self_hosted_views_both() {
         let edges = edn::record::seq(edn::record::get(&scene, "edges"));
         let dropped: Vec<_> = edges
             .iter()

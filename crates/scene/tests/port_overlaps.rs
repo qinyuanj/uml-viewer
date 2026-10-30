@@ -1,6 +1,6 @@
 //! Port pills and foreign ovals stay off the class boxes in every view of
-//! the self-hosted diagram, and each pill hangs on its own side of its box
-//! so the link's head shows (#189).
+//! the self-hosted diagram, default and wide (#191), and each pill hangs on
+//! its own side of its box so the link's head shows (#189).
 
 mod common;
 
@@ -18,7 +18,7 @@ fn id_rect(v: &Value) -> Option<(&Value, Rect)> {
 
 #[test]
 fn no_view_of_the_self_hosted_diagram_draws_a_port_or_oval_on_a_box() {
-    for (focus, scene) in common::self_hosted_views() {
+    for (focus, scene) in common::self_hosted_views_both() {
         let classes = seq(get(&scene, "classes"));
         let boxes: Vec<(&Value, Rect)> = classes
             .iter()

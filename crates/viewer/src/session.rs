@@ -113,6 +113,13 @@ pub fn snapshot(state: &ViewState, chrome: &Chrome) -> Value {
     m
 }
 
+/// View options of every view this viewer compiles: source-tree views take
+/// the wide layout (#191). A snapshot does not carry them; [`restore`] keeps
+/// the loaded state's.
+pub fn view_options() -> Value {
+    Value::Map(vec![(Value::keyword("wide"), Value::Bool(true))])
+}
+
 /// `Session.path`: explicit path wins, then the saved one, then the default.
 pub fn path(explicit: Option<&Path>, snapshot: Option<&Value>, default: &Path) -> PathBuf {
     if let Some(explicit) = explicit {
@@ -130,6 +137,11 @@ pub fn path(explicit: Option<&Path>, snapshot: Option<&Value>, default: &Path) -
 /// keeps the current one, and its mail cursor stamps `mail_seen` last.
 pub fn restore(state: &ViewState, snapshot: &Value) -> ViewState {
     let mut extra = Value::Map(vec![]);
+    for key in ["wide", "aspect"] {
+        if let Some(value) = get(&state.extra, key) {
+            extra.assoc(Value::keyword(key), value.clone());
+        }
+    }
     for key in ["proposal-id", "proposal", "open-layer", "declutter"] {
         if let Some(value) = get(snapshot, key) {
             extra.assoc(Value::keyword(key), value.clone());

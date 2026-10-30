@@ -25,6 +25,28 @@ pub fn fixture(dir: &str, name: &str) -> PathBuf {
 /// Every view of the self-hosted diagram the scene tests sweep: the whole
 /// diagram, then each crate's package (label, compiled scene).
 pub fn self_hosted_views() -> Vec<(&'static str, Value)> {
+    self_hosted_views_with(&Value::Map(vec![]))
+}
+
+/// The view options of the viewer's wide layout (#191).
+pub fn wide() -> Value {
+    Value::Map(vec![(Value::keyword("wide"), Value::Bool(true))])
+}
+
+/// Every view of [`self_hosted_views`], then each again in the wide layout
+/// (its label prefixed `wide `).
+pub fn self_hosted_views_both() -> Vec<(String, Value)> {
+    let default = self_hosted_views()
+        .into_iter()
+        .map(|(focus, scene)| (focus.to_owned(), scene));
+    let wide = self_hosted_views_with(&wide())
+        .into_iter()
+        .map(|(focus, scene)| (format!("wide {focus}"), scene));
+    default.chain(wide).collect()
+}
+
+/// [`self_hosted_views`] compiled with the view options `extra`.
+pub fn self_hosted_views_with(extra: &Value) -> Vec<(&'static str, Value)> {
     let path = repo().join("examples/uml-viewer.edn");
     let doc = scene::ir::read_document(&std::fs::read_to_string(path).unwrap()).unwrap();
     [
@@ -42,7 +64,7 @@ pub fn self_hosted_views() -> Vec<(&'static str, Value)> {
             .then(|| Value::keyword(&focus[1..]))
             .into_iter()
             .collect();
-        let scene = scene::document::compile_view(&doc, &[], &path, &Value::Map(vec![]));
+        let scene = scene::document::compile_view(&doc, &[], &path, extra);
         (focus, scene)
     })
     .collect()

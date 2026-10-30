@@ -821,7 +821,7 @@ impl ViewerSession {
             doc,
             mtime.map(Value::String),
             None,
-            None,
+            Some(&session::view_options()),
             &snapshots,
             Some(stamp),
         );
@@ -1035,6 +1035,33 @@ mod tests {
             .as_ref()
             .and_then(|c| get(c, "context"))
             .cloned()
+    }
+
+    const NESTED: &str = "{:title \"Nested\" :hierarchical true :prefix \"app\" :classes [{:id :a :name \"A\" :ns \"app.a\"} {:id :b :name \"B\" :ns \"app.b\"}] :edges [{:from :a :to :b :kind :dependency}]}";
+
+    /// The compiled diagram of a state lays its source view out wide (#191).
+    fn wide(state: &ViewState) -> bool {
+        let diagram = get(&state.scene, "diagram");
+        edn::record::flag(&state.extra, "wide")
+            && diagram.and_then(|d| get(d, "direction")) == Some(&Value::keyword("lr"))
+            && diagram.and_then(|d| get(d, "wide")).is_some()
+    }
+
+    #[test]
+    fn launched_and_displayed_source_views_take_the_wide_layout() {
+        let dir = project("wide");
+        std::fs::write(dir.join("diagram.edn"), NESTED).unwrap();
+        std::fs::write(dir.join("second.edn"), NESTED).unwrap();
+        let (session, _) = open(&dir, false);
+        assert!(wide(session.state()), "launch");
+        let (mut session, _) = open(&dir, true);
+        write_inbox(
+            &dir,
+            "{:next-id 2 :queue [{:id 1 :op :display :path \"second.edn\"}]}",
+        );
+        session.process(Event::MailDue, at(Instant::now(), 0));
+        assert!(wide(session.state()), ":display");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

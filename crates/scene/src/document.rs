@@ -50,7 +50,9 @@ pub(crate) fn active_proposal_id(proposals: &[Value], extra: &Value) -> Option<V
 ///
 /// * `snapshots` — quality records; `None`/empty leaves the document alone.
 /// * `focus` — namespace path keywords (`[]` is the root).
-/// * `extra` — `:proposal-id`, `:proposal`, `:open-layer`, `:declutter`.
+/// * `extra` — `:proposal-id`, `:proposal`, `:open-layer`, `:declutter`,
+///   and `:wide` (with an optional `:aspect`, default [`WIDE_ASPECT`]) for
+///   the wide layout of a source-tree view (#191).
 pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra: &Value) -> Value {
     let doc = if snapshots.is_empty() {
         doc.clone()
@@ -74,7 +76,7 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
         {
             H::proposal_view(&doc, Some(pid))
         } else {
-            H::view_at(&doc, focus)
+            with_wide_layout(H::view_at(&doc, focus), extra)
         };
         let mut mode = mode.cloned();
         if layer.is_some() && mode.as_ref().and_then(local_name) == Some("classes") {
@@ -84,6 +86,24 @@ pub fn compile_view(doc: &Value, snapshots: &[Snapshot], focus: &[Value], extra:
         return compose::compile_diagram(&H::apply_declutter(&view, mode.as_ref()));
     }
     compose::compile_document(&doc)
+}
+
+/// Width over height of the canvas the wide layout fits by default: the
+/// viewer's 1500×920 window less its inspector and chrome (1220×884).
+pub const WIDE_ASPECT: f64 = 1220.0 / 884.0;
+
+/// A source-tree view laid out wide (#191) when `extra` asks for it: ranks
+/// run left to right and fold toward the target aspect; the levels, ports
+/// and indicators stay as they are top to bottom.
+fn with_wide_layout(mut view: Value, extra: &Value) -> Value {
+    if edn::record::flag(extra, "wide") {
+        let aspect = get(extra, "aspect")
+            .and_then(edn::record::num)
+            .unwrap_or(WIDE_ASPECT);
+        edn::record::put(&mut view, "direction", Value::keyword("lr"));
+        edn::record::put(&mut view, "wide", geom::numval(aspect));
+    }
+    view
 }
 
 /// A fresh companion launch shows a blank canvas until the agent sends

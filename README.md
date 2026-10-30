@@ -670,9 +670,14 @@ When a proposal is shown, rank follows **that** proposal's component order
 and violating arrows are re-evaluated. The real diagram uses `:levels`.
 A component inherits the **max** level of its elements.
 Class boxes show the current view's rank (innermost **0**)
-at the upper left; the class card repeats **Level n**. Level 0 is drawn at
-the **bottom**. Good arrows (outer → inner) point down; violating arrows
-(inner → outer) point up and stay red. When arrows are collapsed,
+at the upper left; the class card repeats **Level n**. The viewer lays the
+source-tree views out **wide**: level 0 is drawn on the **right**, good
+arrows (outer → inner) point right and violating arrows (inner → outer)
+point left and stay red. Proposal views and the default layout (the
+headless `uml-viewer scene` export without `--wide`) still run top to
+bottom: level 0 at the **bottom**, good arrows down, violating arrows up.
+Either way dependency ports and collapsed-arrow triangles stay above
+(incoming) and below (outgoing) their box. When arrows are collapsed,
 selecting a class highlights the component arrows it belongs to.
 Collapsed components keep their color
 and C/M dots; double-click still opens a component.
@@ -982,6 +987,11 @@ Layout follows Mermaid's three stages:
    lowest level, so arrows to them pass the ranks between in lanes too.
    Classes without any arrow leave their level for a grid of four per row
    at the bottom, and levels sit 220px apart (sub-rows of one level 140px).
+   The wide layout (the viewer's source-tree views, `scene --wide`) turns
+   the ranks into columns from left to right, keeps the levels, the sink and
+   the grid, and folds a rank too tall for the canvas into more columns: of
+   all column heights it picks the one whose diagram fits a target aspect
+   (default 1220:884, the viewer canvas; `--aspect`) at the largest zoom.
 3. **Route** like Mermaid/ELK: ports on facing sides, orthogonal tracks in
    the rank gap, short same-rank connections through the stack gap (local U
    only when a sibling sits in the way), then stroke with D3 `curveBasis`

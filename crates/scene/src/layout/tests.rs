@@ -287,3 +287,124 @@ fn nearby_keeps_lanes_in_order_between_their_boxes() {
     assert_eq!(132.0, x["l2"]);
     assert!(x["l2"] + 20.0 <= x["c"], "lanes stay left of c");
 }
+
+/// Level-2 classes of [`wide_diagram`]: one rank far taller than wide.
+const LEAVES: usize = 30;
+
+/// A `:levels` package in the wide layout (#191): [`LEAVES`] level-2
+/// classes on one hub, a level-0 base, an edgeless class, a foreign oval, and a long
+/// edge from the first leaf to the base.
+fn wide_diagram(aspect: f64) -> edn::Value {
+    let leaves: String = (1..=LEAVES)
+        .map(|i| format!("{{:id :a{i} :name \"leaf{i}\" :level 2}}"))
+        .collect();
+    let edges: String = (1..=LEAVES)
+        .map(|i| format!("{{:from :a{i} :to :hub}}"))
+        .collect();
+    parse(&format!(
+        "{{:direction :lr :wide {aspect} :packages [{{:id :p :classes [{leaves} {{:id :hub :name \"hub\" :level 1 :in-deps [{{:id :x.y :name \"y\"}}] :out-deps [{{:id :x.z :name \"z\"}}]}} {{:id :base :name \"base\" :level 0}} {{:id :lone :name \"lone\" :level 1}}]}}] :foreign [{{:id :std :name \"std\" :foreign true}}] :edges [{edges} {{:from :hub :to :base}} {{:from :a1 :to :base}} {{:from :base :to :std}}]}}"
+    ))
+    .unwrap()
+}
+
+fn class_of<'a>(scene: &'a edn::Value, id: &str) -> &'a edn::Value {
+    edn::record::seq(get(scene, "classes"))
+        .iter()
+        .find(|c| get(c, "id") == Some(&edn::Value::keyword(id)))
+        .unwrap()
+}
+
+/// Distinct left edges of the leaves: one per column they fill.
+fn leaf_columns(scene: &edn::Value) -> Vec<f64> {
+    let mut xs: Vec<f64> = (1..=LEAVES)
+        .map(|i| rect_of(scene, &format!("a{i}")).x)
+        .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs.dedup();
+    xs
+}
+
+#[test]
+fn a_wide_layout_folds_a_tall_rank_into_consecutive_columns() {
+    let s = crate::compose::compile_diagram(&wide_diagram(crate::document::WIDE_ASPECT));
+    assert!(leaf_columns(&s).len() >= 2, "{:?}", leaf_columns(&s));
+    let mut ranks: Vec<i64> = edn::record::seq(get(&s, "classes"))
+        .iter()
+        .map(|c| edn::record::num(get(c, "rank").unwrap()).unwrap() as i64)
+        .collect();
+    ranks.sort();
+    ranks.dedup();
+    assert_eq!((0..ranks.len() as i64).collect::<Vec<_>>(), ranks);
+    let edges = edn::record::seq(get(&s, "edges"));
+    assert_eq!(LEAVES + 3, edges.len());
+    for e in edges {
+        assert!(!edn::record::flag(e, "lane-fallback"), "{e:?}");
+        let ps: Vec<[f64; 2]> = edn::record::seq(get(e, "points"))
+            .iter()
+            .filter_map(crate::geom::vec2)
+            .collect();
+        for c in edn::record::seq(get(&s, "classes")) {
+            let id = get(c, "id");
+            if id == get(e, "from") || id == get(e, "to") {
+                continue;
+            }
+            let r = crate::geom::Rect::from_value(get(c, "rect").unwrap()).unwrap();
+            let crossed = ps.windows(2).any(|w| {
+                w[0][0].min(w[1][0]) < r.right()
+                    && w[0][0].max(w[1][0]) > r.x
+                    && w[0][1].min(w[1][1]) < r.bottom()
+                    && w[0][1].max(w[1][1]) > r.y
+            });
+            assert!(
+                !crossed,
+                "{:?} -> {:?} across {id:?}",
+                get(e, "from"),
+                get(e, "to")
+            );
+        }
+    }
+    assert_eq!(
+        s,
+        crate::compose::compile_diagram(&wide_diagram(crate::document::WIDE_ASPECT))
+    );
+}
+
+#[test]
+fn the_target_aspect_decides_the_fold() {
+    let wide = crate::compose::compile_diagram(&wide_diagram(crate::document::WIDE_ASPECT));
+    let tall = crate::compose::compile_diagram(&wide_diagram(0.3));
+    assert_eq!(
+        1,
+        leaf_columns(&tall).len(),
+        "a tall canvas keeps one column"
+    );
+    assert!(leaf_columns(&wide).len() > 1);
+}
+
+#[test]
+fn a_wide_layout_runs_its_levels_left_to_right_then_the_oval_and_the_grid() {
+    let s = crate::compose::compile_diagram(&wide_diagram(crate::document::WIDE_ASPECT));
+    let leaves = (1..=LEAVES).map(|i| rect_of(&s, &format!("a{i}")).right());
+    let (hub, base, std, lone) = (
+        rect_of(&s, "hub"),
+        rect_of(&s, "base"),
+        rect_of(&s, "std"),
+        rect_of(&s, "lone"),
+    );
+    assert!(
+        leaves.fold(0.0, f64::max) < hub.x,
+        "level 2 left of level 1"
+    );
+    assert!(hub.right() < base.x, "level 1 left of level 0");
+    assert!(base.right() < std.x, "the oval right of level 0");
+    assert!(std.right() < lone.x, "the edgeless grid last");
+    let hub = class_of(&s, "hub");
+    let r = crate::geom::Rect::from_value(get(hub, "rect").unwrap()).unwrap();
+    for (k, above) in [("in-ports", true), ("out-ports", false)] {
+        let ports = edn::record::seq(get(hub, k));
+        assert_eq!(1, ports.len());
+        let p = crate::geom::Rect::from_value(get(&ports[0], "rect").unwrap()).unwrap();
+        assert_eq!(above, p.bottom() < r.y, "{k} above the box");
+        assert_eq!(!above, p.y > r.bottom(), "{k} below the box");
+    }
+}
