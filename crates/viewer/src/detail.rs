@@ -5,7 +5,7 @@
 //! the egui window only paints [`Item`]s and reports pointer rows.
 
 use edn::Value;
-use edn::record::{get, local_name, num, seq};
+use edn::record::{flag, get, local_name, num, seq};
 use scene::document::ViewState;
 
 use crate::source::Ident;
@@ -111,7 +111,13 @@ pub fn model(scene: &Value, id: &Value) -> Option<Model> {
 /// The card of class `id` in the current view; the scene core keeps its
 /// leaf identities and relationships across namespaces.
 pub fn for_state(state: &ViewState, id: &Value) -> Option<Model> {
-    scene::class_card(state, id).map(assemble)
+    let mut n = scene::class_card(state, id)?;
+    // A crate root module shares its namespace's id; a namespace box on
+    // screen reads as the namespace, with its totals.
+    if let Some(shown) = scene::hit::class_by_id(&state.scene, id).filter(|c| flag(c, "drill?")) {
+        n.class = shown.clone();
+    }
+    Some(assemble(n))
 }
 
 /// What a source jump from this card opens: the module, or one member.

@@ -5,6 +5,7 @@ mod common;
 
 use common::{composite, contrast};
 use edn::Value;
+use edn::record::{get, num};
 use viewer::detail::{self, Hover, Model, Row};
 use viewer::theme;
 
@@ -371,4 +372,24 @@ fn heads_the_card_with_one_meta_line() {
     m.package = Some(edn::parse(r#"{:id :viewer :label "viewer"}"#).unwrap());
     let rows = detail::rows(&m);
     assert_eq!(texts(&rows), ["app.rs", "层级 2 · 包 viewer"]);
+}
+
+#[test]
+fn a_namespace_box_reads_as_the_namespace_not_its_root_module() {
+    // A crate root module shares its namespace's id. The root view draws
+    // the namespace box, so the inspector names that box and its totals.
+    let doc = scene::ir::read_document(
+        "{:hierarchical true :classes [{:id :alpha :name \"lib.rs\" :ns \"alpha\"} {:id :alpha.deep :name \"deep.rs\" :ns \"alpha.deep\"}] :edges []}",
+    )
+    .unwrap();
+    let state = scene::document::new_state(doc, None, None, None, &[], None);
+    let model = detail::for_state(&state, &kw("alpha")).unwrap();
+    assert_eq!(
+        get(&model.class, "name"),
+        Some(&Value::String("Alpha".into()))
+    );
+    let n = get(&model.class, "crap")
+        .and_then(|c| get(c, "n"))
+        .and_then(num);
+    assert_eq!(n, Some(2.0), "totals over both modules");
 }
