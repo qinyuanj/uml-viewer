@@ -937,7 +937,7 @@ fn indicator_hover_offers_the_from_to_dependency_rows() {
     let popup = chrome
         .iter()
         .find_map(|c| match c {
-            Command::DependencyPopup { rows, .. } => Some(rows),
+            Command::Popup { rows, .. } => Some(rows),
             _ => None,
         })
         .expect("a dep hover with deps shows the popup");
@@ -963,11 +963,7 @@ fn waiting_state_chrome_shows_only_the_status_line() {
     state.hover = Some(edn::parse("{:kind :dep :deps [{:from :a :to :b}]}").unwrap());
     state.pointer = Some((1.0, 1.0));
     let chrome = commands::chrome(&state, 800.0, 600.0);
-    assert!(
-        !chrome
-            .iter()
-            .any(|c| matches!(c, Command::DependencyPopup { .. }))
-    );
+    assert!(!chrome.iter().any(|c| matches!(c, Command::Popup { .. })));
 }
 
 #[test]
@@ -1095,9 +1091,7 @@ fn dependency_popup_rows_read_violating_as_a_lua_truthy_flag() {
         let rows: Vec<bool> = commands::chrome(&state, 800.0, 600.0)
             .iter()
             .find_map(|c| match c {
-                Command::DependencyPopup { rows, .. } => {
-                    Some(rows.iter().map(|r| r.violating).collect())
-                }
+                Command::Popup { rows, .. } => Some(rows.iter().map(|r| r.violating).collect()),
                 _ => None,
             })
             .expect("popup");
@@ -1239,4 +1233,38 @@ fn a_foreign_oval_keeps_its_red_frame_without_a_no_data_label() {
     };
     assert!(missing);
     assert!(of_kind(&commands, "no-data").is_empty());
+}
+
+fn hover_class_at(zoom: f64) -> Vec<Command> {
+    let s = edn::parse(
+        r#"{:packages [] :edges [] :classes [{:id :vs :name "viewer_session.rs" :rect {:x 0 :y 0 :w 40 :h 40}}]}"#,
+    )
+    .unwrap();
+    let state = scene::document::ViewState {
+        scene: s,
+        zoom,
+        hover: Some(edn::parse("{:kind :class :id :vs}").unwrap()),
+        pointer: Some((100.0, 100.0)),
+        ..Default::default()
+    };
+    commands::chrome(&state, 800.0, 600.0)
+}
+
+#[test]
+fn an_overview_hover_names_the_class_its_box_is_too_small_to_show() {
+    let popup = hover_class_at(0.3)
+        .into_iter()
+        .find_map(|c| match c {
+            Command::Popup { rows, .. } => Some(rows),
+            _ => None,
+        })
+        .expect("overview hover shows the class name");
+    let texts: Vec<&str> = popup.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(texts, ["viewer_session.rs"]);
+    assert!(
+        !hover_class_at(1.0)
+            .iter()
+            .any(|c| matches!(c, Command::Popup { .. })),
+        "full detail draws the name in the box"
+    );
 }

@@ -11,6 +11,7 @@ use scene::document::ViewState;
 use scene::highlight::Highlight;
 use scene::{Rect, vec2};
 
+use crate::lod;
 use crate::strings;
 use crate::theme::{self, Rgb, RowMarker, fonts};
 
@@ -196,7 +197,7 @@ pub enum Command {
     },
     /// Empty-canvas / missing-file hint, centered on the canvas.
     Hint { text: String },
-    DependencyPopup {
+    Popup {
         x: f64,
         y: f64,
         w: f64,
@@ -225,7 +226,7 @@ impl Command {
             Command::Back { .. } => "back",
             Command::Status { .. } => "status",
             Command::Hint { .. } => "hint",
-            Command::DependencyPopup { .. } => "dependency-popup",
+            Command::Popup { .. } => "popup",
         }
     }
 
@@ -1019,33 +1020,34 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         })
         .unwrap_or_default();
     let deps = state.hover.as_ref().and_then(|hv| get(hv, "deps"));
-    if (hover_kind == "edge" || hover_kind == "dep")
+    let rows = if (hover_kind == "edge" || hover_kind == "dep")
         && let Some(Value::Vector(deps)) = deps
         && !deps.is_empty()
-        && let Some((mx, my)) = state.pointer
     {
-        let mut rows: Vec<PopupRow> = deps
+        dependency_rows(deps)
+    } else if hover_kind == "class" && lod::tier(state.zoom) != lod::Tier::Full {
+        // Overview boxes are too narrow for their names: say it on hover.
+        let id = state.hover.as_ref().and_then(|hv| get(hv, "id"));
+        seq(get(&state.scene, "classes"))
             .iter()
-            .map(|d| {
-                let from = local_name(get(d, "from").unwrap_or(&Value::Nil))
-                    .unwrap_or_default()
-                    .to_owned();
-                let to = local_name(get(d, "to").unwrap_or(&Value::Nil))
-                    .unwrap_or_default()
-                    .to_owned();
-                let violating = flag(d, "violating");
-                PopupRow {
-                    text: format!("{from} -> {to}"),
-                    violating,
-                    color: if violating {
-                        theme::VIOLATION.color32()
-                    } else {
-                        theme::INK.color32()
-                    },
-                }
+            .find(|c| get(c, "id") == id)
+            .and_then(|c| get(c, "name"))
+            .and_then(|n| match n {
+                Value::String(s) => Some(s.clone()),
+                _ => None,
             })
-            .collect();
-        rows.sort_by(|a, b| b.violating.cmp(&a.violating).then(a.text.cmp(&b.text)));
+            .map(|text| {
+                vec![PopupRow {
+                    text,
+                    violating: false,
+                    color: theme::INK.color32(),
+                }]
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if let (false, Some((mx, my))) = (rows.is_empty(), state.pointer) {
         let mut tw = 40.0f64;
         for row in &rows {
             tw = tw.max(estimate_w(&row.text, fonts::BODY as f64));
@@ -1057,7 +1059,34 @@ pub fn chrome(state: &ViewState, width: f64, height: f64) -> Vec<Command> {
         if y + h > height {
             y = (8.0f64).max(my - h - 8.0);
         }
-        out.push(Command::DependencyPopup { x, y, w, h, rows });
+        out.push(Command::Popup { x, y, w, h, rows });
     }
     out
+}
+
+/// `from -> to` rows, violations first.
+fn dependency_rows(deps: &[Value]) -> Vec<PopupRow> {
+    let mut rows: Vec<PopupRow> = deps
+        .iter()
+        .map(|d| {
+            let from = local_name(get(d, "from").unwrap_or(&Value::Nil))
+                .unwrap_or_default()
+                .to_owned();
+            let to = local_name(get(d, "to").unwrap_or(&Value::Nil))
+                .unwrap_or_default()
+                .to_owned();
+            let violating = flag(d, "violating");
+            PopupRow {
+                text: format!("{from} -> {to}"),
+                violating,
+                color: if violating {
+                    theme::VIOLATION.color32()
+                } else {
+                    theme::INK.color32()
+                },
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| b.violating.cmp(&a.violating).then(a.text.cmp(&b.text)));
+    rows
 }

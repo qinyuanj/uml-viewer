@@ -1086,7 +1086,7 @@ pub fn paint(
                 true,
                 None,
             ),
-            Command::DependencyPopup { x, y, w, h, rows } => {
+            Command::Popup { x, y, w, h, rows } => {
                 let box_rect = ERect::from_min_size(
                     Pos2::new(screen.min.x + x as f32, screen.min.y + y as f32),
                     egui::vec2(w as f32, h as f32),
