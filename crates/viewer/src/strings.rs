@@ -37,7 +37,6 @@ pub const PACKAGE_UNCOVERED: &str = "   %d uncovered";
 pub const NO_DATA: &str = "无数据";
 pub const SELECT_CLASS: &str = "单击类或命名空间查看摘要；双击打开详情卡片。";
 pub const REGEN: &str = "重新生成 IR";
-pub const CLOSE_SOURCE: &str = "关闭源码";
 pub const SOURCE_NOT_OPENED: &str = "未能打开源码：%s";
 pub const BACK: &str = "< 返回";
 pub const PROPOSAL_BANNER: &str = "提案（未在源码中实例化）";
@@ -145,7 +144,6 @@ pub fn glyph_text() -> String {
         NO_DATA,
         SELECT_CLASS,
         REGEN,
-        CLOSE_SOURCE,
         SOURCE_NOT_OPENED,
         BACK,
         PROPOSAL_BANNER,

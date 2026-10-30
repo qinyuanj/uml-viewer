@@ -350,7 +350,7 @@ impl Gui {
                 Vec2::new(self.canvas_width(self.window_w) as f32, screen.height()),
             );
             self.card_window(ctx, state, canvas, &mut actions);
-            self.source_windows(ctx, origin);
+            self.source_windows(ctx, canvas);
         } else {
             self.card.open = false;
         }
@@ -898,7 +898,8 @@ impl Gui {
         }
     }
 
-    fn source_windows(&mut self, ctx: &egui::Context, origin: Pos2) {
+    fn source_windows(&mut self, ctx: &egui::Context, canvas: ERect) {
+        let origin = canvas.min;
         let font = code_font();
         let line_h = ctx.fonts_mut(|f| f.row_height(&font));
         let copy = ctx.input(|i| {
@@ -911,7 +912,6 @@ impl Gui {
         let mut focus = self.focused_source;
         for w in &mut self.sources {
             let mut open = true;
-            let mut close = false;
             let shown = egui::Window::new(&w.title)
                 .id(Id::unique(("uml-source", w.serial)))
                 .open(&mut open)
@@ -924,15 +924,10 @@ impl Gui {
                         ),
                 )
                 .collapsible(false)
+                .constrain_to(canvas)
+                .max_size(canvas.size())
                 .frame(egui::Frame::window(&ctx.global_style()).fill(rgb(theme::SOURCE_BG)))
                 .show(ctx, |ui| {
-                    let button = ui.button(strings::CLOSE_SOURCE);
-                    close = button.clicked();
-                    if Some(w.serial) == newest {
-                        bounds.push(("close-source".into(), button.rect));
-                    }
-                    bounds.push((format!("close-source:{}", w.serial), button.rect));
-                    ui.label(RichText::new(&w.file).color(rgb(theme::SOURCE_FILE)));
                     let max_w = *w.max_w.get_or_insert_with(|| {
                         w.displays
                             .iter()
@@ -1112,7 +1107,7 @@ impl Gui {
                 ctx.copy_text(w.selection.clone());
                 self.copied = Some(w.selection.clone());
             }
-            if close || !open {
+            if !open {
                 w.open = false;
             }
         }

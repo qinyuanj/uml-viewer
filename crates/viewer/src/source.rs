@@ -424,10 +424,16 @@ pub fn member_source(ident: &Ident, files: &Files) -> Option<Opened> {
     } else {
         None
     };
+    // The title names the file as the project does: relative to its root.
+    let shown = files
+        .root
+        .as_deref()
+        .and_then(|r| std::path::Path::new(&path).strip_prefix(r).ok())
+        .map_or_else(|| path.clone(), |p| p.to_string_lossy().into_owned());
     let title = if named {
-        format!("{path}:{}", line.unwrap_or(1))
+        format!("{shown}:{}", line.unwrap_or(1))
     } else {
-        path.clone()
+        shown
     };
     Some(Opened {
         file: path,

@@ -130,7 +130,10 @@ fn a_relative_file_resolves_under_the_project_root() {
         opened.line, None,
         "a module opens the whole file, no member line"
     );
-    assert_eq!(opened.title, "/project/src/m.lua");
+    assert_eq!(
+        opened.title, "src/m.lua",
+        "the title names the file as the project does"
+    );
 }
 
 #[test]

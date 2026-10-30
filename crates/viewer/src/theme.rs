@@ -106,7 +106,6 @@ pub const BUTTON_HOVER: Rgb = Rgb(54, 76, 66);
 pub const BUTTON_ACTIVE: Rgb = Rgb(66, 90, 76);
 pub const SOURCE_BG: Rgb = PANEL;
 pub const SOURCE_INK: Rgb = INK;
-pub const SOURCE_FILE: Rgb = MUTED;
 pub const SOURCE_GUTTER_BG: Rgb = SIDEBAR;
 pub const SOURCE_GUTTER: Rgb = MUTED;
 pub const SOURCE_SELECTION: Rgb = Rgb(38, 54, 70);

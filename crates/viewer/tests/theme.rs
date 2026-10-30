@@ -69,7 +69,6 @@ fn source_window_is_dark_and_readable() {
         );
     }
     assert!(contrast(theme::SOURCE_COMMENT, theme::SOURCE_BG) >= 3.0);
-    assert!(contrast(theme::SOURCE_FILE, theme::SOURCE_BG) >= 4.5);
     assert!(contrast(theme::SOURCE_GUTTER, theme::SOURCE_GUTTER_BG) >= 4.5);
 }
 
