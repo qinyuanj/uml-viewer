@@ -244,6 +244,77 @@ fn size(scene: &mut Value) {
     );
 }
 
+/// Margin between a frame and the farthest edge it holds, as between a frame
+/// and its boxes (`layout`).
+const FRAME_PAD: f64 = 12.0;
+
+/// Layout fixes a package frame before routing places the detour tracks of
+/// the edges between its classes, so a frame side grows wherever such an
+/// edge's points pass it. The basis curve stays in the hull of its points.
+/// Roll-up boxes keep their rect: they show only when no class does.
+fn hold_inner_edges(scene: &mut Value) {
+    let mut owner: HashMap<String, String> = HashMap::new();
+    for c in seq(get(scene, "classes")) {
+        if let (Some(id), Some(p)) = (get(c, "id"), get(c, "package"))
+            && !flag(c, "dummy?")
+            && !flag(c, "foreign")
+        {
+            owner.insert(edn::encode(id).unwrap(), edn::encode(p).unwrap());
+        }
+    }
+    let package =
+        |e: &Value, k: &str| get(e, k).and_then(|id| owner.get(&edn::encode(id).unwrap()));
+    let mut reach: HashMap<&String, Vec<[f64; 2]>> = HashMap::new();
+    for e in seq(get(scene, "edges")) {
+        match (package(e, "from"), package(e, "to")) {
+            (Some(a), Some(b)) if a == b => reach
+                .entry(a)
+                .or_default()
+                .extend(seq(get(e, "points")).iter().filter_map(geom::vec2)),
+            _ => {}
+        }
+    }
+    let Some(Value::Vector(mut packages)) = get(scene, "packages").cloned() else {
+        return;
+    };
+    for p in packages.iter_mut() {
+        let (Some(id), Some(r)) = (get(p, "id"), get(p, "rect").and_then(Rect::from_value)) else {
+            continue;
+        };
+        let Some(points) = reach
+            .get(&edn::encode(id).unwrap())
+            .filter(|ps| !ps.is_empty())
+        else {
+            continue;
+        };
+        let far = |axis: usize, pick: fn(f64, f64) -> f64| {
+            points.iter().map(|q| q[axis]).reduce(pick).unwrap()
+        };
+        // A side the points pass moves to the farthest one, plus the margin.
+        let lo = |side: f64, reach: f64| {
+            if reach < side {
+                reach - FRAME_PAD
+            } else {
+                side
+            }
+        };
+        let hi = |side: f64, reach: f64| {
+            if reach > side {
+                reach + FRAME_PAD
+            } else {
+                side
+            }
+        };
+        let (x0, y0) = (lo(r.x, far(0, f64::min)), lo(r.y, far(1, f64::min)));
+        let (x1, y1) = (
+            hi(r.right(), far(0, f64::max)),
+            hi(r.bottom(), far(1, f64::max)),
+        );
+        put(p, "rect", Rect::new(x0, y0, x1 - x0, y1 - y0).to_value());
+    }
+    put(scene, "packages", Value::Vector(packages));
+}
+
 fn fit(scene: &mut Value) {
     let index = ClassIndex::new(scene);
     let b = bounds(scene, &index);
@@ -299,6 +370,7 @@ pub fn prepare_scene(scene: &mut Value) {
 pub fn compile_diagram(diagram: &Value) -> Value {
     let mut scene = crate::layout::layout(diagram);
     crate::route::route(&mut scene);
+    hold_inner_edges(&mut scene);
     fit(&mut scene);
     prepare_scene(&mut scene);
     if flag(diagram, "hide-edges") {
@@ -355,6 +427,7 @@ pub fn compile_document(doc: &Value) -> Value {
     for (i, d) in diagrams.iter().enumerate() {
         let mut scene = crate::layout::layout(d);
         crate::route::route(&mut scene);
+        hold_inner_edges(&mut scene);
         fit(&mut scene);
         let h = get(&scene, "size")
             .and_then(|s| get(s, "h"))

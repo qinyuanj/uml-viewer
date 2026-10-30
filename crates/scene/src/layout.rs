@@ -930,9 +930,10 @@ pub fn layout(diagram: &Value) -> Value {
     let mut ovals: Vec<(Value, f64, f64)> = seq(get(diagram, "foreign")).iter().map(oval).collect();
     // Only a single package ranked by `:levels` (top to bottom) sinks them.
     let direction = get(diagram, "direction").map(geom::name);
+    let horizontal = matches!(direction.as_deref(), Some("lr" | "rl"));
     let sunk = match seq(get(diagram, "packages")) {
         [p] => {
-            !matches!(direction.as_deref(), Some("lr" | "rl"))
+            !horizontal
                 && seq(get(p, "classes"))
                     .iter()
                     .any(|c| get(c, "level").is_some())
@@ -975,7 +976,12 @@ pub fn layout(diagram: &Value) -> Value {
             put(c, "rect", r.translate(52.0, y + 44.0).to_value());
             put(c, "rank", numval(i as f64 * stride + rank));
         }
+        // Lanes are reserved inside the package: the frame spans them across
+        // the ranks as it spans the boxes, so a trailing lane is not drawn
+        // beside the frame.
+        let mut across: Vec<f64> = Vec::new();
         for (ei, points) in through {
+            across.extend(points.iter().map(|q| if horizontal { q[1] } else { q[0] }));
             let points = points
                 .iter()
                 .map(|q| geom::point([q[0] + 52.0, q[1] + y + 44.0]))
@@ -1007,7 +1013,14 @@ pub fn layout(diagram: &Value) -> Value {
                 }
             }
         }
-        let body = union_all(&rects).unwrap_or(Rect::new(52.0, y + 44.0, 160.0, 40.0));
+        let mut body = union_all(&rects).unwrap_or(Rect::new(52.0, y + 44.0, 160.0, 40.0));
+        for a in across {
+            body = if horizontal {
+                union_all(&[body, Rect::new(body.x, a + y + 44.0, 0.0, 0.0)]).unwrap()
+            } else {
+                union_all(&[body, Rect::new(a + 52.0, body.y, 0.0, 0.0)]).unwrap()
+            };
+        }
         let pr = Rect::new(
             40.0,
             y,
