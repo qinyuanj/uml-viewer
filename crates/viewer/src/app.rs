@@ -645,7 +645,7 @@ impl Viewer {
             "down" => self.search.step(true, &results),
             "up" => self.search.step(false, &results),
             "enter" => {
-                if let Some(id) = self.search.selection.clone() {
+                if let Some(id) = self.search.target(&results) {
                     let action = Event::Action(SessionAction::Locate(id), dims.clone());
                     let effects = self.session.process(action, Now::read());
                     let ctx = self.ctx.clone();
@@ -699,8 +699,9 @@ impl Viewer {
                         edit.request_focus();
                         self.search.focus_request = false;
                     }
+                    let target = self.search.target(&results);
                     for m in results.iter().take(12) {
-                        let selected = self.search.selection.as_ref() == Some(&m.id);
+                        let selected = target.as_ref() == Some(&m.id);
                         let row = ui.selectable_label(selected, &m.label);
                         if row.clicked() {
                             chosen = Some(m.id.clone());

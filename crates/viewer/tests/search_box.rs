@@ -1,5 +1,5 @@
 //! Ctrl+F search box state (port of the search part of
-//! `love/uml/adapters/inspector.lua`): explicit Down/Up selection, reset on
+//! `love/uml/adapters/inspector.lua`): Down/Up selection from the first row, reset on
 //! a new document, and the screen area that captures canvas input.
 
 use edn::Value;
@@ -32,23 +32,42 @@ fn down_and_up_select_explicitly_and_clamp_at_the_ends() {
         })
         .collect();
     assert_eq!(vec!["alpha.deep.parser", "beta.parser"], ids);
-    // Nothing is selected until Down is pressed.
-    assert_eq!(None, search.selection);
+    // Down moves on from the first row, which Enter would already open.
     search.step(true, &results);
-    assert_eq!(Some(Value::keyword("alpha.deep.parser")), search.selection);
-    search.step(true, &results);
+    assert_eq!(Some(Value::keyword("beta.parser")), search.selection);
     search.step(true, &results);
     assert_eq!(Some(Value::keyword("beta.parser")), search.selection);
     search.step(false, &results);
     search.step(false, &results);
     assert_eq!(Some(Value::keyword("alpha.deep.parser")), search.selection);
-    // Up with no selection picks the first row (Lua: (index or 2)-1).
-    search.selection = None;
-    search.step(false, &results);
-    assert_eq!(Some(Value::keyword("alpha.deep.parser")), search.selection);
     // ASCII is case-insensitive.
     search.query = "OTHER".into();
     assert_eq!(1, search.results(Some(&doc)).len());
+}
+
+#[test]
+fn enter_opens_the_first_result_until_another_row_is_chosen() {
+    let doc = doc();
+    let mut search = SearchBox::default();
+    search.open();
+    search.query = "解析".into();
+    let results = search.results(Some(&doc));
+    assert_eq!(
+        Some(Value::keyword("alpha.deep.parser")),
+        search.target(&results)
+    );
+    assert_eq!(
+        Some("alpha.deep.parser".to_owned()),
+        search.record(&results).selection,
+        "the row Enter opens is the row shown as selected"
+    );
+    search.selection = Some(Value::keyword("beta.parser"));
+    assert_eq!(Some(Value::keyword("beta.parser")), search.target(&results));
+    // A choice the new query no longer lists falls back to its first row.
+    search.query = "Other".into();
+    let results = search.results(Some(&doc));
+    assert_eq!(Some(Value::keyword("gamma")), search.target(&results));
+    assert_eq!(None, search.target(&[]));
 }
 
 #[test]

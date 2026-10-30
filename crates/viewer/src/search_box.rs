@@ -1,7 +1,7 @@
 //! Ctrl+F search box state (port of the search part of
 //! `love/uml/adapters/inspector.lua`). Matching itself is
 //! `scene::search::search`; this module owns what the viewer adds around it:
-//! open/close, explicit Down/Up selection, forgetting the selection when a new
+//! open/close, Down/Up selection from the first row, forgetting the selection when a new
 //! document loads, and the view-unit area that captures canvas input while
 //! the box is open. egui draws it (`app.rs`); nothing here touches egui.
 
@@ -24,7 +24,8 @@ pub struct SearchRecord {
 pub struct SearchBox {
     pub active: bool,
     pub query: String,
-    /// Explicit selection; None until Down/Up is pressed.
+    /// The row chosen by Down/Up or a click; the first row stands in
+    /// until then.
     pub selection: Option<Value>,
     /// Ask the text field for keyboard focus on its next draw.
     pub focus_request: bool,
@@ -61,22 +62,30 @@ impl SearchBox {
         }
     }
 
-    /// Down: `min(n, (index or 0) + 1)`; Up: `max(1, (index or 2) - 1)`.
+    /// The row Enter opens and the box highlights.
+    pub fn target(&self, results: &[Match]) -> Option<Value> {
+        results.get(self.index(results)).map(|m| m.id.clone())
+    }
+
+    /// Down and Up move one row from the target, clamped at the ends.
     pub fn step(&mut self, down: bool, results: &[Match]) {
         if results.is_empty() {
             return;
         }
-        let index = self
-            .selection
+        let index = self.index(results);
+        let next = if down {
+            (index + 1).min(results.len() - 1)
+        } else {
+            index.saturating_sub(1)
+        };
+        self.selection = Some(results[next].id.clone());
+    }
+
+    fn index(&self, results: &[Match]) -> usize {
+        self.selection
             .as_ref()
             .and_then(|id| results.iter().position(|m| &m.id == id))
-            .map(|i| i + 1);
-        let next = if down {
-            results.len().min(index.unwrap_or(0) + 1)
-        } else {
-            1.max(index.unwrap_or(2) - 1)
-        };
-        self.selection = Some(results[next - 1].id.clone());
+            .unwrap_or(0)
     }
 
     /// While open, its drawn area takes pointer input from the canvas.
@@ -103,9 +112,8 @@ impl SearchBox {
                 .map(|m| local_name(&m.id).unwrap_or_default().to_owned())
                 .collect(),
             selection: self
-                .selection
-                .as_ref()
-                .map(|v| local_name(v).unwrap_or_default().to_owned()),
+                .target(results)
+                .map(|v| local_name(&v).unwrap_or_default().to_owned()),
         }
     }
 }
