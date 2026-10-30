@@ -345,7 +345,11 @@ impl Gui {
         if state.document.is_some() && !state.waiting {
             self.edge(ctx, screen);
             self.sidebar(ctx, state, screen, frame, &mut actions);
-            self.card_window(ctx, state, origin, &mut actions);
+            let canvas = ERect::from_min_size(
+                origin,
+                Vec2::new(self.canvas_width(self.window_w) as f32, screen.height()),
+            );
+            self.card_window(ctx, state, canvas, &mut actions);
             self.source_windows(ctx, origin);
         } else {
             self.card.open = false;
@@ -670,9 +674,10 @@ impl Gui {
         &mut self,
         ctx: &egui::Context,
         state: &ViewState,
-        origin: Pos2,
+        canvas: ERect,
         actions: &mut Vec<Action>,
     ) {
+        let origin = canvas.min;
         let Some(id) = state.detail_id.clone() else {
             self.card = Card {
                 force: self.card.force,
@@ -698,6 +703,8 @@ impl Gui {
             .default_pos(origin + Vec2::new(48.0, 80.0))
             .default_size([detail::WIDTH as f32, detail::HEIGHT as f32])
             .collapsible(false)
+            .constrain_to(canvas)
+            .max_size(canvas.size())
             .frame(egui::Frame::window(&ctx.global_style()).fill(rgb(theme::CANVAS_BG)));
         if let Some((size, frames)) = self.card.force {
             window = window.min_size(size).max_size(size);
@@ -712,11 +719,6 @@ impl Gui {
             ..Card::default()
         };
         let shown = window.show(ctx, |ui| {
-            let close = ui.button(strings::CLOSE_DETAIL);
-            if close.clicked() {
-                actions.push(Action::CloseCard);
-            }
-            bounds.push(("close-detail".into(), close.rect));
             let plan_w = (ui.available_width() as f64).max(560.0);
             let view_h = ui.available_height().max(1.0);
             let items = detail::view(&rows, Some(plan_w));
@@ -1259,7 +1261,20 @@ fn label(ui: &mut egui::Ui, text: impl Into<String>, color: Rgb) {
     );
 }
 
-fn mutation_line(c: &Value) -> Option<String> {
+/// A metric line that wraps only between whole segments, never inside one.
+fn segments(ui: &mut egui::Ui, parts: Vec<String>, color: Rgb) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        for part in parts {
+            ui.add(
+                egui::Label::new(RichText::new(part).color(rgb(color)).font(body_font()))
+                    .wrap_mode(egui::TextWrapMode::Extend),
+            );
+        }
+    });
+}
+
+fn mutation_line(c: &Value) -> Option<Vec<String>> {
     let (k, s) = (
         get(c, "killed").and_then(num),
         get(c, "survived").and_then(num),
@@ -1267,26 +1282,28 @@ fn mutation_line(c: &Value) -> Option<String> {
     if k.is_none() && s.is_none() {
         return None;
     }
-    let mut line = format!(
+    let mut parts = vec![format!(
         "{} killed / {} survived",
         k.unwrap_or(0.0) as i64,
         s.unwrap_or(0.0) as i64
-    );
+    )];
     if let Some(u) = get(c, "uncovered").and_then(num).filter(|u| *u > 0.0) {
-        line.push_str(&format!("   {} uncovered", u as i64));
+        parts.push(format!("{} uncovered", u as i64));
     }
-    Some(line)
+    Some(parts)
 }
 
-fn crap_summary(crap: &Value) -> Option<String> {
+/// `Crap μ 44.0`, `max 870.0`, `σ 115.0`: one segment per statistic.
+fn crap_summary(crap: &Value) -> Option<Vec<String>> {
     let mu = get(crap, "mu").and_then(num)?;
     let max = get(crap, "max").and_then(num).unwrap_or(mu);
     let sigma = get(crap, "sigma").and_then(num).unwrap_or(0.0);
     Some(
         strings::CRAP_LINE
-            .replacen("%s", &one(mu), 1)
-            .replacen("%s", &one(max), 1)
-            .replacen("%s", &one(sigma), 1),
+            .split_inclusive("%s")
+            .zip([mu, max, sigma])
+            .map(|(part, x)| part.trim().replace("%s", &one(x)))
+            .collect(),
     )
 }
 
@@ -1301,14 +1318,9 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
         None => String::new(),
     };
     label(ui, text(get(c, "name")), theme::INK);
-    let package = model
-        .package
-        .as_ref()
-        .and_then(|p| get(p, "label"))
-        .map(|l| text(Some(l)))
-        .or_else(|| get(c, "package").map(|v| local_name(v).unwrap_or_default().to_owned()))
-        .unwrap_or_else(|| "foreign".into());
-    label(ui, format!("{}{package}", strings::PACKAGE), theme::MUTED);
+    if let Some(package) = model.package_label() {
+        label(ui, format!("{}{package}", strings::PACKAGE), theme::MUTED);
+    }
     if let Some(level) = get(c, "level").filter(|v| **v != Value::Nil) {
         label(
             ui,
@@ -1328,12 +1340,12 @@ fn class_summary(ui: &mut egui::Ui, model: &detail::Model) {
     if let Some(n) = crap.and_then(num) {
         label(ui, strings::CRAP_SINGLE.replace("%s", &one(n)), theme::GOLD);
         measured = true;
-    } else if let Some(line) = crap.and_then(crap_summary) {
-        label(ui, line, theme::GOLD);
+    } else if let Some(parts) = crap.and_then(crap_summary) {
+        segments(ui, parts, theme::GOLD);
         measured = true;
     }
-    if let Some(line) = mutation_line(c) {
-        label(ui, line, theme::MUTED);
+    if let Some(parts) = mutation_line(c) {
+        segments(ui, parts, theme::MUTED);
     }
     for line in edn::record::seq(get(c, "lines")) {
         let kind = get(line, "kind")
@@ -1359,11 +1371,11 @@ fn package_summary(ui: &mut egui::Ui, state: &ViewState, id: &Value) {
     };
     label(ui, title, theme::INK);
     let crap = get(p, "crap");
-    if let Some(line) = crap.and_then(crap_summary) {
-        label(ui, line, theme::GOLD);
+    if let Some(parts) = crap.and_then(crap_summary) {
+        segments(ui, parts, theme::GOLD);
     }
-    if let Some(line) = mutation_line(p) {
-        label(ui, line, theme::MUTED);
+    if let Some(parts) = mutation_line(p) {
+        segments(ui, parts, theme::MUTED);
     }
     let count = edn::record::seq(get(&state.scene, "classes"))
         .iter()

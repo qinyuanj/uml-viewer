@@ -39,7 +39,6 @@ pub const SELECT_CLASS: &str = "单击类或命名空间查看摘要；双击打
 pub const REGEN: &str = "重新生成 IR";
 pub const CLOSE_SOURCE: &str = "关闭源码";
 pub const SOURCE_NOT_OPENED: &str = "未能打开源码：%s";
-pub const CLOSE_DETAIL: &str = "关闭详情";
 pub const BACK: &str = "< 返回";
 pub const PROPOSAL_BANNER: &str = "提案（未在源码中实例化）";
 pub const PERFORMANCE: &str = "性能：%d FPS · 帧耗时 %.2f ms";
@@ -60,7 +59,7 @@ pub const MENU: [(&str, &str); 4] = [
 ];
 // Class card.
 pub const LEVEL: &str = "层级 ";
-pub const PACKAGE: &str = "包  ";
+pub const PACKAGE: &str = "包 ";
 pub const FIELDS: &str = "字段";
 pub const RELATIONSHIPS: &str = "关系";
 pub const NO_MUTATION_SITES: &str = "---无 mutation 位点---";
@@ -148,7 +147,6 @@ pub fn glyph_text() -> String {
         REGEN,
         CLOSE_SOURCE,
         SOURCE_NOT_OPENED,
-        CLOSE_DETAIL,
         BACK,
         PROPOSAL_BANNER,
         PERFORMANCE,

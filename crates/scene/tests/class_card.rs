@@ -91,3 +91,10 @@ fn a_scene_card_names_both_ends_its_package_and_title() {
     assert_eq!(b.title, Some(Value::String("Tiny".into())));
     assert!(class_card_in(&scene, &kw("absent")).is_none());
 }
+
+#[test]
+fn a_focused_card_names_the_namespace_box_it_sits_in() {
+    let card = class_card(&deep_state(&[kw("alpha")]), &kw("alpha.deep")).unwrap();
+    let label = card.package.as_ref().and_then(|p| get(p, "label"));
+    assert_eq!(label, Some(&Value::String("alpha".into())));
+}

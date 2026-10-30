@@ -118,7 +118,7 @@ fn card_wheel_scrolls_in_48_point_steps_clamped_to_the_content() {
     let scrolled = inspector::scroll(&state, 1.0, 0.0);
     assert_eq!(scrolled.detail_scroll, 48.0);
     assert_eq!(inspector::scroll(&scrolled, -2.0, 0.0).detail_scroll, 0.0);
-    assert_eq!(inspector::scroll(&state, 99.0, 0.0).detail_scroll, 90.0);
+    assert_eq!(inspector::scroll(&state, 99.0, 0.0).detail_scroll, 72.0);
 }
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {

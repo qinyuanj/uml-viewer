@@ -35,20 +35,26 @@ pub struct Model {
     pub class: Value,
     pub ns: Option<String>,
     pub package: Option<Value>,
-    pub title: Option<String>,
     pub lang: Option<Value>,
     pub file: Option<String>,
     pub rels: Vec<Rel>,
 }
 
 impl Model {
+    /// The label of the package that holds the class, if any.
+    pub fn package_label(&self) -> Option<String> {
+        self.package
+            .as_ref()
+            .and_then(|p| string(get(p, "label")))
+            .or_else(|| string(get(&self.class, "package")))
+    }
+
     /// A card for a bare class record (no scene context).
     pub fn of(class: Value) -> Model {
         Model {
             class,
             ns: None,
             package: None,
-            title: None,
             lang: None,
             file: None,
             rels: Vec::new(),
@@ -82,7 +88,6 @@ fn assemble(n: scene::Neighbourhood) -> Model {
         lang: get(&c, "lang").cloned(),
         file: string(get(&c, "file")),
         package: n.package,
-        title: string(n.title.as_ref()),
         rels: n
             .relations
             .into_iter()
@@ -256,9 +261,19 @@ pub fn rows(model: &Model) -> Vec<Row> {
             20.0,
         ),
     );
-    if let Some(level) = get(c, "level").filter(|v| **v != Value::Nil) {
-        let text = format!("{}{}", strings::LEVEL, number_text(level));
-        emit(&mut rows, &mut y, row("muted", text, 0.0, 18.0));
+    let meta: Vec<String> = [
+        get(c, "level")
+            .filter(|v| **v != Value::Nil)
+            .map(|level| format!("{}{}", strings::LEVEL, number_text(level))),
+        model
+            .package_label()
+            .map(|p| format!("{}{p}", strings::PACKAGE)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !meta.is_empty() {
+        emit(&mut rows, &mut y, row("muted", meta.join(" · "), 0.0, 18.0));
     }
     if let Some(stereo) = get(c, "stereotype") {
         emit(
@@ -285,20 +300,6 @@ pub fn rows(model: &Model) -> Vec<Row> {
         let mut r = row("module", module, 0.0, 18.0);
         r.module = true;
         emit(&mut rows, &mut y, r);
-    }
-    let package = model
-        .package
-        .as_ref()
-        .and_then(|p| string(get(p, "label")))
-        .or_else(|| get(c, "package").map(|v| local_name(v).unwrap_or_default().to_owned()))
-        .unwrap_or_default();
-    emit(
-        &mut rows,
-        &mut y,
-        row("muted", format!("{}{package}", strings::PACKAGE), 0.0, 18.0),
-    );
-    if let Some(title) = &model.title {
-        emit(&mut rows, &mut y, row("muted", title.clone(), 0.0, 18.0));
     }
     let crap = get(c, "crap").filter(|v| **v != Value::Nil);
     if let Some(crap) = crap {

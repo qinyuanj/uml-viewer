@@ -40,6 +40,14 @@ fn named<'a>(scene: &'a Value, key: &str, id: &Value) -> Option<&'a Value> {
         .find(|c| get(c, "id") == Some(id))
 }
 
+/// The package box that holds class `id` in `scene`.
+fn package_of(scene: &Value, id: &Value) -> Option<Value> {
+    named(scene, "classes", id)
+        .and_then(|c| get(c, "package"))
+        .and_then(|p| named(scene, "packages", p))
+        .cloned()
+}
+
 /// The neighbourhood of class `id` within one scene, or None when absent.
 pub fn class_card_in(scene: &Value, id: &Value) -> Option<Neighbourhood> {
     let c = named(scene, "classes", id)?;
@@ -63,9 +71,7 @@ pub fn class_card_in(scene: &Value, id: &Value) -> Option<Neighbourhood> {
     Some(Neighbourhood {
         class: c.clone(),
         relations,
-        package: get(c, "package")
-            .and_then(|p| named(scene, "packages", p))
-            .cloned(),
+        package: package_of(scene, id),
         title: get(scene, "diagram").and_then(|d| get(d, "title")).cloned(),
     })
 }
@@ -195,5 +201,9 @@ pub fn class_card(state: &ViewState, id: &Value) -> Option<Neighbourhood> {
             get(&state.scene, "diagram").cloned().unwrap_or(Value::Nil),
         ),
     ]);
-    class_card_in(&merged, id)
+    // Authored leaf records carry no `:package`: the box that holds the
+    // class is the one on screen.
+    let mut card = class_card_in(&merged, id)?;
+    card.package = card.package.or_else(|| package_of(&state.scene, id));
+    Some(card)
 }

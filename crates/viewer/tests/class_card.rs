@@ -43,7 +43,9 @@ fn op<'a>(rows: &'a [Row], name: &str) -> &'a Row {
 
 #[test]
 fn reserves_a_20px_title_row_followed_by_18px_rows() {
-    let rows = detail::rows(&class_model(r#"{:name "中文类名" :level 2}"#));
+    let rows = detail::rows(&class_model(
+        r#"{:name "中文类名" :level 2 :stereotype :bean}"#,
+    ));
     assert_eq!((rows[0].y, rows[0].h), (0.0, 20.0));
     assert_eq!((rows[1].y, rows[1].h), (20.0, 18.0));
     assert_eq!(rows[2].y, 38.0);
@@ -72,7 +74,7 @@ fn lays_out_six_metric_columns_and_two_group_spans() {
 fn preserves_identity_mutation_and_source_label_rules() {
     assert_eq!(detail::content_h(&[]), 32.0);
     let solo = detail::rows(&class_model(r#"{:name "Solo" :package :orphan}"#));
-    assert_eq!(texts(&solo), ["Solo", "包  orphan"]);
+    assert_eq!(texts(&solo), ["Solo", "包 orphan"]);
     for (file, ns, shown, drill) in [
         ("src/lib.rs", "demo.rust", "lib.rs", false),
         ("src/PROTO.RS", "demo.rust", "PROTO.RS", false),
@@ -361,4 +363,12 @@ fn view_stripes_stats_rows_draws_bars_swatches_and_marks_clickable_rows() {
     assert!(go.clickable);
     assert!(items.iter().find(|it| it.kind == "rel").unwrap().clickable);
     assert!(!items[0].clickable);
+}
+
+#[test]
+fn heads_the_card_with_one_meta_line() {
+    let mut m = class_model(r#"{:name "app.rs" :level 2}"#);
+    m.package = Some(edn::parse(r#"{:id :viewer :label "viewer"}"#).unwrap());
+    let rows = detail::rows(&m);
+    assert_eq!(texts(&rows), ["app.rs", "层级 2 · 包 viewer"]);
 }
