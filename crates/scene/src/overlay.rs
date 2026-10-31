@@ -3,9 +3,8 @@
 //! filesystem work belongs to callers. Join rule: by class `:ns`, then by id.
 
 use crate::config;
-use crate::geom::numval;
 use edn::Value;
-use edn::record::{flag, local_name, put, seq};
+use edn::record::{flag, local_name, name, numval, put, seq};
 use std::collections::BTreeMap;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
@@ -163,10 +162,7 @@ fn owner<'a>(classes: &'a [Value], prefix: Option<&Value>, ns: &str) -> Option<&
             (1, 0)
         } else if ns.starts_with(&format!("{class_id}.")) {
             (2, -(class_id.len() as i64))
-        } else if count == 1
-            && Some(c) == root
-            && prefix.map(crate::geom::name).as_deref() == Some(ns)
-        {
+        } else if count == 1 && Some(c) == root && prefix.map(name).as_deref() == Some(ns) {
             (3, 0)
         } else {
             continue;
@@ -197,7 +193,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         for e in metrics.crap.get(ns).into_iter().flatten() {
             entries.push(e.clone());
             if let Some(n) = g(e, "name").cloned() {
-                by_name.insert(crate::geom::name(&n), e.clone());
+                by_name.insert(name(&n), e.clone());
             }
         }
         if let Some(data) = metrics.mutate.get(ns) {
@@ -225,7 +221,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
         (Vec::new(), Vec::new(), Ordered::default());
     for op in seq(g(c, "ops")) {
         if let Some(n) = g(op, "name") {
-            let n = crate::geom::name(n);
+            let n = name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n.clone());
@@ -237,7 +233,7 @@ fn paint(c: &mut Value, nss: &[String], metrics: &Metrics) {
     }
     for e in &entries {
         if let Some(n) = g(e, "name") {
-            let n = crate::geom::name(n);
+            let n = name(n);
             if !seen.contains(&n) {
                 names.push(n.clone());
                 seen.push(n);

@@ -1,9 +1,8 @@
 //! IR normalization on load (port of `love/uml/domain/ir.lua`): validate and
 //! canonicalize the flat/diagram documents the scanners emit.
 
-use crate::geom::numval;
 use edn::Value;
-use edn::record::{flag, local_name, seq};
+use edn::record::{flag, local_name, name, numval, seq};
 use std::collections::HashSet;
 
 fn g<'a>(m: &'a Value, key: &str) -> Option<&'a Value> {
@@ -110,7 +109,7 @@ fn member(x: &Value) -> Result<Value> {
         None => {
             let mut text = match g(x, "name") {
                 Some(Value::String(s)) => s.clone(),
-                Some(other) => crate::geom::name(other),
+                Some(other) => name(other),
                 None => String::new(),
             };
             if let Some(Value::Vector(args)) = g(x, "args")
@@ -120,7 +119,7 @@ fn member(x: &Value) -> Result<Value> {
                     .iter()
                     .map(|a| match a {
                         Value::String(s) => s.clone(),
-                        other => crate::geom::name(other),
+                        other => name(other),
                     })
                     .collect();
                 text = format!("{}({})", text, parts.join(", "));
@@ -131,7 +130,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match t {
                         Value::String(s) => s.clone(),
-                        other => crate::geom::name(other),
+                        other => name(other),
                     }
                 );
             }
@@ -141,7 +140,7 @@ fn member(x: &Value) -> Result<Value> {
                     text,
                     match r {
                         Value::String(s) => s.clone(),
-                        other => crate::geom::name(other),
+                        other => name(other),
                     }
                 );
             }
@@ -181,7 +180,7 @@ fn class(c: &Value) -> Result<Value> {
     let label = match g(c, "name") {
         Some(v) => v.clone(),
         None => match g(c, "id") {
-            Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
+            Some(v) if !matches!(v, Value::Nil) => Value::String(name(v)),
             _ => return Err("class needs :name or :id".into()),
         },
     };
@@ -242,7 +241,7 @@ pub fn normalize(raw: &Value) -> Result<Value> {
         let label = match g(p, "label") {
             Some(v) => v.clone(),
             None => match g(p, "id") {
-                Some(v) if !matches!(v, Value::Nil) => Value::String(crate::geom::name(v)),
+                Some(v) if !matches!(v, Value::Nil) => Value::String(name(v)),
                 _ => return Err("package needs :label or :id".into()),
             },
         };

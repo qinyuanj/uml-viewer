@@ -3,9 +3,9 @@
 //! characters count as two — so layout never depends on a loaded font.
 
 use crate::config;
-use crate::geom::{self, Rect, numval};
+use crate::geom::{self, Rect};
 use edn::Value;
-use edn::record::{flag, get, local_name, num, put, seq};
+use edn::record::{flag, get, local_name, name, num, numval, put, seq};
 
 /// Estimated advance of one half-width character at the 16px body font.
 pub const CHAR_W: f64 = 8.0;
@@ -62,7 +62,7 @@ pub fn class_lines(c: &Value) -> Vec<Value> {
     if let Some(stereotype) = get(c, "stereotype") {
         lines.push(line(
             "stereo",
-            Some(Value::String(format!("«{}»", geom::name(stereotype)))),
+            Some(Value::String(format!("«{}»", name(stereotype)))),
             vec![],
         ));
     }
@@ -134,7 +134,7 @@ pub fn class_box_size(c: &Value) -> (f64, f64, Vec<Value>) {
 fn port_w(d: &Value) -> f64 {
     (44.0_f64).max(
         10.0 + text_w(Some(&match get(d, "name") {
-            Some(v @ Value::String(_)) => geom::name(v),
+            Some(v @ Value::String(_)) => name(v),
             _ => local_name(get(d, "id").unwrap())
                 .unwrap_or_default()
                 .to_owned(),
@@ -1117,7 +1117,7 @@ pub fn layout(diagram: &Value) -> Value {
     let mut ovals: Vec<(Value, f64, f64)> = seq(get(diagram, "foreign")).iter().map(oval).collect();
     // Only a single package ranked by `:levels` (top to bottom, or wide)
     // sinks them.
-    let direction = get(diagram, "direction").map(geom::name);
+    let direction = get(diagram, "direction").map(name);
     let horizontal = matches!(direction.as_deref(), Some("lr" | "rl"));
     let wide = get(diagram, "wide").and_then(num);
     let sunk = match seq(get(diagram, "packages")) {
@@ -1144,7 +1144,7 @@ pub fn layout(diagram: &Value) -> Value {
                 seq(get(p, "classes")),
                 seq(get(diagram, "edges")),
                 &get(diagram, "direction")
-                    .map(geom::name)
+                    .map(name)
                     .unwrap_or_else(|| "tb".into()),
                 &sinks,
                 wide,

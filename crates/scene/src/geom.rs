@@ -4,27 +4,7 @@
 //! lives in `edn::record`.
 
 use edn::Value;
-use edn::record::{get, num};
-
-/// Drop the entries whose keyword names are listed (Lua `drop`); a non-map
-/// drops to the empty map.
-pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
-    let mut out = match m {
-        Value::Map(_) => m.clone(),
-        _ => Value::Map(vec![]),
-    };
-    for key in keys {
-        edn::record::remove(&mut out, key);
-    }
-    out
-}
-
-/// The lenient id name (`geom.lua` `name` used as a string): the
-/// [`edn::record::local_name`] of a string, keyword or symbol, and `""` for
-/// every other value.
-pub fn name(v: &Value) -> String {
-    edn::record::local_name(v).unwrap_or_default().to_owned()
-}
+use edn::record::{get, num, numval};
 
 pub fn vec2(v: &Value) -> Option<[f64; 2]> {
     if let Value::Vector(items) = v
@@ -37,16 +17,6 @@ pub fn vec2(v: &Value) -> Option<[f64; 2]> {
 
 pub fn point(p: [f64; 2]) -> Value {
     Value::Vector(vec![numval(p[0]), numval(p[1])])
-}
-
-/// Numbers written back into EDN: integral values stay integers, like the
-/// Lua number formatting the golden files were produced with.
-pub fn numval(x: f64) -> Value {
-    if x == x.trunc() && x.abs() <= edn::MAX_EXACT_INTEGER as f64 {
-        Value::Integer(x as i64)
-    } else {
-        Value::Float(x)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

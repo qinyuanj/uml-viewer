@@ -9,7 +9,7 @@
 use crate::curve;
 use crate::geom::{self, Rect};
 use edn::Value;
-use edn::record::{flag, get, put, seq};
+use edn::record::{flag, get, name, numval, put, seq};
 use std::collections::HashMap;
 
 /// Class rectangles keyed by encoded id, plus the obstacle grid. Rects of
@@ -236,10 +236,10 @@ fn size(scene: &mut Value) {
         scene,
         "size",
         Value::Map(vec![
-            (Value::keyword("w"), geom::numval(b.right() + 40.0)),
-            (Value::keyword("h"), geom::numval(b.bottom() + 40.0)),
-            (Value::keyword("min-x"), geom::numval((b.x - 40.0).min(0.0))),
-            (Value::keyword("min-y"), geom::numval((b.y - 40.0).min(0.0))),
+            (Value::keyword("w"), numval(b.right() + 40.0)),
+            (Value::keyword("h"), numval(b.bottom() + 40.0)),
+            (Value::keyword("min-x"), numval((b.x - 40.0).min(0.0))),
+            (Value::keyword("min-y"), numval((b.y - 40.0).min(0.0))),
         ]),
     );
 }
@@ -383,7 +383,7 @@ pub fn compile_diagram(diagram: &Value) -> Value {
 /// Rename a scene's ids with a diagram prefix, so several diagrams can share
 /// one merged scene without id collisions.
 fn prefix_ids(scene: &mut Value, prefix: &str) {
-    let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, geom::name(id)));
+    let q = |id: &Value| Value::keyword(&format!("{}{}", prefix, name(id)));
     for key in ["packages", "classes"] {
         if let Some(Value::Vector(items)) = get(scene, key).cloned() {
             let mut renamed = Vec::with_capacity(items.len());
@@ -446,7 +446,7 @@ pub fn compile_document(doc: &Value) -> Value {
             "crap",
             get(d, "crap").cloned().unwrap_or(Value::Nil),
         );
-        put(&mut scene, "title-y", geom::numval(y));
+        put(&mut scene, "title-y", numval(y));
         for key in ["classes", "packages", "edges"] {
             match key {
                 "classes" => classes.extend(seq(get(&scene, key)).iter().cloned()),
@@ -478,7 +478,7 @@ pub fn compile_document(doc: &Value) -> Value {
     size(&mut scene);
     if let Some(Value::Map(entries)) = edn::record::get_raw(&scene, "size").cloned() {
         let mut sz = Value::Map(entries);
-        sz.assoc(Value::keyword("h"), geom::numval(y));
+        sz.assoc(Value::keyword("h"), numval(y));
         put(&mut scene, "size", sz);
     }
     prepare_scene(&mut scene);

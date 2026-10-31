@@ -6,7 +6,7 @@ use crate::geom;
 use crate::hierarchy as H;
 use crate::hit;
 use edn::Value;
-use edn::record::{get, local_name, num};
+use edn::record::{drop_keys, get, local_name, name, num};
 
 /// Canvas geometry for camera math: window size, usable view width and the
 /// optional pointer/control/shift modifiers.
@@ -95,11 +95,11 @@ pub fn show_proposal(s: &ViewState, id: Option<&Value>) -> ViewState {
             extra.assoc(Value::keyword("proposal-id"), (*id).clone());
             extra
         }
-        None => crate::geom::drop_keys(&n.extra, &["proposal-id"]),
+        None => drop_keys(&n.extra, &["proposal-id"]),
     };
     n.extra
         .assoc(Value::keyword("proposal"), Value::Bool(id.is_some()));
-    n.extra = crate::geom::drop_keys(&n.extra, &["open-layer"]);
+    n.extra = drop_keys(&n.extra, &["open-layer"]);
     navigate(n)
 }
 
@@ -204,7 +204,7 @@ pub fn delete_proposal(
         .collect();
     let mut state = s.clone();
     if get(&s.extra, "proposal-id") == Some(id) {
-        state.extra = crate::geom::drop_keys(&state.extra, &["proposal-id"]);
+        state.extra = drop_keys(&state.extra, &["proposal-id"]);
         state
             .extra
             .assoc(Value::keyword("proposal"), Value::Bool(false));
@@ -242,7 +242,7 @@ pub fn drill(s: &ViewState, id: &Value) -> ViewState {
         n.extra.assoc(Value::keyword("open-layer"), id.clone());
     } else {
         n.focus = s.focus.clone();
-        let last = geom::name(id);
+        let last = name(id);
         n.focus
             .push(Value::keyword(last.rsplit('.').next().unwrap_or("")));
     }
@@ -257,7 +257,7 @@ pub fn back(s: &ViewState) -> ViewState {
     }
     let mut n = s.clone();
     if layer.is_some() {
-        n.extra = crate::geom::drop_keys(&n.extra, &["open-layer"]);
+        n.extra = drop_keys(&n.extra, &["open-layer"]);
     } else {
         n.focus = s.focus[..s.focus.len() - 1].to_vec();
     }
@@ -427,7 +427,7 @@ pub fn zoom_dir(key: Option<&str>, dims: &Dims) -> Option<&'static str> {
 fn key_name(key: Option<&Value>) -> Option<String> {
     match key? {
         Value::String(s) => Some(s.clone()),
-        Value::Keyword(_) => Some(geom::name(key?)),
+        Value::Keyword(_) => Some(name(key?)),
         Value::Integer(n) => Some(n.to_string()),
         _ => None,
     }
@@ -495,7 +495,7 @@ pub fn on_key(s: &ViewState, key: Option<&Value>, dims: &Dims) -> ViewState {
 /// The layer a hit drills into (drillable class, child row, proposal package).
 pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
-    let kind = get(hit_value, "kind").map(geom::name)?;
+    let kind = get(hit_value, "kind").map(name)?;
     match kind.as_str() {
         "class" if edn::record::flag(hit_value, "drill?") => get(hit_value, "id").cloned(),
         "child" => get(hit_value, "parent").cloned(),
@@ -507,7 +507,7 @@ pub fn layer_id(hit_value: Option<&Value>) -> Option<Value> {
 /// Detail target identity of a class, child row or port hit.
 pub(crate) fn detail_id_for(hit_value: Option<&Value>) -> Option<Value> {
     let hit_value = hit_value?;
-    match get(hit_value, "kind").map(geom::name).as_deref() {
+    match get(hit_value, "kind").map(name).as_deref() {
         Some("class") | Some("child") | Some("port") => get(hit_value, "id").cloned(),
         _ => None,
     }
@@ -577,7 +577,7 @@ pub fn on_press(s: &ViewState, x: f64, y: f64) -> ViewState {
     match hit_value
         .as_ref()
         .and_then(|h| get(h, "kind"))
-        .map(geom::name)
+        .map(name)
         .as_deref()
     {
         Some("child") | Some("port") => open_detail(s, hit_value.as_ref()),
@@ -597,7 +597,7 @@ pub fn on_left_press(s: &ViewState, x: f64, y: f64) -> ViewState {
         hit_value
             .as_ref()
             .and_then(|h| get(h, "kind"))
-            .map(geom::name)
+            .map(name)
             .as_deref(),
         Some("class" | "child" | "port" | "dep")
     );
@@ -721,7 +721,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
     }
     if !present && hierarchical {
         let doc = s.document.clone().unwrap();
-        let id_name = geom::name(id);
+        let id_name = name(id);
         let parts: Vec<&str> = id_name.split('.').collect();
         if parts.len() < 2 {
             return s.clone();
@@ -785,7 +785,7 @@ pub fn locate(s: &ViewState, id: &Value, dims: &Dims) -> ViewState {
             return finish_locate(s, n, found, id, dims);
         }
         None => {
-            let id_name = geom::name(id);
+            let id_name = name(id);
             let parts: Vec<&str> = id_name.split('.').collect();
             for p in &parts[..parts.len().saturating_sub(1)] {
                 n.focus.push(Value::keyword(p));

@@ -1,8 +1,9 @@
 //! Basis curves over routed points (port of `love/uml/engine/curve.lua`).
 //! Bounds deliberately use the control hull, as the JVM does.
 
-use crate::geom::{Rect, numval};
+use crate::geom::Rect;
 use edn::Value;
+use edn::record::numval;
 
 fn length(x: f64, y: f64) -> f64 {
     (x * x + y * y).sqrt()

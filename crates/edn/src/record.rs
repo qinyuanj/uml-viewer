@@ -105,3 +105,33 @@ pub fn record(entries: Vec<(&str, Value)>) -> Value {
             .collect(),
     )
 }
+
+/// Drop the entries whose keyword names are listed (Lua `drop`); a non-map
+/// drops to the empty map.
+pub fn drop_keys(m: &Value, keys: &[&str]) -> Value {
+    let mut out = match m {
+        Value::Map(_) => m.clone(),
+        _ => Value::Map(vec![]),
+    };
+    for key in keys {
+        remove(&mut out, key);
+    }
+    out
+}
+
+/// The lenient id name (`geom.lua` `name` used as a string): the
+/// [`local_name`] of a string, keyword or symbol, and `""` for
+/// every other value.
+pub fn name(v: &Value) -> String {
+    local_name(v).unwrap_or_default().to_owned()
+}
+
+/// Numbers written back into EDN: integral values stay integers, like the
+/// Lua number formatting the golden files were produced with.
+pub fn numval(x: f64) -> Value {
+    if x == x.trunc() && x.abs() <= crate::MAX_EXACT_INTEGER as f64 {
+        Value::Integer(x as i64)
+    } else {
+        Value::Float(x)
+    }
+}

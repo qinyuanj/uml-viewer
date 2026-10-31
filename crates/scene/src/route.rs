@@ -4,6 +4,7 @@
 
 use crate::geom::{self, Rect};
 use edn::Value;
+use edn::record::name;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -473,7 +474,7 @@ pub fn route(scene: &mut Value) {
     let diagram = edn::record::get(scene, "diagram")
         .cloned()
         .unwrap_or(Value::Nil);
-    let direction = edn::record::get(&diagram, "direction").map(geom::name);
+    let direction = edn::record::get(&diagram, "direction").map(name);
     let lr = direction.as_deref() == Some("lr") || direction.as_deref() == Some("rl");
     let mut lanes: HashMap<usize, Path> = HashMap::new();
     for l in edn::record::seq(edn::record::get(scene, "lanes")) {
@@ -717,7 +718,7 @@ pub fn route(scene: &mut Value) {
         let mut edge = e.edge.clone();
         let points: Vec<Value> = e.ps.iter().map(|p| geom::point(*p)).collect();
         edn::record::put(&mut edge, "points", Value::Vector(points));
-        let head = match edn::record::get(&edge, "kind").map(geom::name) {
+        let head = match edn::record::get(&edge, "kind").map(name) {
             Some(k) if k == "inheritance" || k == "implements" => "triangle",
             Some(k) if k == "composition" => "diamond-fill",
             Some(k) if k == "aggregation" => "diamond",

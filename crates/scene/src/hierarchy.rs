@@ -2,10 +2,9 @@
 //! Functions consume and return tagged EDN; inputs are never mutated.
 
 use crate::config;
-use crate::geom;
 use crate::policy;
 use edn::Value;
-use edn::record::{flag, get, local_name, seq};
+use edn::record::{drop_keys, flag, get, local_name, name, numval, seq};
 use std::collections::HashMap;
 
 fn id(x: &Value) -> Value {
@@ -26,11 +25,11 @@ fn path_parts(x: &Value) -> Vec<String> {
 }
 
 fn path_name(path: &[Value]) -> String {
-    path.iter().map(geom::name).collect::<Vec<_>>().join(".")
+    path.iter().map(name).collect::<Vec<_>>().join(".")
 }
 
 fn under(x: &Value, parent: &Value) -> bool {
-    let (x, parent) = (geom::name(x), geom::name(parent));
+    let (x, parent) = (name(x), name(parent));
     x == parent || x.starts_with(&format!("{parent}."))
 }
 
@@ -55,7 +54,7 @@ fn child(x: &Value, path: &[Value]) -> Option<Value> {
 /// Display label: CamelCase of the last dot segment, preserving existing
 /// capitals (byte-level ASCII case ops, as in Lua).
 fn label(x: &Value) -> String {
-    let last = geom::name(x);
+    let last = name(x);
     let last = last.rsplit('.').next().unwrap_or("");
     let mut out = String::new();
     for part in last.split('-').filter(|s| !s.is_empty()) {
@@ -76,7 +75,7 @@ fn label(x: &Value) -> String {
 fn module_name(c: &Value) -> String {
     if flag(c, "proposal-group?") {
         return match get(c, "name") {
-            Some(v @ Value::String(_)) => geom::name(v),
+            Some(v @ Value::String(_)) => name(v),
             _ => label(get(c, "id").unwrap()),
         };
     }
@@ -149,7 +148,7 @@ fn contents(
     idx: &HashMap<String, &Value>,
 ) -> Option<Vec<Value>> {
     let mut next_path: Vec<Value> = path.to_vec();
-    let last = geom::name(cid);
+    let last = name(cid);
     let last = last.rsplit('.').next().unwrap_or("");
     next_path.push(Value::keyword(last));
     let kids = nodes_at(classes, &next_path);
@@ -192,7 +191,7 @@ fn metrics(out: &mut Value, classes: &[Value], rolled: bool) {
         }
     }
     if let Some(lv) = lv {
-        edn::record::put(out, "level", geom::numval(lv));
+        edn::record::put(out, "level", numval(lv));
     }
 }
 
@@ -239,7 +238,7 @@ fn view_class(
         }
     }
     if let Some(lv) = lv {
-        edn::record::put(&mut r, "level", geom::numval(lv));
+        edn::record::put(&mut r, "level", numval(lv));
     }
     if drill {
         metrics(&mut r, &subtree, false);
@@ -271,9 +270,7 @@ fn external(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Optio
             (Value::keyword("id"), cid.clone()),
             (
                 Value::keyword("name"),
-                get(c, "name")
-                    .cloned()
-                    .unwrap_or(Value::String(geom::name(cid))),
+                get(c, "name").cloned().unwrap_or(Value::String(name(cid))),
             ),
             (Value::keyword("foreign"), Value::Bool(true)),
         ]));
@@ -301,7 +298,7 @@ fn collapse(cid: &Value, path: &[Value], idx: &HashMap<String, &Value>) -> Optio
 }
 
 fn port(ports: &mut HashMap<String, Vec<Value>>, cid: &Value, dep: &Value) {
-    let entry = ports.entry(geom::name(cid)).or_default();
+    let entry = ports.entry(name(cid)).or_default();
     let dep_id = get(dep, "id");
     if entry.iter().any(|p| get(p, "id") == dep_id) {
         return;
@@ -358,7 +355,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
     };
     let mut ranks: HashMap<String, usize> = HashMap::new();
     for (i, x) in seq(order).iter().enumerate() {
-        ranks.insert(geom::name(x), i + 1);
+        ranks.insert(name(x), i + 1);
     }
     nodes.sort_by(|a, b| {
         let ar = ranks
@@ -489,8 +486,7 @@ pub fn view_at(doc: &Value, path: &[Value]) -> Value {
                 // only the focused segment.
                 (
                     Value::keyword("label"),
-                    path.last()
-                        .map_or(title, |last| Value::String(geom::name(last))),
+                    path.last().map_or(title, |last| Value::String(name(last))),
                 ),
                 (Value::keyword("classes"), Value::Vector(boxes)),
             ])]),
@@ -642,7 +638,7 @@ pub fn proposal_view(doc: &Value, which: Option<&Value>) -> Value {
         for x in seq(nses) {
             if matches!(x, Value::Map(_)) {
                 for cid in policy::nse_ids(get(x, "nses")) {
-                    owners.insert(geom::name(&cid), get(x, "id").cloned().unwrap());
+                    owners.insert(name(&cid), get(x, "id").cloned().unwrap());
                 }
                 register(get(x, "nses"), owners);
             }
@@ -784,7 +780,7 @@ pub fn layer_view(doc: &Value, which: Option<&Value>, pkg_id: &Value) -> Value {
         if get(p, "id") == Some(pkg_id) {
             let title = get(p, "label")
                 .cloned()
-                .unwrap_or(Value::String(geom::name(pkg_id)));
+                .unwrap_or(Value::String(name(pkg_id)));
             edn::record::put(&mut root, "title", title);
             edn::record::put(&mut root, "packages", Value::Vector(vec![p.clone()]));
             return root;
@@ -799,7 +795,7 @@ pub fn layer_view(doc: &Value, which: Option<&Value>, pkg_id: &Value) -> Value {
                 let cs = seq(get(c, "members")).to_vec();
                 let title = get(c, "name")
                     .cloned()
-                    .unwrap_or(Value::String(geom::name(pkg_id)));
+                    .unwrap_or(Value::String(name(pkg_id)));
                 let (proposal, _) = chosen(doc, which);
                 let layers = seq(proposal.as_ref().and_then(|p| get(p, "layers"))).to_vec();
                 edn::record::put(&mut root, "title", title.clone());
@@ -938,7 +934,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
         } else {
             ot.clone()
         };
-        if !known.contains(&geom::name(&f)) || !known.contains(&geom::name(&t)) || f == t {
+        if !known.contains(&name(&f)) || !known.contains(&name(&t)) || f == t {
             continue;
         }
         let gi = groups
@@ -989,7 +985,7 @@ pub fn collapse_arrows(view: &Value) -> Value {
                 deps.push(policy::leaf_dependency(e));
             }
         }
-        let mut out = geom::drop_keys(best.unwrap(), &["violating", "orig-from", "orig-to"]);
+        let mut out = drop_keys(best.unwrap(), &["violating", "orig-from", "orig-to"]);
         edn::record::put(&mut out, "via-ids", Value::Vector(via));
         edn::record::put(&mut out, "deps", Value::Vector(deps));
         if viol {
@@ -1009,7 +1005,7 @@ pub fn hide_elements(view: &Value) -> Value {
         let cs: Vec<Value> = seq(get(&p, "classes"))
             .iter()
             .map(|c| {
-                let mut out = geom::drop_keys(c, &["contents", "in-deps", "out-deps"]);
+                let mut out = drop_keys(c, &["contents", "in-deps", "out-deps"]);
                 edn::record::put(&mut out, "hide-members", Value::Bool(true));
                 out
             })
@@ -1036,7 +1032,7 @@ pub fn hide_classes(view: &Value) -> Value {
             }
         }
         if multi {
-            let mut ep = geom::drop_keys(
+            let mut ep = drop_keys(
                 &endpoint.unwrap_or_else(|| dummy(&p)),
                 &["crap", "killed", "survived", "uncovered", "mut-gap"],
             );
@@ -1051,7 +1047,7 @@ pub fn hide_classes(view: &Value) -> Value {
             let cs: Vec<Value> = real
                 .iter()
                 .map(|c| {
-                    let mut out = geom::drop_keys(c, &["contents"]);
+                    let mut out = drop_keys(c, &["contents"]);
                     edn::record::put(&mut out, "hide-members", Value::Bool(true));
                     out
                 })
@@ -1064,7 +1060,7 @@ pub fn hide_classes(view: &Value) -> Value {
 
 /// Apply a declutter mode to a view; unknown modes are "full".
 pub fn apply_declutter(view: &Value, mode: Option<&Value>) -> Value {
-    let mut mode = mode.map(geom::name).unwrap_or_else(|| "full".into());
+    let mut mode = mode.map(name).unwrap_or_else(|| "full".into());
     if mode == "methods" {
         mode = "elements".into();
     }

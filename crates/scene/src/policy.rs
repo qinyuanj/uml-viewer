@@ -2,9 +2,8 @@
 //! half of `love/uml/domain/policy.lua`: merge/kinds/violations/proposals).
 //! `apply_policy` itself belongs to the IR generator (#136).
 
-use crate::geom;
 use edn::Value;
-use edn::record::{flag, get, local_name, seq};
+use edn::record::{drop_keys, flag, get, local_name, name, numval, seq};
 
 pub const PROPOSAL_NOTICE: &str = "PROPOSAL — not instantiated in code";
 
@@ -24,7 +23,7 @@ fn ids(xs: &[Value]) -> Vec<Value> {
 }
 
 fn matches(x: &Value, p: &Value) -> bool {
-    let (x, p) = (geom::name(x), geom::name(p));
+    let (x, p) = (name(x), name(p));
     x == p || x.starts_with(&format!("{p}."))
 }
 
@@ -34,7 +33,7 @@ pub fn omitted_id(x: &Value, omit: Option<&Value>) -> bool {
 }
 
 pub fn kind_rank(k: Option<&Value>) -> i64 {
-    match k.map(geom::name).as_deref() {
+    match k.map(name).as_deref() {
         Some("implements") | Some("inheritance") => 4,
         Some("composition") => 3,
         Some("aggregation") => 2,
@@ -112,7 +111,7 @@ pub fn merge_edges(edges: &[Value]) -> Value {
     let best: Vec<Value> = groups
         .iter()
         .map(|group| {
-            let mut b = geom::drop_keys(&group.best, &["violating"]);
+            let mut b = drop_keys(&group.best, &["violating"]);
             edn::record::put(&mut b, "deps", Value::Vector(group.deps.clone()));
             if get(&b, "kind") == Some(&Value::keyword("dependency")) && group.violating {
                 edn::record::put(&mut b, "violating", Value::Bool(true));
@@ -155,7 +154,7 @@ pub fn restamp_ranks(classes: &[Value], edges: &[Value], ranks: &Value) -> Value
 }
 
 pub fn rank_of(x: &Value, ranks: &Value) -> Option<f64> {
-    let mut n = Some(geom::name(x));
+    let mut n = Some(name(x));
     while let Some(cur) = n {
         if let Some(v) = ranks.get(&Value::keyword(&cur))
             && edn::record::truthy(Some(v))
@@ -185,7 +184,7 @@ pub fn mark_violations(edges: &[Value], ranks: &Value) -> Value {
         edges
             .iter()
             .map(|e| {
-                let mut c = geom::drop_keys(e, &["violating"]);
+                let mut c = drop_keys(e, &["violating"]);
                 if violating_dependency(e, ranks) {
                     edn::record::put(&mut c, "violating", Value::Bool(true));
                 }
@@ -200,14 +199,14 @@ fn with_levels(classes: &[Value], ranks: &Value, clear: bool) -> Vec<Value> {
         .iter()
         .map(|c| {
             let mut out = if clear {
-                geom::drop_keys(c, &["level"])
+                drop_keys(c, &["level"])
             } else {
                 c.clone()
             };
             if !flag(c, "foreign")
                 && let Some(rank) = rank_of(get(c, "id").unwrap(), ranks)
             {
-                edn::record::put(&mut out, "level", geom::numval(rank));
+                edn::record::put(&mut out, "level", numval(rank));
             }
             out
         })
@@ -235,7 +234,7 @@ pub fn apply_edge_kinds(edges: &[Value], kinds: Option<&Value>, omit: Option<&Va
             edn::record::put(&mut c, "kind", k.clone());
         }
         if get(&c, "kind") != Some(&Value::keyword("dependency")) {
-            c = geom::drop_keys(&c, &["violating"]);
+            c = drop_keys(&c, &["violating"]);
         }
         out.push(c);
     }
@@ -266,7 +265,7 @@ fn nse_entry(x: &Value) -> Value {
     let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
     let mut out = x.clone();
     edn::record::put(&mut out, "id", cid.clone());
-    let label = Value::String(geom::name(&cid));
+    let label = Value::String(name(&cid));
     edn::record::put(&mut out, "label", default(get(x, "label"), &label).clone());
     edn::record::put(&mut out, "nses", Value::Vector(nses));
     out
@@ -284,7 +283,7 @@ fn layers_from(xs: Option<&Value>) -> Vec<Value> {
             let nses: Vec<Value> = seq(get(x, "nses")).iter().map(nse_entry).collect();
             let mut out_x = x.clone();
             edn::record::put(&mut out_x, "id", cid.clone());
-            let label = Value::String(geom::name(&cid));
+            let label = Value::String(name(&cid));
             edn::record::put(
                 &mut out_x,
                 "label",
@@ -335,11 +334,11 @@ fn named(p: &Value, i: usize) -> Option<Value> {
     let normalized = normalize_proposal(Some(p));
     let mut out = p.clone();
     edn::record::put(&mut out, "id", cid.clone());
-    let fallback_name = Value::String(geom::name(&cid));
+    let fallback_name = Value::String(name(&cid));
     let name_v = default(get(p, "name").or_else(|| get(p, "label")), &fallback_name);
     let name_s = match name_v {
         Value::String(s) => Value::String(s.clone()),
-        other => Value::String(geom::name(other)),
+        other => Value::String(name(other)),
     };
     edn::record::put(&mut out, "name", name_s);
     edn::record::put(

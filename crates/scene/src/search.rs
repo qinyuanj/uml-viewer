@@ -2,7 +2,7 @@
 //! substring over class names and namespaces, ASCII case-insensitive.
 
 use edn::Value;
-use edn::record::get;
+use edn::record::{get, name};
 
 /// One search result row.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,11 +34,11 @@ pub fn search(doc: &Value, query: &str) -> Vec<Match> {
         let Some(id) = get(c, "id") else { return };
         let class_name = match get(c, "name") {
             Some(Value::String(s)) => s.clone(),
-            _ => crate::geom::name(id),
+            _ => name(id),
         };
         let ns = match get(c, "ns") {
             Some(Value::String(s)) => s.clone(),
-            _ => crate::geom::name(id),
+            _ => name(id),
         };
         if ascii_lower(&class_name).contains(&query) || ascii_lower(&ns).contains(&query) {
             out.push(Match {

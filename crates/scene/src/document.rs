@@ -6,12 +6,11 @@
 //! [`Boundary`] so this module never touches the filesystem itself.
 
 use crate::compose;
-use crate::geom;
 use crate::hierarchy as H;
 use crate::ir;
 use crate::overlay::{self, Snapshot};
 use edn::Value;
-use edn::record::{get, local_name};
+use edn::record::{drop_keys, get, local_name, name, numval};
 use std::collections::HashMap;
 
 /// Filesystem capability for proposal write-back, supplied by the caller.
@@ -101,7 +100,7 @@ fn with_wide_layout(mut view: Value, extra: &Value) -> Value {
             .and_then(edn::record::num)
             .unwrap_or(WIDE_ASPECT);
         edn::record::put(&mut view, "direction", Value::keyword("lr"));
-        edn::record::put(&mut view, "wide", geom::numval(aspect));
+        edn::record::put(&mut view, "wide", numval(aspect));
     }
     view
 }
@@ -273,7 +272,7 @@ fn card_target(s: &ViewState, id: &Value) -> bool {
 }
 
 fn selected_target(s: &ViewState, sel: &Value) -> bool {
-    let Some(kind) = get(sel, "kind").map(geom::name) else {
+    let Some(kind) = get(sel, "kind").map(name) else {
         // A bare id (or a record without :kind) is a card target itself.
         return card_target(s, sel);
     };
@@ -399,7 +398,7 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
             e.assoc(Value::keyword("proposal-id"), pid.clone());
             e
         }
-        None => geom::drop_keys(&extra, &["proposal-id"]),
+        None => drop_keys(&extra, &["proposal-id"]),
     };
     extra.assoc(Value::keyword("proposal"), Value::Bool(pid.is_some()));
     extra = match &layer {
@@ -408,7 +407,7 @@ pub fn restore_session(state: &ViewState, snap: &ViewState) -> ViewState {
             e.assoc(Value::keyword("open-layer"), layer.clone());
             e
         }
-        None => geom::drop_keys(&extra, &["open-layer"]),
+        None => drop_keys(&extra, &["open-layer"]),
     };
     s.focus = focus;
     s.extra = extra;
@@ -526,7 +525,7 @@ pub fn policy_path_for(edn_path: &str, is_file: &dyn Fn(&str) -> bool) -> Option
 pub(crate) fn proposal_records(doc: &Value) -> Value {
     let records: Vec<Value> = H::named_proposals(doc)
         .iter()
-        .map(|p| geom::drop_keys(p, &["notice", "proposal"]))
+        .map(|p| drop_keys(p, &["notice", "proposal"]))
         .collect();
     Value::Vector(records)
 }
@@ -557,7 +556,7 @@ pub fn write_proposals(edn_path: Option<&str>, doc: &Value, boundary: &dyn Bound
     {
         let mut policy = policy;
         policy.assoc(Value::keyword("proposals"), records);
-        let policy = geom::drop_keys(&policy, &["proposal"]);
+        let policy = drop_keys(&policy, &["proposal"]);
         boundary.write(&path, &format!("{}\n", edn::encode(&policy).unwrap()));
     }
     out
