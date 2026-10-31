@@ -248,6 +248,7 @@ fn word_positions(text: &[u8], word: &[u8]) -> Vec<usize> {
 /// `read_module(source)`.
 pub fn read_module(source: &[u8]) -> Value {
     let (text, holes) = mask(source);
+    let blocks = inline_mods(&text, &holes);
     let mut uses: Vec<Vec<u8>> = Vec::new();
     let mut mods: Vec<Vec<u8>> = Vec::new();
     let mut impls: Vec<Vec<u8>> = Vec::new();
@@ -267,8 +268,11 @@ pub fn read_module(source: &[u8]) -> Value {
                 && i > use_end
             {
                 use_end = i + find_subslice(rest, b";").unwrap_or(rest.len() - 1);
-                if !in_hole(&holes, i) {
-                    uses.push(text::trim(capture).to_vec());
+                let depth = blocks.iter().filter(|&&(a, b)| i > a && i < b).count();
+                if !in_hole(&holes, i)
+                    && let Some(path) = out_of_inline_mods(text::trim(capture), depth)
+                {
+                    uses.push(path);
                 }
             }
             if let Some(capture) = m
@@ -427,6 +431,81 @@ fn match_mod(body: &[u8]) -> Option<&[u8]> {
     let s = &s[s.iter().take_while(|&&c| is_space(c)).count()..];
     s.strip_prefix(b";")?;
     Some(name)
+}
+
+/// `mod name {` at the start of `body`: the offset of its `{`.
+fn match_inline_mod(body: &[u8]) -> Option<usize> {
+    let lead = body.iter().take_while(|&&c| is_space(c)).count();
+    let s = body[lead..].strip_prefix(b"mod")?;
+    let spaces = s.iter().take_while(|&&c| is_space(c)).count();
+    if spaces == 0 || !s[spaces..].first().is_some_and(|&c| is_rust_ident_start(c)) {
+        return None;
+    }
+    let len = s[spaces..]
+        .iter()
+        .take_while(|&&c| is_rust_ident(c))
+        .count();
+    let after = &s[spaces + len..];
+    let gap = after.iter().take_while(|&&c| is_space(c)).count();
+    (after.get(gap) == Some(&b'{')).then(|| body.len() - after.len() + gap)
+}
+
+/// 1-based `(open, close)` brace positions of each inline `mod name { … }`.
+fn inline_mods(text: &[u8], holes: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let mut blocks = Vec::new();
+    for i in 1..=text.len() {
+        if (i == 1 || at(text, i - 1) == Some(b'\n')) && !in_hole(holes, i) {
+            let rest = &text[i - 1..];
+            let body = strip_pub(rest, false);
+            if let Some(off) = match_inline_mod(body) {
+                let open = i + rest.len() - body.len() + off;
+                let mut depth = 0usize;
+                let mut close = text.len() + 1;
+                for j in open..=text.len() {
+                    if in_hole(holes, j) {
+                        continue;
+                    }
+                    match at(text, j) {
+                        Some(b'{') => depth += 1,
+                        Some(b'}') => {
+                            depth -= 1;
+                            if depth == 0 {
+                                close = j;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                blocks.push((open, close));
+            }
+        }
+    }
+    blocks
+}
+
+/// A `use` path written `depth` inline mods deep, restated from the file:
+/// each `super` climbs one inline mod, and a path that stays inside the
+/// file names nothing outside it.
+fn out_of_inline_mods(path: &[u8], depth: usize) -> Option<Vec<u8>> {
+    if depth == 0 {
+        return Some(path.to_vec());
+    }
+    let mut rest = path;
+    let mut climbed = 0;
+    while climbed < depth
+        && let Some(r) = rest.strip_prefix(b"super::")
+    {
+        rest = r;
+        climbed += 1;
+    }
+    if climbed == depth {
+        Some([b"self::", rest].concat())
+    } else if climbed == 0 && !rest.starts_with(b"self::") {
+        Some(path.to_vec())
+    } else {
+        None
+    }
 }
 
 /// `rest:gsub('^(%s+)async%s+','%1')` then `^%s+fn%s+([A-Za-z_][A-Za-z0-9_]*)`
@@ -878,5 +957,33 @@ impl Scanner for RustScanner {
             ("edges", Value::Vector(edges)),
             ("commands", Value::Map(commands_map)),
         ]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uses(source: &str) -> Vec<String> {
+        seq(get(&read_module(source.as_bytes()), "uses"))
+            .iter()
+            .filter_map(|u| match u {
+                Value::String(u) => Some(u.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn super_inside_an_inline_mod_names_the_enclosing_file() {
+        let source = "use super::sibling;\n\
+                      pub fn f() {}\n\
+                      #[cfg(test)]\nmod tests {\n    use super::*;\n    \
+                      mod deeper {\n        use super::super::x::Y;\n    }\n}\n\
+                      use crate::after;\n";
+        assert_eq!(
+            vec!["super::sibling", "self::*", "self::x::Y", "crate::after"],
+            uses(source)
+        );
     }
 }
