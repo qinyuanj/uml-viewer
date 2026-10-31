@@ -30,7 +30,7 @@ policy 中一个具名分组，不存在于源码里；与源码图并列。
 _Avoid_: 方案, proposal（界面文案中）
 
 **外来包**:
-policy 的 `:foreign` 列出的项目外的库，画成椭圆，并用箭头与依赖它的类相连；未列出的外部依赖不上图。项目内、当前视图之外的代码不是外来包，它在类框上显示为药丸。
+policy 中声明的项目外的库，画成椭圆，并用箭头与依赖它的类相连；未列出的外部依赖不上图。项目内、当前视图之外的代码不是外来包，它在类框上显示为药丸。
 _Avoid_: 外部节点, external
 
 **架构级别**:
@@ -38,6 +38,12 @@ Clean Architecture 意义上的内／外层级，用来判断依赖方向；不�
 
 **违规依赖**:
 从较高架构级别（内层）指向较低架构级别（外层）的依赖边；同级别依赖不违规。
+
+**依赖规则**（Dependency Rule）:
+Clean Architecture 的规则：源码依赖只能指向内层；违反它的边即**违规依赖**。
+
+**共同闭包原则**（CCP）:
+因同一原因、在同一时间变化的模块归入同一组件。它是用户交给 agent 的划分准则之一，图本身不判定。
 
 ## 图例与交互
 
@@ -121,7 +127,7 @@ _Avoid_: 质量蓝, 所有相邻关系
 类卡片成员前的 `+` 表示公开成员，`-` 表示私有成员；不是新增或删除标记。
 
 **类卡片**:
-双击类打开的浮动卡片，显示该类的成员、关系与所属包；其邻域由场景核心给出，文案与排版由前端负责。
+双击类打开的浮动卡片，显示该类的成员、关系与所属包。
 
 **源码窗口**:
 从类卡片成员打开的浮动窗口，显示该成员所在源文件并定位到其声明行。与**源码图**无关。
@@ -182,7 +188,7 @@ Cyclomatic Complexity，圈复杂度；数值越高，控制流分支越多。�
 没有测试覆盖的变异体数，表示覆盖缺口，不等于 survived；大于 0 时在类卡片中标红。
 
 **无 mutation 位点**:
-类卡片在某行的 `sites` 为空或 0、且 killed／survived／uncovered 合计为 0 时显示的标记。缺少快照也会产生这些值，因此不能据此确定源码没有可应用的 mutation 算子。
+类卡片在某行没有变异位点、且 killed／survived／uncovered 合计为 0 时显示的标记。缺少快照也会产生这些值，因此不能据此确定源码没有可应用的 mutation 算子。
 
 **业务范围**:
 三个质量工具共享的源码集合，由项目质量配置声明；范围之外只有测试代码。难以测试的业务代码仍在范围内，缺数据的类按**无数据**处理。
@@ -203,39 +209,39 @@ viewer 对 CRAP、mutation 与重复检测请求的通用分发：按项目配�
 交付平台（WSL2/WSLg 与 macOS）上唯一的 companion 启动后端。不支持 Windows 原生运行。
 
 **selected Herdr**:
-本次启动时 PATH 上所有兼容 Herdr 中版本最高的那一个；同一次启动内所有 Herdr 调用都用它。
+一次启动选定的 Herdr；同一次启动内所有 Herdr 调用都用它。
 _Avoid_: default herdr, PATH herdr
 
 **Herdr migration**:
-将项目从旧 companion 后端迁到 Herdr 的过程：先由旧版本正常结束并归档旧 ownership，保留会话、policy/proposal 与邮件队列，再 fresh 创建 Herdr companion。不得跨后端使用 `--restart`。
+将项目从旧 companion 后端迁到 Herdr 的过程：保留会话、policy、提案与邮件队列，重新创建 Herdr companion，而不是跨后端重启。
 _Avoid_: reindexing, in-place upgrade
 
 **场景核心**:
-viewer 中把 IR 与质量快照变成可绘制场景的那部分：质量叠加、源码图/提案视图、declutter、布局、路由，以及导航、命中测试与提案写回。不含绘制、窗口与输入。
+viewer 中把 IR 与质量快照变成可绘制场景的那部分；不含绘制、窗口与输入。
 _Avoid_: 引擎, 后端, scene service
 
 **viewer 会话**:
-viewer 中不依赖窗口的部分：持有视图状态，应用前端动作、热重载、邮件消费以及正常关闭与重启退出，返回重绘与关闭请求。它读写项目文件，因此**不是**纯逻辑模块；与「会话快照」和 Herdr 会话不同。
+viewer 中不依赖窗口的部分：持有视图状态，处理用户动作、热重载、邮件与退出。它读写项目文件，因此**不是**纯逻辑模块；与「会话快照」和 Herdr 会话不同。
 _Avoid_: app, session state
 
 **正常关闭**:
-关窗、终止信号或测试时长结束时 viewer 的退出：以**不保留** companion 的方式停止 helper，helper settled 或 5 秒截止时以 0 退出；不写会话快照。
+关窗或收到终止信号时 viewer 的退出：**不保留** companion，不写会话快照。
 _Avoid_: quit, 关闭（单独使用时）
 
 **重启退出**:
-收到 `:quit-for-restart` 邮件后的退出：以**保留** companion 的方式停止 helper，等到它 settled 后才写会话快照并以 0 退出，供 `./uml --restart` 恢复。
+收到 `:quit-for-restart` 邮件后的退出：**保留** companion，写会话快照，供重启后恢复视图。
 _Avoid_: restart（指退出这一步时）
 
 ## 运行时
 
 **viewer 运行时**:
-本仓唯一的实现，一个 Rust 二进制（egui/eframe，WSLg + D3D12）；同时承担 viewer、IR 生成、四个扫描器与 companion 的无头角色。
+本仓唯一的实现，一个 Rust 二进制；同时承担 viewer、IR 生成、扫描器与 companion 角色。
 _Avoid_: LOVE, LuaJIT, 双解释器, 主解释器
 
 **分析语言版本**:
-质量工具理解被分析源码时采用的语言与版本。本仓自举时是 Rust；Lua 项目仍可被扫描，但仓库不再包含 Lua 运行时。
+质量工具理解被分析源码时采用的语言与版本。
 _Avoid_: 运行时版本, Lua 5.4 分析契约
 
 **纯逻辑模块**:
-不依赖窗口与输入、只消费 IR 与质量快照的模块（场景核心、EDN、IR、companion）。只有 FFI/POSIX 适配层与前端依赖宿主能力。
+不依赖窗口、输入与宿主能力，只消费 IR 与质量快照的模块。
 _Avoid_: 适配器, adapter
