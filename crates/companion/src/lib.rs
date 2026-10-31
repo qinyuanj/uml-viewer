@@ -5,7 +5,6 @@
 //! `docs/herdr-backend-contract.md` and the ADR 0007 platform table; the code
 //! is a port of `love/uml/{domain,adapters}/{companion,herdr,recovery,...}.lua`.
 
-pub(crate) mod domain;
 pub(crate) mod herdr;
 pub(crate) mod herdr_domain;
 pub(crate) mod host;
@@ -15,6 +14,7 @@ pub mod mailbox;
 pub(crate) mod ownership;
 pub(crate) mod posix;
 pub(crate) mod preflight;
+pub(crate) mod prompt;
 pub mod record;
 pub(crate) mod recovery;
 pub(crate) mod recovery_domain;

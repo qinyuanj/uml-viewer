@@ -3,7 +3,7 @@
 //! role). Never creates a resource; selection is pure and the adapter only
 //! supplies PATH candidates, executable probing, ownership bytes and commands.
 
-use crate::domain::{self, Probe, Selected};
+use crate::herdr::select::{self, Probe, Selected};
 use crate::ownership;
 use crate::posix;
 use crate::vocab::{Result, RunOut};
@@ -16,7 +16,7 @@ fn candidates(path: &str) -> Vec<String> {
             canonical: candidate.to_owned(),
         })
     };
-    domain::herdr_candidates(path, &probe)
+    select::herdr_candidates(path, &probe)
 }
 
 fn run_herdr(argv: &[String], timeout_ms: Option<i64>) -> RunOut {
@@ -34,12 +34,12 @@ pub fn select(root: &str, args: &[String], restart: bool) -> Result<Selected> {
 /// Selection against an explicit PATH; the role passes the process PATH and
 /// tests pass a fixture directory, so no test mutates process state.
 pub fn select_on_path(root: &str, args: &[String], restart: bool, path: &str) -> Result<Selected> {
-    let (_, requested) = domain::selection_args(args)?;
+    let (_, requested) = rules::selection_args(args)?;
     let record = ownership::read(root)?;
     let canonical = |path: &str| posix::canonical(path).unwrap_or_else(|_| path.to_owned());
-    domain::preflight_checks(
+    rules::preflight_checks(
         record.as_ref(),
-        &domain::PreflightOptions {
+        &rules::PreflightOptions {
             root,
             requested,
             restart,
@@ -48,7 +48,7 @@ pub fn select_on_path(root: &str, args: &[String], restart: bool, path: &str) ->
         },
     )?;
     let candidates = candidates(path);
-    domain::select_herdr(&candidates, &run_herdr)
+    select::select_herdr(&candidates, &run_herdr)
 }
 
 /// The `companion-preflight` role: stdout is exactly `herdr`, stderr carries
@@ -77,6 +77,8 @@ pub fn run(args: &[std::ffi::OsString]) -> std::process::ExitCode {
         }
     }
 }
+
+pub(crate) mod rules;
 
 #[cfg(test)]
 mod tests {

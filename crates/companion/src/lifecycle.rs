@@ -2,7 +2,6 @@
 //! `love/uml/adapters/companion_lifecycle.lua`). Prompt text, session naming
 //! and ownership checks are pure; all process work stays in adapters.
 
-use crate::domain;
 use crate::herdr::{
     Config, ControllerSpec, Herdr, MAX_SOCKET_BYTES, ProgressFn, RunnerLauncher, Selected,
 };
@@ -10,6 +9,8 @@ use crate::herdr_domain;
 use crate::host::Host;
 use crate::ownership;
 use crate::posix;
+use crate::preflight::rules;
+use crate::prompt;
 use crate::record;
 use crate::recovery;
 use crate::vocab::{Failure, Result, RunOut};
@@ -75,7 +76,7 @@ pub fn load(root: &str, host: &Host) -> Result<Option<Value>> {
     if record::is_empty_map(&value) {
         return Ok(None);
     }
-    domain::recorded_backend(Some(&value))?;
+    rules::recorded_backend(Some(&value))?;
     herdr_domain::complete(&value)?;
     let cwd = record::get_name(&value, "cwd").unwrap_or_default();
     if (host.canonical)(&cwd) != (host.canonical)(root) {
@@ -155,8 +156,8 @@ pub fn create(root: &str, host: &Host, options_in: CreateOptions) -> Result<(Val
         "--session-id".to_owned(),
         uuid.clone(),
         "--append-system-prompt".to_owned(),
-        domain::STANDING_RULES.to_owned(),
-        domain::LAUNCH_PROMPT.to_owned(),
+        prompt::STANDING_RULES.to_owned(),
+        prompt::LAUNCH_PROMPT.to_owned(),
     ];
     let recovery_command = [
         claude,
@@ -164,8 +165,8 @@ pub fn create(root: &str, host: &Host, options_in: CreateOptions) -> Result<(Val
         "--resume".to_owned(),
         uuid.clone(),
         "--append-system-prompt".to_owned(),
-        domain::STANDING_RULES.to_owned(),
-        domain::RECOVERY_PROMPT.to_owned(),
+        prompt::STANDING_RULES.to_owned(),
+        prompt::RECOVERY_PROMPT.to_owned(),
     ];
     let canonical = (host.canonical)(root);
     let provisional = edn::record::record(vec![

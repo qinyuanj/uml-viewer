@@ -175,7 +175,7 @@ fn observe_snapshot(expected: &Value, snapshot: &crate::json::Json) -> Result<()
     let version_ok = snapshot
         .get("version")
         .and_then(Json::as_str)
-        .is_some_and(crate::domain::herdr_version_supported);
+        .is_some_and(crate::herdr::select::herdr_version_supported);
     let protocol_ok = snapshot.get("protocol").and_then(Json::as_i64) == Some(22);
     if !version_ok
         || !protocol_ok

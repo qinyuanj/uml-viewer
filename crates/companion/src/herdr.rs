@@ -30,7 +30,7 @@ const BOOTSTRAP_MS: i64 = 60000;
 const ACK_ATTEMPTS: u32 = 3;
 const ACK_WAIT_MS: i64 = 10000;
 
-pub use crate::domain::Selected;
+pub use select::Selected;
 
 /// How the runner role is launched inside the pane: the argv the pane's shell
 /// receives after quoting (the manifest path is appended per generation).
@@ -242,7 +242,7 @@ impl Herdr {
             && status
                 .get("version")
                 .and_then(Json::as_str)
-                .is_some_and(crate::domain::herdr_version_supported)
+                .is_some_and(select::herdr_version_supported)
             && status.get("protocol").and_then(Json::as_i64) == Some(22)
             && status.get("compatible") == Some(&Json::Bool(true))
             && status.get("endpoint_compatible") == Some(&Json::Bool(true));
@@ -259,7 +259,7 @@ impl Herdr {
             snapshot
                 .get("version")
                 .and_then(Json::as_str)
-                .is_some_and(crate::domain::herdr_version_supported)
+                .is_some_and(select::herdr_version_supported)
                 && snapshot.get("protocol").and_then(Json::as_i64) == Some(22)
                 && snapshot.get("panes").and_then(Json::array_items).is_some()
                 && snapshot
@@ -1131,6 +1131,8 @@ fn json_to_edn(value: Json) -> Value {
         ),
     }
 }
+
+pub(crate) mod select;
 
 #[cfg(test)]
 mod tests;
