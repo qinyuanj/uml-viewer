@@ -2,7 +2,6 @@
 //! request selects the recorded session; the selected executable is fixed for
 //! this process. Ownership is EDN on disk and EDN maps in memory.
 
-use crate::herdr_domain as domain;
 use crate::host::{Detached, Host};
 use crate::json::Json;
 use crate::record;
@@ -219,7 +218,7 @@ impl Herdr {
     }
 
     pub fn session_check(&self, session: &str) -> Result<()> {
-        if !domain::session_valid(session) {
+        if !rules::session_valid(session) {
             return self.fail("Herdr requires an isolated uml-viewer named session");
         }
         Ok(())
@@ -321,7 +320,7 @@ impl Herdr {
     pub fn launch_server(&self, session: &str, cwd: &str) -> Result<Owner> {
         // Server diagnostics belong beside the project's other lifecycle
         // journals; without them a failed start is an unexplained timeout.
-        let remove = domain::inherited_pane_env(&(self.host.variables)());
+        let remove = rules::inherited_pane_env(&(self.host.variables)());
         let owner = match &self.hooks.spawn_server {
             Some(spawn) => spawn(
                 &self.herdr(),
@@ -349,7 +348,7 @@ impl Herdr {
     }
 
     pub fn observe(&self, expected: &Value, session: &str, pane: &str) -> Result<()> {
-        domain::complete(expected)?;
+        rules::complete(expected)?;
         if record::get_name(expected, "session").as_deref() != Some(session)
             || record::get_name(expected, "pane").as_deref() != Some(pane)
         {
@@ -370,7 +369,7 @@ impl Herdr {
         let snapshot = self.snapshot(session)?;
         let info = self.cli(session, &["pane", "process-info", "--pane", pane])?;
         let process_info = info.get("result").and_then(|r| r.get("process_info"));
-        domain::observe(
+        rules::observe(
             expected,
             &status,
             &snapshot,
@@ -530,7 +529,7 @@ impl Herdr {
         let info = self.cli(&session, &["pane", "process-info", "--pane", &pane])?;
         let process_info = info.get("result").and_then(|r| r.get("process_info"));
         let shell_pid = record::get_i64(record, "shell-pid").unwrap_or(0);
-        domain::foreground_allowed(process_info, shell_pid)?;
+        rules::foreground_allowed(process_info, shell_pid)?;
         self.terminal_reset(record)?;
         let shell = self
             .process_owner(
@@ -545,7 +544,7 @@ impl Herdr {
             _ => edn::record::seq(edn::record::get(record, "command")),
         });
         let argv = self.runner_command(record, &command)?;
-        self.pane_run(&session, &pane, &domain::pane_command(&argv, &shell.name)?)
+        self.pane_run(&session, &pane, &rules::pane_command(&argv, &shell.name)?)
     }
 
     fn cancel_recovery(&self, record: &Value) -> Result<()> {
@@ -638,7 +637,7 @@ impl Herdr {
         }
         let canonical_cwd = (self.host.canonical)(cwd);
         let mut base =
-            domain::ownership_base(self.identity.as_ref(), session, &canonical_cwd, &command);
+            rules::ownership_base(self.identity.as_ref(), session, &canonical_cwd, &command);
         crate::ownership::write(&self.host, &canonical_cwd, &base)?;
         self.progress("server")?;
         let owner = self.launch_server(session, &canonical_cwd)?;
@@ -768,7 +767,7 @@ impl Herdr {
         self.progress("runner")?;
         self.await_pane_ready(session, &pane_id)?;
         let argv = self.runner_command(&base, &command)?;
-        let submission = domain::pane_command(&argv, &shell.name)?;
+        let submission = rules::pane_command(&argv, &shell.name)?;
         // Herdr 0.9.5 can still swallow the submission after the pane has
         // printed its first output, and it reports success when it does.
         // Resubmit while no runner state appears: the runner takes a
@@ -800,7 +799,7 @@ impl Herdr {
             return self.fail("Herdr runner failed during startup");
         }
         self.observe(&base, session, &pane_id)?;
-        let owned = domain::committed(&base);
+        let owned = rules::committed(&base);
         crate::ownership::write(&self.host, &canonical_cwd, &owned)?;
         self.progress("recovery")?;
         let start_recovery = self.hooks.start_recovery.clone();
@@ -813,7 +812,7 @@ impl Herdr {
                     })?;
                     let mut argv = controller.argv.clone();
                     argv.push(manifest.to_owned());
-                    let log = crate::recovery_domain::state_file(identity)
+                    let log = crate::recovery::rules::state_file(identity)
                         .replace("recovery.edn", "recovery.log");
                     let err = format!("{log}.err");
                     (self.host.spawn_detached)(&Detached {
@@ -865,7 +864,7 @@ impl Herdr {
         timeout_ms: Option<i64>,
         interval_ms: Option<i64>,
     ) -> Result<()> {
-        domain::wake_arguments(token, keys)?;
+        rules::wake_arguments(token, keys)?;
         let identity = self
             .identity
             .as_ref()
@@ -923,7 +922,7 @@ impl Herdr {
             .as_ref()
             .ok_or_else(|| Failure::new("Incomplete Herdr ownership"))?
             .clone();
-        domain::complete(&record)?;
+        rules::complete(&record)?;
         if session != record::get_name(&record, "session").unwrap_or_default() {
             return self.fail("Cleanup selector conflicts with ownership");
         }
@@ -934,7 +933,7 @@ impl Herdr {
         let saved = crate::ownership::read_in(&self.host, &cwd)?;
         if let Some(saved) = &saved
             && !record::is_empty_map(saved)
-            && domain::ownership_changed(&record, saved)
+            && rules::ownership_changed(&record, saved)
         {
             return self.fail("Cleanup ownership changed");
         }
@@ -1005,7 +1004,7 @@ impl Herdr {
             checkpoint(&record, "workspace-closed")?;
             phase = Some("workspace-closed".to_owned());
         }
-        if !domain::cleanup_phase_valid(phase.as_deref()) {
+        if !rules::cleanup_phase_valid(phase.as_deref()) {
             return self.fail("Unknown cleanup phase");
         }
         if !matches!(
@@ -1132,6 +1131,7 @@ fn json_to_edn(value: Json) -> Value {
     }
 }
 
+pub(crate) mod rules;
 pub(crate) mod select;
 
 #[cfg(test)]

@@ -5,7 +5,6 @@
 use crate::herdr::{
     Config, ControllerSpec, Herdr, MAX_SOCKET_BYTES, ProgressFn, RunnerLauncher, Selected,
 };
-use crate::herdr_domain;
 use crate::host::Host;
 use crate::ownership;
 use crate::posix;
@@ -77,7 +76,7 @@ pub fn load(root: &str, host: &Host) -> Result<Option<Value>> {
         return Ok(None);
     }
     rules::recorded_backend(Some(&value))?;
-    herdr_domain::complete(&value)?;
+    crate::herdr::rules::complete(&value)?;
     let cwd = record::get_name(&value, "cwd").unwrap_or_default();
     if (host.canonical)(&cwd) != (host.canonical)(root) {
         return Err(Failure::new(
@@ -563,7 +562,7 @@ mod tests {
     fn names_a_fresh_session_uniquely_per_launch_within_the_grammar() {
         let name = session_name("/projects/some project", "abcdef12-rest", HOME_CONFIG).unwrap();
         assert!(name.len() <= 64);
-        assert!(herdr_domain::session_valid(&name), "{name}");
+        assert!(crate::herdr::rules::session_valid(&name), "{name}");
         let long = session_name(
             &format!("/projects/{}", "x".repeat(200)),
             "abcdef12-rest",
@@ -589,7 +588,7 @@ mod tests {
             "{socket} ({} bytes)",
             socket.len()
         );
-        assert!(herdr_domain::session_valid(&name), "{name}");
+        assert!(crate::herdr::rules::session_valid(&name), "{name}");
         assert!(name.len() <= MAX_NAME_BYTES);
         let other = session_name("/projects/other", "abcdef12-rest", config_root).unwrap();
         assert_ne!(name, other);

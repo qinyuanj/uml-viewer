@@ -6,7 +6,6 @@
 //! is a port of `love/uml/{domain,adapters}/{companion,herdr,recovery,...}.lua`.
 
 pub(crate) mod herdr;
-pub(crate) mod herdr_domain;
 pub(crate) mod host;
 pub(crate) mod json;
 pub(crate) mod lifecycle;
@@ -17,7 +16,6 @@ pub(crate) mod preflight;
 pub(crate) mod prompt;
 pub mod record;
 pub(crate) mod recovery;
-pub(crate) mod recovery_domain;
 pub(crate) mod role;
 pub(crate) mod text;
 pub(crate) mod vocab;

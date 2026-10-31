@@ -6,7 +6,6 @@
 use crate::host::Host;
 use crate::posix;
 use crate::record;
-use crate::recovery_domain as domain;
 use crate::vocab::{Failure, Result};
 use edn::Value;
 use std::path::{Path, PathBuf};
@@ -69,11 +68,11 @@ pub fn write_state(path: &Path, state: &Value, host: &Host) -> Result<()> {
 }
 
 pub fn status(identity: &Value, host: &Host) -> Result<Option<Value>> {
-    read_state(Path::new(&domain::state_file(identity)), host)
+    read_state(Path::new(&rules::state_file(identity)), host)
 }
 
 pub fn save(identity: &Value, state: &Value, host: &Host) -> Result<()> {
-    write_state(Path::new(&domain::state_file(identity)), state, host)
+    write_state(Path::new(&rules::state_file(identity)), state, host)
 }
 
 /// Register the journal for a fresh controller; an existing journal refuses
@@ -86,7 +85,7 @@ pub fn register(identity: &Value, controller: &Value, host: &Host) -> Result<()>
     }
     save(
         identity,
-        &domain::initial(identity, controller, (host.clock)()),
+        &rules::initial(identity, controller, (host.clock)()),
         host,
     )
 }
@@ -96,7 +95,7 @@ pub fn register(identity: &Value, controller: &Value, host: &Host) -> Result<()>
 pub fn verify(identity: &Value, host: &Host) -> Result<Value> {
     let state = status(identity, host)?
         .ok_or_else(|| Failure::new("Recovery controller identity is missing or changed"))?;
-    domain::matching(identity, &state)?;
+    rules::matching(identity, &state)?;
     let controller = edn::record::get(&state, "controller")
         .filter(|controller| record::is_map(controller))
         .ok_or_else(|| Failure::new("Recovery process identity is incomplete"))?;
@@ -107,7 +106,7 @@ pub fn verify(identity: &Value, host: &Host) -> Result<Value> {
         return Err(Failure::new("Recovery process identity is incomplete"));
     }
     let phase = record::get_name(&state, "phase").unwrap_or_default();
-    if !domain::terminal(&phase) {
+    if !rules::terminal(&phase) {
         let start = record::get_name(controller, "start").unwrap_or_default();
         let observed = (host.owner)(pid);
         let matches = observed
@@ -124,7 +123,7 @@ pub fn verify(identity: &Value, host: &Host) -> Result<Value> {
 
 /// Start and cancel share the OS gate lock (Lua `M.with_gate`).
 pub fn with_gate<T>(identity: &Value, action: impl FnOnce() -> Result<T>) -> Result<T> {
-    let gate = posix::acquire(Path::new(&domain::gate_file(identity)))?;
+    let gate = posix::acquire(Path::new(&rules::gate_file(identity)))?;
     let result = action();
     posix::release(Some(gate));
     result
@@ -134,8 +133,8 @@ pub fn with_gate<T>(identity: &Value, action: impl FnOnce() -> Result<T>) -> Res
 /// the controller to confirm by reaching a terminal phase and exiting.
 pub fn cancel(identity: &Value, host: &Host) -> Result<()> {
     verify(identity, host)?;
-    let reference = domain::reference(identity);
-    let control_path = PathBuf::from(domain::control_file(identity));
+    let reference = rules::reference(identity);
+    let control_path = PathBuf::from(rules::control_file(identity));
     with_gate(identity, || {
         write_state(
             &control_path,
@@ -161,7 +160,7 @@ pub fn cancel(identity: &Value, host: &Host) -> Result<()> {
             Some(observed) => observed.start != start,
         };
         let phase = record::get_name(&state, "phase").unwrap_or_default();
-        if domain::terminal(&phase) && absent {
+        if rules::terminal(&phase) && absent {
             return Ok(());
         }
         if (host.clock)() < deadline {
@@ -182,11 +181,11 @@ pub fn retire_completed(identity: &Value, host: &Host) -> Result<Option<()>> {
         return Ok(None);
     };
     let phase = record::get_name(&existing, "phase").unwrap_or_default();
-    if !domain::terminal(&phase) {
+    if !rules::terminal(&phase) {
         return Err(Failure::new("Recovery registration already exists"));
     }
-    (host.remove)(Path::new(&domain::state_file(identity)));
-    (host.remove)(Path::new(&domain::control_file(identity)));
+    (host.remove)(Path::new(&rules::state_file(identity)));
+    (host.remove)(Path::new(&rules::control_file(identity)));
     Ok(Some(()))
 }
 
@@ -202,8 +201,8 @@ pub struct Step<'a> {
 pub fn step(step: &Step) -> Result<Value> {
     let identity = step.identity;
     let host = step.host;
-    let state = read_state(Path::new(&domain::state_file(identity)), host)?;
-    let control = read_state(Path::new(&domain::control_file(identity)), host)?;
+    let state = read_state(Path::new(&rules::state_file(identity)), host)?;
+    let control = read_state(Path::new(&rules::control_file(identity)), host)?;
     let event = match &state {
         Some(state) => read_runner(state, host)?,
         None => None,
@@ -213,7 +212,7 @@ pub fn step(step: &Step) -> Result<Value> {
     let owner_ref = move |pid: i64| owner(pid);
     let token = host.token.clone();
     let token_ref = move || token();
-    let decision = domain::decide(&domain::Context {
+    let decision = rules::decide(&rules::Context {
         identity,
         state: state
             .as_ref()
@@ -225,7 +224,7 @@ pub fn step(step: &Step) -> Result<Value> {
         token: &token_ref,
         runner_state: &runner_state_fn,
     })?;
-    let state_path = PathBuf::from(domain::state_file(identity));
+    let state_path = PathBuf::from(rules::state_file(identity));
     if !decision.launch {
         if decision.changed {
             write_state(&state_path, &decision.state, host)?;
@@ -265,7 +264,7 @@ pub fn start(
     spawn: &dyn Fn(&Value, &str) -> Result<()>,
 ) -> Result<Value> {
     retire_completed(identity, host)?;
-    let manifest = domain::manifest_path(identity);
+    let manifest = rules::manifest_path(identity);
     write_state(Path::new(&manifest), identity, host)?;
     spawn(identity, &manifest)?;
     let deadline = (host.clock)() + 30000;
@@ -391,7 +390,7 @@ pub fn controller_loop(
     host: &Host,
     launch: &dyn Fn(&Value) -> Result<()>,
 ) -> Result<String> {
-    let lock = posix::try_acquire(Path::new(&domain::lock_file(identity)))?;
+    let lock = posix::try_acquire(Path::new(&rules::lock_file(identity)))?;
     if lock.is_none() {
         return Err(Failure::new("Project recovery controller already running"));
     }
@@ -417,18 +416,20 @@ pub fn controller_loop(
                 let mut existing = status(identity, host)?.unwrap_or_else(|| Value::Map(vec![]));
                 edn::record::put(&mut existing, "phase", Value::keyword("failed"));
                 edn::record::put(&mut existing, "reason", Value::String(error.message));
-                write_state(Path::new(&domain::state_file(identity)), &existing, host)?;
+                write_state(Path::new(&rules::state_file(identity)), &existing, host)?;
                 existing
             }
         };
         let phase = record::get_name(&state, "phase").unwrap_or_default();
-        if domain::terminal(&phase) {
+        if rules::terminal(&phase) {
             posix::release(lock);
             return Ok(phase);
         }
         (host.sleep)(100);
     }
 }
+
+pub(crate) mod rules;
 
 #[cfg(test)]
 mod tests {
