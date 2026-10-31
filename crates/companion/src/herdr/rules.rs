@@ -281,6 +281,26 @@ pub fn wake_arguments(token: &str, keys: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Where one delivered wake stands. Herdr folds a prompt queued during a
+/// turn into the same `working` stretch, so an idle agent past the accepted
+/// prompt's state sequence has ended the turn that saw the mail.
+#[derive(Debug, PartialEq, Eq)]
+pub enum WakeVerdict {
+    Consumed,
+    Pending,
+    Lost,
+}
+
+pub fn wake_verdict(delivered_seq: i64, status: &str, seq: i64, queued: bool) -> WakeVerdict {
+    if !queued {
+        WakeVerdict::Consumed
+    } else if matches!(status, "idle" | "done") && seq > delivered_seq {
+        WakeVerdict::Lost
+    } else {
+        WakeVerdict::Pending
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,5 +543,19 @@ mod tests {
         assert!(wake_arguments("token", &["mail token".into()]).is_err());
         assert!(wake_arguments("token", &["-p".into(), "mail token".into()]).is_err());
         assert!(wake_arguments("token", &["-l".into(), "mail other".into()]).is_err());
+    }
+
+    #[test]
+    fn a_wake_is_lost_only_when_claude_ends_a_later_turn_with_the_mail_queued() {
+        use WakeVerdict::*;
+        assert_eq!(Consumed, wake_verdict(4, "idle", 5, false));
+        assert_eq!(Consumed, wake_verdict(4, "working", 4, false));
+        assert_eq!(Pending, wake_verdict(4, "working", 4, true));
+        assert_eq!(Pending, wake_verdict(4, "blocked", 5, true));
+        assert_eq!(Pending, wake_verdict(4, "unknown", 5, true));
+        // Idle at the delivery sequence: the turn has not been observed yet.
+        assert_eq!(Pending, wake_verdict(4, "idle", 4, true));
+        assert_eq!(Lost, wake_verdict(4, "idle", 5, true));
+        assert_eq!(Lost, wake_verdict(4, "done", 6, true));
     }
 }

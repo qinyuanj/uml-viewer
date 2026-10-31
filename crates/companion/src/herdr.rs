@@ -854,16 +854,16 @@ impl Herdr {
     }
 
     /// Wake delivers literal text carrying this delivery's unique token and
-    /// returns only after consumption is acknowledged (contract §5).
+    /// returns once Claude is working on it, with the state sequence Herdr
+    /// reported then. Claude pops the mail on its own schedule; the durable
+    /// queue keeps it until then (contract §5).
     pub fn wake(
         &self,
         pane: &str,
         keys: &[String],
         token: &str,
         acknowledged: &dyn Fn(&str) -> bool,
-        timeout_ms: Option<i64>,
-        interval_ms: Option<i64>,
-    ) -> Result<()> {
+    ) -> Result<i64> {
         rules::wake_arguments(token, keys)?;
         let identity = self
             .identity
@@ -875,42 +875,59 @@ impl Herdr {
         if acknowledged(token) {
             return self.fail("Herdr wake acknowledgement predates this delivery");
         }
-        let snapshot = self.snapshot(&session)?;
-        let terminal_id = record::get_name(&identity, "terminal-id").unwrap_or_default();
-        let occupied = snapshot
+        self.owned_agent(&identity, &session, pane)?;
+        // Herdr returns agent_prompt_stalled when the prompt starts no turn.
+        let accepted = self.cli(
+            &session,
+            &[
+                "agent", "prompt", pane, &keys[1], "--wait", "--until", "working", "--until",
+                "blocked",
+            ],
+        )?;
+        let seq = accepted
+            .get("result")
+            .and_then(|result| result.get("agent"))
+            .and_then(|agent| agent.get("state_change_seq"))
+            .and_then(Json::as_i64)
+            .ok_or_else(|| Failure::new("Herdr prompt result has no state sequence"))?;
+        self.observe(&identity, &session, pane)?;
+        Ok(seq)
+    }
+
+    /// The owned Claude pane's agent status and state sequence.
+    pub fn agent_state(&self, pane: &str) -> Result<(String, i64)> {
+        let identity = self
+            .identity
+            .as_ref()
+            .ok_or_else(|| Failure::new("Incomplete Herdr ownership"))?
+            .clone();
+        let session = record::get_name(&identity, "session").unwrap_or_default();
+        let agent = self.owned_agent(&identity, &session, pane)?;
+        match (
+            agent.get("agent_status").and_then(Json::as_str),
+            agent.get("state_change_seq").and_then(Json::as_i64),
+        ) {
+            (Some(status), Some(seq)) => Ok((status.to_owned(), seq)),
+            _ => self.fail("Herdr agent state is incomplete"),
+        }
+    }
+
+    fn owned_agent(&self, identity: &Value, session: &str, pane: &str) -> Result<Json> {
+        let snapshot = self.snapshot(session)?;
+        let terminal_id = record::get_name(identity, "terminal-id").unwrap_or_default();
+        snapshot
             .get("agents")
             .and_then(Json::array_items)
-            .is_some_and(|agents| {
-                agents.iter().any(|agent| {
+            .and_then(|agents| {
+                agents.iter().find(|agent| {
                     agent.get("pane_id").and_then(Json::as_str) == Some(pane)
                         && agent.get("terminal_id").and_then(Json::as_str)
                             == Some(terminal_id.as_str())
                         && agent.get("agent").and_then(Json::as_str) == Some("claude")
                 })
-            });
-        if !occupied {
-            return self.fail("No Claude agent occupies the owned Herdr pane");
-        }
-        self.checked(
-            &[
-                self.herdr(),
-                "--session".to_owned(),
-                session.clone(),
-                "agent".to_owned(),
-                "prompt".to_owned(),
-                pane.to_owned(),
-                keys[1].clone(),
-            ],
-            None,
-        )?;
-        self.poll(
-            timeout_ms.unwrap_or(5000),
-            interval_ms.unwrap_or(50),
-            &|| acknowledged(token).then_some(()),
-            "Herdr wake consumption was not acknowledged; mail remains queued",
-        )?;
-        self.observe(&identity, &session, pane)?;
-        Ok(())
+            })
+            .cloned()
+            .ok_or_else(|| Failure::new("No Claude agent occupies the owned Herdr pane"))
     }
 
     /// Cleanup: cancel recovery first, then destroy only the recorded

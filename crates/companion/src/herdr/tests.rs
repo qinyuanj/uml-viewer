@@ -33,6 +33,8 @@ struct FakeState {
     shell_start: Option<String>,
     fail: Option<(String, String)>,
     prompted: bool,
+    agent_status: Option<String>,
+    state_change_seq: Option<f64>,
     run_text: Option<String>,
     foreground: Option<Json>,
     foreground_absent: bool,
@@ -134,6 +136,14 @@ fn fake_cli(calls: Calls, state: Shared) -> impl Fn(&[String], Option<i64>) -> R
                         ("pane_id", Json::String("w1:p1".to_owned())),
                         ("terminal_id", Json::String("term_A".to_owned())),
                         ("agent", Json::String("claude".to_owned())),
+                        (
+                            "agent_status",
+                            Json::String(state.agent_status.clone().unwrap_or("idle".to_owned())),
+                        ),
+                        (
+                            "state_change_seq",
+                            Json::Number(state.state_change_seq.unwrap_or(1.0)),
+                        ),
                     ])])
                 };
                 response(object(vec![(
@@ -247,7 +257,13 @@ fn fake_cli(calls: Calls, state: Shared) -> impl Fn(&[String], Option<i64>) -> R
                 state.borrow_mut().prompted = true;
                 response(object(vec![(
                     "result",
-                    object(vec![("type", Json::String("ok".to_owned()))]),
+                    object(vec![(
+                        "agent",
+                        object(vec![
+                            ("agent_status", Json::String("working".to_owned())),
+                            ("state_change_seq", Json::Number(4.0)),
+                        ]),
+                    )]),
                 )]))
             }
             ("pane", "send-keys") => response(object(vec![(
@@ -474,7 +490,7 @@ fn never_treats_malformed_or_timed_out_probes_as_absence() {
 }
 
 #[test]
-fn wake_requires_a_fresh_acknowledgement_and_a_real_claude_occupant() {
+fn wake_requires_a_real_claude_occupant() {
     for no_agent in [true, false] {
         let calls: Calls = Rc::new(RefCell::new(Vec::new()));
         let state: Shared = Rc::new(RefCell::new(FakeState {
@@ -482,37 +498,98 @@ fn wake_requires_a_fresh_acknowledgement_and_a_real_claude_occupant() {
             ..FakeState::default()
         }));
         let backend = backend(fake_cli(calls, state.clone()), fake_owner(state.clone()));
-        // Never acknowledged: delivery fails; the prompt is sent only when a
-        // Claude agent occupies the pane.
         let result = backend.wake(
             "w1:p1",
             &["-l".to_owned(), "mail token-1".to_owned()],
             "token-1",
             &|_| false,
-            Some(0),
-            None,
         );
-        assert!(result.is_err());
+        assert_eq!(no_agent, result.is_err());
         assert_eq!(!no_agent, state.borrow().prompted);
     }
 }
 
+/// Claude pops the mail on its own schedule, possibly after finishing the
+/// turn it is in; the wake succeeds once Herdr accepts the prompt.
 #[test]
-fn wake_returns_success_only_after_this_prompt_was_consumed() {
+fn wake_succeeds_when_the_prompt_is_accepted_while_the_mail_stays_queued() {
     let calls: Calls = Rc::new(RefCell::new(Vec::new()));
     let state: Shared = Rc::new(RefCell::new(FakeState::default()));
-    let consumed = state.clone();
-    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state.clone()));
     backend
         .wake(
             "w1:p1",
             &["-l".to_owned(), "mail token-2".to_owned()],
             "token-2",
-            &|token| token == "token-2" && consumed.borrow().prompted,
-            Some(5000),
-            Some(0),
+            &|_| false,
         )
         .unwrap();
+    assert!(state.borrow().prompted);
+}
+
+/// Herdr reports a prompt that never starts a turn as stalled; the accepted
+/// prompt's state sequence is the baseline the lost-mail check compares.
+#[test]
+fn wake_waits_for_the_turn_to_start_and_returns_its_state_sequence() {
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let state: Shared = Rc::new(RefCell::new(FakeState::default()));
+    let backend = backend(fake_cli(calls.clone(), state.clone()), fake_owner(state));
+    let seq = backend
+        .wake(
+            "w1:p1",
+            &["-l".to_owned(), "mail token-4".to_owned()],
+            "token-4",
+            &|_| false,
+        )
+        .unwrap();
+    assert_eq!(4, seq);
+    let prompt = calls
+        .borrow()
+        .iter()
+        .find(|argv| argv.get(3).map(String::as_str) == Some("agent"))
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        &["--wait", "--until", "working", "--until", "blocked"],
+        &prompt[7..12]
+    );
+}
+
+#[test]
+fn agent_state_reads_the_owned_claude_pane() {
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let state: Shared = Rc::new(RefCell::new(FakeState {
+        agent_status: Some("done".to_owned()),
+        state_change_seq: Some(7.0),
+        ..FakeState::default()
+    }));
+    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state.clone()));
+    assert_eq!(
+        ("done".to_owned(), 7),
+        backend.agent_state("w1:p1").unwrap()
+    );
+    state.borrow_mut().no_agent = true;
+    assert!(backend.agent_state("w1:p1").is_err());
+}
+
+#[test]
+fn wake_fails_when_herdr_rejects_the_prompt() {
+    let calls: Calls = Rc::new(RefCell::new(Vec::new()));
+    let state: Shared = Rc::new(RefCell::new(FakeState {
+        fail: Some(("agent".to_owned(), "prompt".to_owned())),
+        ..FakeState::default()
+    }));
+    let backend = backend(fake_cli(calls, state.clone()), fake_owner(state));
+    assert!(
+        backend
+            .wake(
+                "w1:p1",
+                &["-l".to_owned(), "mail token-3".to_owned()],
+                "token-3",
+                &|_| false,
+            )
+            .is_err()
+    );
 }
 
 #[test]
@@ -523,14 +600,9 @@ fn wake_rejects_preexisting_acknowledgements_and_missing_tokens() {
     // No token embedded in the literal text.
     assert!(
         backend
-            .wake(
-                "w1:p1",
-                &["-l".to_owned(), "mail".to_owned()],
-                "",
-                &|_| false,
-                None,
-                None
-            )
+            .wake("w1:p1", &["-l".to_owned(), "mail".to_owned()], "", &|_| {
+                false
+            })
             .is_err()
     );
     // Acknowledged before this delivery.
@@ -541,8 +613,6 @@ fn wake_rejects_preexisting_acknowledgements_and_missing_tokens() {
                 &["-l".to_owned(), "mail token".to_owned()],
                 "token",
                 &|_| true,
-                None,
-                None,
             )
             .is_err()
     );

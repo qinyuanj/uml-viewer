@@ -13,6 +13,7 @@
 //! (terminal phase read, helper exited); a launch whose lock probe finds no
 //! live helper first removes every older generation's files (#169).
 
+use crate::herdr::rules::{WakeVerdict, wake_verdict};
 use crate::herdr::{Herdr, ProgressFn};
 use crate::host::Host;
 use crate::lifecycle;
@@ -29,6 +30,9 @@ use std::rc::Rc;
 /// ownership is retained (Lua `M.poll`).
 pub const STARTUP_TIMEOUT_MS: i64 = 120_000;
 const POLL_MS: i64 = 50;
+/// How often delivered wakes are checked against the agent state; each check
+/// is one Herdr snapshot.
+const WATCH_MS: i64 = 1000;
 const MAX_EVENTS_PER_POLL: usize = 32;
 
 /// The unique token of one mail delivery. Herdr's wake contract requires the
@@ -491,8 +495,36 @@ fn run_body(
     };
     session.borrow_mut().event("ready", ready)?;
     let mailbox = Mailbox::outbox(Path::new(root));
+    let pane = record::get_name(&record_value, "pane").unwrap_or_default();
+    let mut watched: Vec<(i64, i64)> = Vec::new();
+    let mut watched_at = (host.clock)();
     loop {
         session.borrow_mut().commands()?;
+        if !watched.is_empty() && (host.clock)() - watched_at >= WATCH_MS {
+            watched_at = (host.clock)();
+            // The state is read before the queue, so a mail popped by the
+            // turn that just ended is never reported lost.
+            match backend.agent_state(&pane) {
+                Ok((status, seq)) => {
+                    for id in settle(&mut watched, &status, seq, &|id| !mailbox.acknowledged(id)) {
+                        session.borrow_mut().event(
+                            "ready",
+                            Some(format!(
+                                "Companion wake lost: Claude went idle with {} still queued",
+                                mail_token(id)
+                            )),
+                        )?;
+                    }
+                }
+                Err(error) => {
+                    watched.clear();
+                    session.borrow_mut().event(
+                        "ready",
+                        Some(format!("Companion wake check failed: {error}")),
+                    )?;
+                }
+            }
+        }
         let id = {
             let mut state = session.borrow_mut();
             if state.stop || state.pending.is_empty() {
@@ -509,19 +541,17 @@ fn run_body(
             continue;
         };
         let token = mail_token(id);
-        let pane = record::get_name(&record_value, "pane").unwrap_or_default();
         let delivered = backend.wake(
             &pane,
             &["-l".to_owned(), format!("Mailbox {token}")],
             &token,
             &|token| mailbox.acknowledged_id(token),
-            Some(5000),
-            None,
         );
-        if let Err(error) = delivered {
-            session
+        match delivered {
+            Ok(seq) => watched.push((id, seq)),
+            Err(error) => session
                 .borrow_mut()
-                .event("ready", Some(format!("Companion wake failed: {error}")))?;
+                .event("ready", Some(format!("Companion wake failed: {error}")))?,
         }
     }
     session.borrow_mut().event("stopping", None)?;
@@ -531,6 +561,28 @@ fn run_body(
     }
     session.borrow_mut().event("stopped", None)?;
     Ok(())
+}
+
+/// Drop the delivered wakes whose mail left the queue or whose turn ended
+/// with it still queued, and return the ids of the latter (contract §5).
+fn settle(
+    watched: &mut Vec<(i64, i64)>,
+    status: &str,
+    seq: i64,
+    queued: &dyn Fn(i64) -> bool,
+) -> Vec<i64> {
+    let mut lost = Vec::new();
+    watched.retain(
+        |&(id, delivered)| match wake_verdict(delivered, status, seq, queued(id)) {
+            WakeVerdict::Pending => true,
+            WakeVerdict::Lost => {
+                lost.push(id);
+                false
+            }
+            WakeVerdict::Consumed => false,
+        },
+    );
+    lost
 }
 
 impl Mailbox {
@@ -548,6 +600,17 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::collections::HashMap;
+
+    #[test]
+    fn settling_keeps_pending_wakes_and_reports_only_lost_mail() {
+        // mail 1 popped, mail 2 delivered at seq 4, mail 3 at seq 6.
+        let mut watched = vec![(1, 2), (2, 4), (3, 6)];
+        let lost = settle(&mut watched, "idle", 5, &|id| id != 1);
+        assert_eq!(vec![2], lost);
+        assert_eq!(vec![(3, 6)], watched);
+        assert!(settle(&mut watched, "working", 7, &|_| true).is_empty());
+        assert_eq!(vec![(3, 6)], watched);
+    }
 
     #[test]
     fn names_a_mail_delivery_by_its_mailbox_id() {

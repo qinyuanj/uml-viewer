@@ -94,7 +94,7 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
 | `probe!` | `status server` + `api snapshot` | session 存在且 socket 可达、记录中的 pane 存在于 snapshot 才算存活；超时/含糊不得视为"已不存在"。 |
 | `identity!` | snapshot + `pane process-info --pane <id>` | 返回并核对上节全部字段；`terminal_id` 在 pane 存续期稳定。 |
 | `bind!` | 同上，纯核对，无副作用 | Viewer 新 JVM 重启后只重新绑定记录的 pane；缺失或身份变化则拒绝启动，不创建替代。 |
-| `wake!` | `agent prompt <pane> <text>` | 投递前核对 owned pane 的 Claude occupancy；Herdr 再次校验 agent 并提交字面文本及 Enter。wake 效果按 §5 的邮件消费确认，不能以 CLI 成功代替。 |
+| `wake!` | `agent prompt <pane> <text>` | 投递前核对 owned pane 的 Claude occupancy；Herdr 再次校验 agent 并提交字面文本及 Enter。wake 只证明投递（§5）；邮件消费由持久队列保证，不在 wake 内等待。 |
 | `recovery!` | Herdr 不提供，由项目自有 runner + 监督层实现 | 见 §6。开启/关闭恢复即注册/注销项目监督。 |
 | `cleanup!` | 先注销监督，再 `workspace close <w>`，最后 `session stop` + `session delete` | 顺序固定：先撤恢复再销毁。只清理记录拥有的资源。 |
 
@@ -135,10 +135,26 @@ Herdr 的 pane ID 是 **session 局部** 的：两个命名 session 各自都有
 ## 5. wake 效果确认
 
 wake 投递成功或 `pane wait-output`（socket `pane.wait_for_output`）匹配输出
-不能单独证明 Claude 消费输入：匹配可能来自旧快照或终端回显。#17 须使用
-本次投递的唯一 token 与应用确认/邮件队列推进等消费证据，在有限窗口内核对。
-已验证 `wait-output` 会立即搜索已有快照再轮询，超时 exit 1。唤醒失败
-不丢邮件（队列保留由现有 mailbox 语义保证）。
+不能单独证明 Claude 消费输入：匹配可能来自旧快照或终端回显。
+已验证 `wait-output` 会立即搜索已有快照再轮询，超时 exit 1。
+
+wake 只证明投递，不证明消费：投递前核对 owned pane 的 Claude occupancy 与
+本次唯一 token 尚未被确认，`agent prompt` exit 0 后再核对 pane 身份未变。
+Claude 何时 pop 邮件由它自己的回合决定（忙时先完成手头工作），companion
+不在有限窗口内等待队列推进；早期 5 秒窗口在每次真实 mail 上都误报
+`consumption was not acknowledged`（se-fish 实测 pop 晚于投递约 25 秒）。
+Herdr 0.9.5 实测：Claude `working` 时 `agent prompt` 仍 exit 0，文本进入
+Claude 输入队列，当前回合结束后被处理；按 `agent prompt --help`，`blocked`
+时以 `agent_blocked` 拒绝（未实测）。
+
+投递以 `agent prompt --wait --until working --until blocked` 发出：未开启回合时
+Herdr 返回 `agent_prompt_stalled`，wake 失败。接受时返回的 `state_change_seq`
+是该次投递的基线。Herdr 0.9.5 实测：忙时排入的 prompt 并入同一段 `working`
+（seq 不变），回合结束回到 `idle` 时 seq 加一。worker 每秒按
+`rules::wake_verdict` 核对：邮件已出队为已消费；Claude 处于 `idle`/`done`
+且 seq 大于基线、邮件仍在队列，判定为 wake 丢失并报告
+`Companion wake lost`；其余（`working`、`blocked`、尚未越过基线）继续等待，
+不设超时。先读 agent 状态再读队列，回合内已 pop 的邮件不会误报。唤醒失败不丢邮件（队列保留由现有 mailbox 语义保证）。
 
 ## 6. 退出检测与恢复契约（项目自有）
 
