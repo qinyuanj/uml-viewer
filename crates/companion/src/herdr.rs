@@ -13,6 +13,13 @@ use edn::Value;
 use std::path::Path;
 use std::rc::Rc;
 
+/// Herdr derives its API socket from XDG_CONFIG_HOME + session name. Measured
+/// against Herdr 0.9.5: the server starts at 101 bytes but workspace creation
+/// fails from 102 bytes, and that failure surfaces as an opaque closed-channel
+/// error. The generated name therefore shrinks to whatever the config root
+/// leaves, instead of assuming a fixed project-name budget.
+pub const MAX_SOCKET_BYTES: usize = 101;
+
 /// The first `workspace create` waits out the server bootstrap; WSL PATH
 /// entries under /mnt/c stretch it past the ordinary command bound (contract
 /// §6).
@@ -71,7 +78,7 @@ impl Config {
             selected,
             runner: None,
             recovery: None,
-            max_socket_bytes: crate::lifecycle::MAX_SOCKET_BYTES,
+            max_socket_bytes: MAX_SOCKET_BYTES,
             progress: None,
             select: None,
         }

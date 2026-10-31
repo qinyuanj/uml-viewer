@@ -10,7 +10,6 @@ use crate::recovery_domain as domain;
 use crate::vocab::{Failure, Result};
 use edn::Value;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 fn default_runner_state_path(identity: &Value, generation: i64) -> String {
     let cwd = record::get_name(identity, "cwd").unwrap_or_else(|| ".".to_owned());
@@ -259,34 +258,6 @@ pub fn step(step: &Step) -> Result<Value> {
     Ok(result)
 }
 
-/// Unique generation tokens (UUIDv4 shape). Uniqueness comes from the
-/// monotonic clock, the pid and a process-local counter, not from
-/// cryptography — tokens identify one generation, nothing more.
-pub fn new_token() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let seed = posix::monotonic_ms() as u64
-        ^ (posix::current_pid() as u64) << 32
-        ^ COUNTER.fetch_add(0x9e3779b9, Ordering::Relaxed);
-    let mut state = seed ^ 0x2545_f491_4f6c_dd1d;
-    let mut next = || {
-        // xorshift64*
-        state ^= state >> 12;
-        state ^= state << 25;
-        state ^= state >> 27;
-        state.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32
-    };
-    let mut text = String::with_capacity(36);
-    for (index, c) in "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".chars().enumerate() {
-        let _ = index;
-        match c {
-            'x' => text.push_str(&format!("{:x}", next() % 16)),
-            'y' => text.push_str(&format!("{:x}", next() % 4 + 8)),
-            other => text.push(other),
-        }
-    }
-    text
-}
-
 /// Register a detached controller and wait for its journal (Lua `M.start`).
 pub fn start(
     identity: &Value,
@@ -466,6 +437,7 @@ mod tests {
     use crate::vocab::Owner;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     /// In-memory journal over the fake host: path → EDN text, exactly like
     /// the busted `fast_write` fixtures.
@@ -780,15 +752,6 @@ mod tests {
         assert!(read_runner(&state, &host).unwrap().is_none());
         memory.files.put(good, "{:token \"t\"}");
         assert!(read_runner(&state, &host).unwrap().is_none());
-    }
-
-    #[test]
-    fn tokens_are_unique_and_uuid_shaped() {
-        let a = new_token();
-        let b = new_token();
-        assert_ne!(a, b);
-        assert_eq!(36, a.len());
-        assert_eq!(Some('4'), a.chars().nth(14));
     }
 
     fn tempfile() -> PathBuf {

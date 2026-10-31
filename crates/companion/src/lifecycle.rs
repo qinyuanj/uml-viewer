@@ -3,7 +3,9 @@
 //! and ownership checks are pure; all process work stays in adapters.
 
 use crate::domain;
-use crate::herdr::{Config, ControllerSpec, Herdr, ProgressFn, RunnerLauncher, Selected};
+use crate::herdr::{
+    Config, ControllerSpec, Herdr, MAX_SOCKET_BYTES, ProgressFn, RunnerLauncher, Selected,
+};
 use crate::herdr_domain;
 use crate::host::Host;
 use crate::ownership;
@@ -13,12 +15,6 @@ use crate::recovery;
 use crate::vocab::{Failure, Result, RunOut};
 use edn::Value;
 
-/// Herdr derives its API socket from XDG_CONFIG_HOME + session name. Measured
-/// against Herdr 0.9.5: the server starts at 101 bytes but workspace creation
-/// fails from 102 bytes, and that failure surfaces as an opaque closed-channel
-/// error. The generated name therefore shrinks to whatever the config root
-/// leaves, instead of assuming a fixed project-name budget.
-pub const MAX_SOCKET_BYTES: usize = 101;
 pub const MAX_NAME_BYTES: usize = 64;
 
 pub fn config_root(host: &Host) -> String {
