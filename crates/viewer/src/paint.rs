@@ -841,7 +841,10 @@ pub fn paint(
                 if tier == lod::Tier::Blocks || (tier == lod::Tier::Frames && role != "name") {
                     continue;
                 }
-                let px = lod::font_px(*size * transform.scale as f64, 1.0);
+                // A slotted line draws at its slot height: text_slots scales
+                // a crowded run down together, and the nominal size would
+                // overflow onto the title band and the next line.
+                let px = lod::font_px(h.unwrap_or(*size) * transform.scale as f64, 1.0);
                 // Text below legibility is skipped (the #131 prototype drew
                 // no text under 4 px).
                 if px < MIN_TEXT_PX {
