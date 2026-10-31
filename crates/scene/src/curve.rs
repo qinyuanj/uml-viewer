@@ -47,12 +47,12 @@ pub fn round_corners(ps: &[[f64; 2]], radius: f64) -> Vec<[f64; 2]> {
 
 /// Rotate an end handle onto the 45° cone of the approached rect face.
 fn cone(dx: f64, dy: f64, r: Rect, p: [f64; 2], arriving: bool) -> (f64, f64) {
-    let face = crate::route::face(r, p);
+    let face = crate::geom::face(r, p);
     let (mut nx, mut ny) = match face {
-        crate::route::Face::Left => (-1.0, 0.0),
-        crate::route::Face::Right => (1.0, 0.0),
-        crate::route::Face::Top => (0.0, -1.0),
-        crate::route::Face::Bottom => (0.0, 1.0),
+        crate::geom::Face::Left => (-1.0, 0.0),
+        crate::geom::Face::Right => (1.0, 0.0),
+        crate::geom::Face::Top => (0.0, -1.0),
+        crate::geom::Face::Bottom => (0.0, 1.0),
     };
     if arriving {
         nx = -nx;

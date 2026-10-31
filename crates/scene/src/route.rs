@@ -2,35 +2,10 @@
 //! port attachment are golden-protected: the routed point sequences must
 //! reproduce the JVM geometry exactly.
 
-use crate::geom::{self, Rect};
+use crate::geom::{self, Face, Rect, face};
 use edn::Value;
 use edn::record::name;
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Face {
-    Left,
-    Right,
-    Top,
-    Bottom,
-}
-
-/// Nearest rect face to a point (Lua `R.face`).
-pub fn face(r: Rect, p: [f64; 2]) -> Face {
-    let ds = [
-        (p[0] - r.x).abs(),
-        (p[0] - r.right()).abs(),
-        (p[1] - r.y).abs(),
-        (p[1] - r.bottom()).abs(),
-    ];
-    let mut bi = 0;
-    for (i, d) in ds.iter().enumerate().skip(1) {
-        if *d < ds[bi] {
-            bi = i;
-        }
-    }
-    [Face::Left, Face::Right, Face::Top, Face::Bottom][bi]
-}
 
 fn horiz(f: Face) -> bool {
     f == Face::Left || f == Face::Right

@@ -91,6 +91,31 @@ impl Rect {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Nearest rect face to a point (Lua `R.face`).
+pub fn face(r: Rect, p: [f64; 2]) -> Face {
+    let ds = [
+        (p[0] - r.x).abs(),
+        (p[0] - r.right()).abs(),
+        (p[1] - r.y).abs(),
+        (p[1] - r.bottom()).abs(),
+    ];
+    let mut bi = 0;
+    for (i, d) in ds.iter().enumerate().skip(1) {
+        if *d < ds[bi] {
+            bi = i;
+        }
+    }
+    [Face::Left, Face::Right, Face::Top, Face::Bottom][bi]
+}
+
 /// `G.union`: bounding rect of all present rects, `None` when empty.
 pub fn union(rects: &[Option<Rect>]) -> Option<Rect> {
     let mut out: Option<Rect> = None;
