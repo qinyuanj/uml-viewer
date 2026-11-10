@@ -369,6 +369,8 @@ class PosixEntries(unittest.TestCase):
             # Reported on stderr once; the rerun has nothing left to remove.
             self.assertEqual(attempt == 0, 'cimgui-love-1.90-1' in result.stderr, result.stderr)
             self.assertNotIn('cimgui-love', result.stdout)
+            # #204: a successful install also names the DSH plugin route.
+            self.assertIn('dsh plugin --profile web add dsh-uml-viewer', result.stdout)
             self.assertTrue((self.root / ENTRY).is_file())
             self.assertEqual(policy, (self.root / 'policy.edn').read_bytes())
         self.assertEqual(1, (self.root / '.gitignore').read_text().count('# BEGIN UML-VIEWER'))

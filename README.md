@@ -1,4 +1,13 @@
 # UML viewer
+
+> **DeepSeek Harness (DSH) users:** use the
+> [dsh-uml-viewer](https://github.com/qinyuanj/dsh-uml-viewer) plugin instead
+> (`dsh plugin --profile web add dsh-uml-viewer`). Close the old viewer and
+> companion first; you may delete `.uml-viewer/` by hand. Outside DSH, keep
+> using this repository's `get-uml-viewer` flow below. This repository is
+> frozen: no new features or releases, and `get-uml-viewer` keeps installing
+> the frozen version (it also prints this hint).
+
 ## Abstract
 
 This project displays a project as UML. The UML is *dynamic*. You can click
