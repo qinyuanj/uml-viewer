@@ -693,6 +693,12 @@ def live(record):
     return True
 
 
+# #204: printed after every successful install; only text, it touches no state.
+DSH_PLUGIN_HINT = ('提示：DeepSeek Harness（DSH）用户可改装 dsh-uml-viewer 插件'
+                   '（https://github.com/qinyuanj/dsh-uml-viewer）：先关闭旧 viewer 与 companion，'
+                   '再运行 dsh plugin --profile web add dsh-uml-viewer；.uml-viewer/ 可手动删除。')
+
+
 def install(args):
     if args == ['--help'] or args == ['-h']:
         print('usage: get-uml-viewer [--install-only]')
@@ -766,6 +772,7 @@ def install(args):
                  'rust': str(binary), 'herdr': str(herdr), 'repositories': versions}, ensure_ascii=False, indent=2) + '\n')
     shown = name if WINDOWS else './uml'
     print(f'已安装 {shown}；使用 {shown} ir 生成 EDN。')
+    print(DSH_PLUGIN_HINT)
     return 0 if args else command(root, [])
 
 
